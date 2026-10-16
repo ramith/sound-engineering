@@ -20,87 +20,38 @@ import PlaybackQueueKit
 extension AudioEngineBridge {
     // MARK: - Capability Evaluation
 
-    /// Returns `true` when the device + file combination can run in Pure mode
-    /// (decision is FullBitPerfect or RateMatchedFloat). When this returns false,
-    /// the caller falls back to the Enhanced path.
-    func evaluatePureViable(fileURL: URL, deviceID: UInt32) -> Bool {
-        // --- Query device capability ---
-        var cap = CDeviceCapability()
-        // Up to 16 advertised rates; USB DACs typically advertise ≤ 8.
-        let maxRates: UInt32 = 16
-        var rates = [Double](repeating: 0, count: Int(maxRates))
-        var rateCount: UInt32 = 0
-
-        let queryOK = pureModeQueryCapability(deviceID, &cap, &rates, maxRates, &rateCount)
-        guard queryOK == 1 else {
-            NSLog("[PureMode] pureModeQueryCapability failed for device \(deviceID)")
-            return false
-        }
-
-        // --- Build CFileFormat from AVAudioFile ---
+    /// Why Pure can't play `fileURL` on `deviceID`, or nil when it can (decision FullBitPerfect or
+    /// RateMatchedFloat). The file is read by Pure's own decoder — Apple first, FFmpeg only when it is
+    /// on — so a file only FFmpeg reads is judged as Pure would play it, and one it can't is named
+    /// (`fileUnreadable`, `needsFFmpeg`) rather than refused silently (`pureModeEvaluateFile`).
+    func pureDeclineReason(fileURL: URL, deviceID: UInt32) -> PureModeReason? {
         let didAccess = fileURL.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
                 fileURL.stopAccessingSecurityScopedResource()
             }
         }
-
-        guard let audioFile = try? AVAudioFile(forReading: fileURL) else {
-            NSLog("[PureMode] Cannot open file for capability evaluation: \(fileURL.lastPathComponent)")
-            return false
-        }
-
-        let processingFormat = audioFile.processingFormat
-        let streamDesc = processingFormat.streamDescription.pointee
-
-        // Extract physical bit depth and float flag from the underlying stream description.
-        // These inform the policy's integer / float branch but are not mandatory —
-        // rate + device booleans drive the primary decision.
-        let fileBits: UInt32 = streamDesc.mBitsPerChannel
-        let fileIsFloat: UInt8 = (streamDesc.mFormatFlags & kAudioFormatFlagIsFloat) != 0 ? 1 : 0
-
-        var fileFormat = CFileFormat(
-            sampleRate: processingFormat.sampleRate,
-            bitsPerChannel: fileBits,
-            channels: processingFormat.channelCount,
-            isFloat: fileIsFloat
-        )
-
-        // --- Evaluate policy ---
         var evaluation = CPureModeEvaluation()
-        withUnsafePointer(to: &cap) { capPtr in
-            rates.withUnsafeBufferPointer { ratesPtr in
-                withUnsafePointer(to: &fileFormat) { filePtr in
-                    pureModeEvaluate(capPtr, ratesPtr.baseAddress, rateCount, filePtr, &evaluation)
-                }
-            }
-        }
-
-        // 0 = FullBitPerfect, 1 = RateMatchedFloat are both viable. 2 = FallbackEnhanced → reject,
-        // and the caller plays Enhanced with the "Pure unavailable" notice. The reason code follows
-        // PureModeReason's order (PureModeBridge.h), e.g. 5 = the device stream's channel count is
-        // not the file's.
-        guard evaluation.decision != 2 else {
-            NSLog("[PureMode] Not viable for \(fileURL.lastPathComponent) on device \(deviceID) "
-                + "(policy reason \(evaluation.reason))")
-            return false
-        }
-        return true
+        let filled = fileURL.path.withCString { pureModeEvaluateFile(deviceID, $0, &evaluation) }
+        // 2 = FallbackEnhanced (PureModeBridge.h); 0 and 1 play.
+        guard filled == 1, evaluation.decision == 2 else { return nil }
+        let reason = PureModeReason(code: evaluation.reason) ?? .deviceWouldNotStart
+        NSLog("[PureMode] Not viable for \(fileURL.lastPathComponent) on device \(deviceID): \(reason)")
+        return reason
     }
 
     // MARK: - Pure Engine Start
 
-    /// Create (lazily) and start the Pure-Mode engine. Returns `true` when the
-    /// engine confirms `running == 1` in `pureModeEngineAchievedState`.
+    /// Create (lazily) and start the Pure-Mode engine. Returns nil when the engine confirms
+    /// `running == 1` in `pureModeEngineAchievedState`, else why it would not start.
     ///
     /// - Parameters:
     ///   - fileURL:  The file to play (security-scoped access is managed here).
     ///   - deviceID: The CoreAudio device to open in exclusive / integer mode.
     ///   - startAt:  Where in the file to start, in seconds (a resume, a move to another device):
     ///               the source is positioned before render starts, so nothing from 0:00 is heard.
-    /// - Returns: `true` on success; `false` on any failure (caller falls back to Enhanced).
-    @discardableResult
-    func startPure(fileURL: URL, deviceID: UInt32, startAt: Double) -> Bool {
+    /// - Returns: nil on success; on any failure the reason (the caller falls back to Enhanced).
+    func startPure(fileURL: URL, deviceID: UInt32, startAt: Double) -> PureModeReason? {
         // Lazily create the engine session (create ONLY when the field is nil — the RT-safety
         // invariant). All pureEngine/activePath access goes through the stateLock accessors (S6
         // UAF-1). This runs on engineQueue, where every Pure call and teardown runs (the device-loss
@@ -114,7 +65,7 @@ extension AudioEngineBridge {
         }
         guard let engine = pureEngineHandle?.handle else {
             NSLog("[PureMode] pureModeEngineCreate returned nil")
-            return false
+            return .deviceWouldNotStart
         }
 
         let didAccess = fileURL.startAccessingSecurityScopedResource()
@@ -125,17 +76,19 @@ extension AudioEngineBridge {
         }
 
         var startResult: Int32 = 0
+        var reasonCode: UInt8 = 0
         fileURL.path.withCString { pathPtr in
-            startResult = pureModeEngineStart(engine, deviceID, pathPtr, max(startAt, 0))
+            startResult = pureModeEngineStart(engine, deviceID, pathPtr, max(startAt, 0), &reasonCode)
         }
 
         guard startResult == 1 else {
-            NSLog("[PureMode] pureModeEngineStart failed (result=\(startResult))")
+            let reason = PureModeReason(code: reasonCode) ?? .deviceWouldNotStart
+            NSLog("[PureMode] pureModeEngineStart failed: \(reason)")
             // activePath is still .enhanced (not set to .pure until below), so no poll is borrowing
             // this session. Detach (nils the field UNDER the lock) and let the returned wrapper drop
             // HERE on engineQueue — its deinit runs pureModeEngineDestroy OUTSIDE stateLock.
             detachPureEngineForTeardown()
-            return false
+            return reason
         }
 
         let state = pureModeEngineAchievedState(engine)
@@ -144,7 +97,7 @@ extension AudioEngineBridge {
             // Detach under the lock, stop() (control-plane), then let the returned wrapper drop at
             // the end of this statement — deinit → pureModeEngineDestroy, OUTSIDE stateLock.
             detachPureEngineForTeardown()?.stop()
-            return false
+            return .deviceWouldNotStart
         }
 
         // Publish the handle-then-path invariant: pureEngine is already set (above), so the instant
@@ -162,9 +115,10 @@ extension AudioEngineBridge {
         NSLog(
             "[PureMode] Started — decision=\(info.decision), " +
                 "rate=\(state.achievedRate) Hz, bits=\(state.achievedBitsPerChannel), " +
-                "hog=\(state.didHog), decoder=\(info.decoder as Any)"
+                "hog=\(state.didHog), decoder=\(info.decoder as Any), "
+                + "\(info.pureReason.map { "\($0)" } ?? "bit-perfect")"
         )
-        return true
+        return nil
     }
 
     // MARK: - Seek
@@ -297,9 +251,10 @@ extension AudioEngineBridge {
             decision: decisionUI,
             achievedSampleRate: state.achievedRate,
             bitDepth: state.achievedBitsPerChannel,
+            sourceBitDepth: state.sourceBitsPerChannel,
             isFloat: state.achievedIsFloat == 1,
             decoder: decoderUI,
-            fellBackToEnhanced: false
+            pureReason: PureModeReason(code: state.reason) // 6: not bit-perfect (C-33); else nil
         )
     }
 }

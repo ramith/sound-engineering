@@ -164,6 +164,8 @@ namespace
         {"PureMode_VirtualDevice", testPureModeVirtualDevice, true},
         {"PureMode_RateEpsilonAndMax", testPureModeRateEpsilonAndMax, true},
         {"PureMode_ChannelCountMismatch", testPureModeChannelCountMismatch, true},
+        {"PureMode_BitExactness_DepthRule", testPureModeBitExactnessDepthRule, true},
+        {"PureMode_ReasonCodes_BridgeOrder", testPureModeReasonCodesAreTheBridgeOrder, true},
         // Pure-Mode format conversion (Phase B — B2a)
         {"Convert_Int16Saturation", testConvertInt16Saturation, true},
         {"Convert_Int32Saturation", testConvertInt32Saturation, true},
