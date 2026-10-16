@@ -42,7 +42,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-GAP-05 | An Enhanced gapless join to a file with a different channel count drops channels | HIGH | Engine sprint | US-R1F-02 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-PB-03 | Shuffle on + Repeat off never ends the queue | MEDIUM | R1.1-B (shuffle as a permutation) | US-R1F-01 |
-| KI-PB-05 | Pure on / off does not apply at a gapless seam, though Settings says it does | MEDIUM | R1.1-A (Pure honesty) | US-R1F-13 |
 | KI-PB-06 | After a relaunch the restored song shows `--:--` and its scrubber is dead until Play | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-08 | Clicking the paused current queue row restarts it from 0:00 | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-10 | Add to Queue onto an empty queue leaves Play / Space disabled | MEDIUM | R1.1-A | US-R1F-01 |
@@ -58,7 +57,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | LIB-VOL-1 | A paused folder on a replaced or UUID-less drive stays paused; re-adding it loses play stats | MEDIUM | R1.1-B ("Use this drive") | US-R1F-03 |
 | KI-LIB-03 | A failed first metadata pass leaves "No Music Yet", with no retry | MEDIUM | pool | US-R1F-03 |
 | KI-LIB-04 | Dragging a multi-selection onto a playlist adds one song | MEDIUM | pool | US-R1F-04 |
-| KI-SEC-01 | If FFmpeg is installed, it parses every FLAC / Ogg / Opus file first during the scan, loaded from a user-writable path | MEDIUM | R1.1-A (opt-in, FD-3) | US-R1F-16 |
 | KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5) | US-ENG-07 |
 | KI-PB-07 | Next / Previous while paused keep the old song's duration | LOW | R1.1-A | US-R1F-01 |
 | KI-PB-13 | Two quick tile Plays can land out of order | LOW | pool | US-R1F-04 |
@@ -69,11 +67,10 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-GAP-03 | A narrow false seam on a Pure → Enhanced restart | LOW | Engine sprint | US-R1F-02 |
 | ENH-001 | Short-track auto-advance is a reconfigure gap, not a seamless seam | LOW | Engine sprint | US-R1F-02 |
 | ENH-002 | The UI loudness readout is L/R-only on a >2-channel output | LOW | pool | US-R1F-07 |
-| KI-SET-03 | A device volume lowered on Pure stays lowered on Enhanced; the readout doesn't show it | LOW | pool | US-R1F-05 |
 | KI-EQ-02 | Esc during a graph drag re-announces "Bring back edits" | LOW | pool | US-R1F-06 |
 | KI-EQ-03 | Stacked-shadow darkening on EQ / Settings cards (dark + Reduce Transparency / Increase Contrast) — unverified | LOW | pool | US-R1F-06 |
 | KI-DEV-02 | HDMI / DisplayPort outputs read "(Unknown)" | LOW | pool | US-R1F-06 |
-| KI-LIB-05 | `.opus` / `.oga` files are playable but never scanned | LOW | R1.1-A (was S11) | US-R1F-16 |
+| KI-SEC-01 | With FFmpeg turned on (it is off by default), a third-party C parser reads files Apple can't, inside the app | LOW | pool (an XPC helper, or deletion after the corpus check — FD-3) | US-R1F-16 |
 | KI-LIB-06 | Genres split on "/" ("Singer/Songwriter" → two tiles) | LOW | pool | US-R1F-04 |
 | KI-LIB-07 | Case / Unicode variants split artist and genre tiles | LOW | pool | US-R1F-04 |
 | KI-LIB-08 | Sorting Songs by Album orders each album's tracks by scan order | LOW | pool | US-R1F-04 |
@@ -113,15 +110,6 @@ pick still opening when the song ends, or one of another rate or width, gives a 
 `QueueAdvance.nextIndex` returns a random pick before the end-of-queue check, and nothing records which songs have
 played (`Sources/PlaybackQueueKit/QueueAdvance.swift:38-45`). With Shuffle on and Repeat off, random songs repeat
 forever.
-
-### KI-PB-05 — Pure on / off does not apply at a gapless seam, though Settings says it does
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #3 · **Scheduled (2026-10-14):** R1.1-A (Pure honesty) · **Forward:** ~~US-R1F-01~~ US-R1F-13.
-
-The next track is armed on the path that is playing (`AudioEngineBridge+Gapless.swift:67-71`, the path read when the request is admitted); `pureModeEnabled`'s
-`didSet` only logs (`AudioViewModel.swift:106-108`). Settings still says "Starts with the next track."
-(`UI/Settings/PureModeSettingsSection.swift:18`, `UI/Settings/SignalPathStatus.swift:38`). The switch takes effect
-only at a manual start or a rate-change reconfigure.
 
 ### KI-PB-06 — After a relaunch the restored song shows `--:--` and its scrubber is dead
 
@@ -285,14 +273,8 @@ The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" 
 
 ## Settings and levels
 
-### KI-SET-03 — A device volume lowered on Pure stays lowered on Enhanced
-
-**Status:** OPEN (residual of breaker B post-R1 #5, partly fixed by 124178d in PR #85) · **Severity:** LOW ·
-**Scheduled (2026-10-14):** pool · **Forward:** US-R1F-05.
-
-Every Enhanced start re-applies the app's gain (`AudioEngineBridge+Playback.swift:110`), so the old double-attenuation
-and wrong readout are gone. The device volume set on Pure is the macOS output volume, and the Enhanced readout shows
-only the app's gain, not it.
+*(KI-SET-03 — a device volume lowered on Pure stayed lowered on Enhanced — closed in R1.1-A; see
+[Closed](#fixed-in-r11-a--pure-honesty-master-gain-on-pure-ffmpeg-as-an-opt-in-branch-r11apure-ffmpeg).)*
 
 ---
 
@@ -400,14 +382,6 @@ folder. A relaunch's catch-up may retry the pending tags (not verified).
 The drag payload is the row under the pointer (`UI/Library/SongRowInteraction.swift:33`,
 `LibraryTrackDragItem(trackID:)`). The toast is honest ("Added 1 song"); the context menu's Add to Playlist takes the
 whole selection.
-
-### KI-LIB-05 — `.opus` / `.oga` files are playable but never scanned
-
-**Status:** OPEN · **Severity:** LOW · **Source:** breaker A post-R1 #3 · **Scheduled (2026-10-14):** R1.1-A (Apple decodes Opus natively on macOS 26 — council R-19) · **Forward:** ~~S11 (format hardening)~~ US-R1F-16.
-
-`LibraryScanner.supportedExtensions` (`Sources/LibraryScan/LibraryScanner.swift:50-52`) has no `opus` / `oga`, while the
-decoder plays them through the optional FFmpeg fallback and the extractor reads their tags
-(`MetadataExtractor.swift:78`). PR #85 (f69421d) added only `.aif`. The scan says nothing about skipped files.
 
 ### KI-LIB-06 — Genres split on "/"
 
@@ -556,16 +530,28 @@ An Enhanced start races the output-device rule (`AudioEngineBridge+Playback.swif
 explored interleavings end silent or on the wrong device, for example Play right after Bluetooth headphones connect.
 R1's device-return fix (N92) did not change this.
 
-### KI-SEC-01 — If FFmpeg is installed, it parses every FLAC / Ogg / Opus file first, from a user-writable path
+### KI-SEC-01 — With FFmpeg turned on, a third-party C parser reads files Apple can't, inside the app
 
-**Status:** OPEN · **Severity:** MEDIUM (security; only with FFmpeg installed) · **Source:** council C-99 (the
-pre-mortem §3.1) · **Scheduled (2026-10-14):** R1.1-A (FD-3) · **Forward:** US-R1F-16.
+**Status:** OPEN, narrowed in R1.1-A · **Severity:** LOW (security; only with FFmpeg turned on) · **Source:** council
+C-99 (the pre-mortem §3.1) · **Scheduled (2026-10-15):** pool — an XPC helper for the parse, or deletion after the
+real-corpus check (FD-3 keeps FFmpeg) · **Forward:** US-R1F-16.
 
-The background metadata pass runs FFmpeg's demuxers first on every `flac`, `ogg`, `oga` and `opus` file
-(`LibraryScan/MetadataExtractor.swift:55-62`). The libraries are `dlopen`ed from `/opt/homebrew/lib` (user-writable),
-`/usr/local/lib`, or by bare leaf name (`AudioDSP/FileDecodeSource.cpp:386-399`), in a process with no sandbox. One
-crafted file could run code with the user's rights. FD-3 keeps FFmpeg as an opt-in, off by default, loaded only from
-fixed absolute paths; the scan uses it only when it is on.
+What R1.1-A closed ("FFmpeg only when asked for"): FFmpeg is an opt-in, **off by default** (Settings ▸ Formats, "Use
+FFmpeg for other formats"; `ListeningSettings.useFFmpeg`). While it is off nothing calls `dlopen` for it
+(`FFmpegLoader.h`; the null test counts the calls): the tag pass and Pure's decode fallback use Apple only. The tag
+pass reads through Apple first for every format, FFmpeg only when it is on and Apple can't read the file — so it no
+longer runs first on every FLAC / Ogg / Opus. When on, it loads only from `/opt/homebrew/lib` or `/usr/local/lib`, by
+its exact major-versioned name (no bare name, `@loader_path` or DYLD search), only when the file the path resolves to is
+owned by root or the user and neither it nor its folder is writable by anyone else (`vetLibrary`), opened by that
+resolved path and checked with `dladdr` to be that file; the major-version guard stays.
+
+**What remains, when the listener turns it on:** FFmpeg's demuxers and decoders are C code that parses files from
+anywhere — a downloaded album — inside the app's own process, with the user's rights, no sandbox and no XPC wall. A
+crafted file Apple can't read reaches them. Its own dependencies (libdav1d, libx264 …) load by the absolute install
+names Homebrew built them with, not vetted one by one. A notarized build would need `disable-library-validation` to
+load it at all. *(As found at `a206107`:)* the tag pass ran FFmpeg's demuxers first on every `flac`, `ogg`, `oga` and
+`opus` file, loaded from `/opt/homebrew/lib` (user-writable), `/usr/local/lib`, or by bare leaf name
+(`FileDecodeSource.cpp:386-399`), whenever FFmpeg was installed.
 
 ### KI-PURE-01 — On Pure, each pause and resume switches the DAC's sample rate twice
 
@@ -609,11 +595,12 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 — release readiness, deferred (FD-7, 2026-10-14) |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, d540c5c; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
-| **Pure Mode waits while Master Gain is turned down**: with Master Gain below 0 dB, a start plays Enhanced at that level, and Settings says why ("Master Gain is turned down … it waits until Master Gain is back at 0 dB") | R1.1-A (council C-29 slice, KI-SET-02): Pure plays the file untouched at the device's own volume, so engaging it with a cut would play louder. `AudioViewModel.startsOnPure`. On Pure the slider sets the device's volume, as before | — (by design; the whole C-29 "one level" is pool) |
+| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure stops; a volume-key press in Pure is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain") | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). A device unplugged while lowered gets its level back at the next launch, or the next Pure start on it | — (by design) |
 | **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, d540c5c; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool (council C-57) |
-| **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp:7-16` (Apple first, FFmpeg only if Apple can't open the file); `AudioEngineBridge+Gapless.swift:37-42` | US-PLAY-07 → S11-lite, through the FFmpeg opt-in (FD-3, 2026-10-14) |
+| **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. Rare since R1.1-A: FFmpeg is an opt-in, used only for a file Apple can't open (Apple opens Ogg Opus and Vorbis on macOS 26). AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp` (Apple first; FFmpeg only if Apple can't open the file and it is on); `AudioEngineBridge+Gapless.swift:37-42` | US-PLAY-07 → S11-lite |
+| **FFmpeg plays only through Pure Mode**: a file only FFmpeg reads (FFmpeg on) plays in Pure on a device Pure can use; Enhanced decodes through Apple only, so there it can't play. FFmpeg turned off after it loaded stays in memory until the app quits (nothing new uses it) | R1.1-A (FD-3): Enhanced is `AVAudioFile`; Pure's decoder is `FileDecodeSource` | — |
 | **DSD** is not supported | Deferred past R2, gated on a DSD DAC ([sprint-plan](../sprints/sprint-plan.md) §5) | post-R2 |
 
 ---
@@ -718,6 +705,64 @@ one, bit for bit. *The original entry:*
 *(As found at `481c822`:)* The dual-release branch is dead code (`LimiterModule.h:398-416`); in practice it is one 500 ms release. A single snare
 hit that touches the ceiling ducks the music for about a second. Only audible when the limiter engages (Enhanced, with
 Intensity above 0 or the EQ on).
+
+### Fixed in R1.1-A — Pure honesty, Master Gain on Pure, FFmpeg as an opt-in (branch `r1.1a/pure-ffmpeg`)
+
+Council C-34, C-33, C-29, C-99, C-35 and C-08's scanner half (US-R1F-13, US-R1F-16, US-R1F-05); founder decisions FD-3
+and 2026-10-15 ("turn the Mac's volume down instead"). Six commits, named by their subjects: "the scan admits .opus
+and .oga", "FFmpeg only when asked for", "the FFmpeg seek lands on the frame asked for …", "Pure says why", "Master
+Gain on Pure is the device's own volume — the rule …", "in Pure, Master Gain turns the output device's own volume
+down …". Each fix landed with its red test first (C++: `FFmpegLoaderTests.inc`, `PureModeTests.inc`,
+`FileDecodeTests.inc`; Swift: `LibraryScanFormatsGTests`, `MetadataFFmpegOptInTests`, `FLACPictureTests`,
+`MasterGainOnPureTests`, `PureModeReasonTests`, `ListeningSettingsTests`, `SettingsStoreTests`).
+
+- **C-34 — "Pure unavailable" never said why.** One named reason (`PureModeReason`: the C++ policy's codes across the
+  C boundary, documented in `PureModeBridge.h`, plus the engine's own "waits for Master Gain") is shown beside the Now
+  Playing badge ("Pure off: Bluetooth", "Pure off: needs FFmpeg", "Not bit-perfect" …), its sentence on hover, in
+  Settings ▸ Pure Mode, and to VoiceOver. Pure's pre-check reads the file through Pure's own decoder
+  (`pureModeEvaluateFile`), not a second `AVAudioFile` probe.
+- **C-33 — a 24-bit file on a 16-bit-only device was labelled bit-perfect.** `bitExactness`: Pure decodes through
+  float32 (24 significant bits), so an integer source is bit-perfect only up to min(24, the device's bits). It plays,
+  labelled "Not bit-perfect" with both depths. (The truncation is still undithered — Pure writes what it decoded.)
+- **C-35 — the FFmpeg seek ignored the stream's start time, and a refused seek skipped the buffered audio.** Both
+  count from the stream's start now (`streamStart`), and a refused seek moves nothing
+  (`FileDecode_Seek_FFmpegHonoursStreamStart`, `_RefusedKeepsBufferedAudio`; fixture `Tests/Fixtures/ffmpeg-seek/`).
+- **The FFmpeg tag pass had no fallback for what only it read.** With FFmpeg off by default, Apple reads FLAC / Ogg /
+  Opus Vorbis comments in full (track, disc and genre added), a lossless file's source depth from its format flags, and
+  a FLAC's cover — its PICTURE block, which AVFoundation doesn't expose, read in bounds-checked Swift (`FLACPicture`,
+  also Ogg's base64 METADATA_BLOCK_PICTURE). VerifyLibraryStore's real-file checks pass with FFmpeg off.
+
+#### KI-PB-05 — Pure on / off does not apply at a gapless seam, though Settings says it does
+
+**Status:** ✅ CLOSED in R1.1-A, "Pure says why" (US-R1F-13). The copy says when the switch takes effect: Settings ▸ Pure Mode reads "Takes effect the next time you start a song", and the card "Pure Mode starts the next time you start a song" — a gapless join keeps the path, as the engine does. (Applying the switch at the next seam is not built.) *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #3 · **Scheduled (2026-10-14):** R1.1-A (Pure honesty) · **Forward:** US-R1F-13 (was US-R1F-01).~~
+
+The next track is armed on the path that is playing (`AudioEngineBridge+Gapless.swift:67-71`, the path read when the request is admitted); `pureModeEnabled`'s
+`didSet` only logs (`AudioViewModel.swift:106-108`). Settings still says "Starts with the next track."
+(`UI/Settings/PureModeSettingsSection.swift:18`, `UI/Settings/SignalPathStatus.swift:38`). The switch takes effect
+only at a manual start or a rate-change reconfigure.
+
+#### KI-SET-03 — A device volume lowered on Pure stays lowered on Enhanced
+
+**Status:** ✅ CLOSED in R1.1-A, "in Pure, Master Gain turns the output device's own volume down" (council C-29: one level across both paths). Master Gain is one control: on Pure the engine turns the device's own volume down by it from the level it found (`MasterGainOnPure`), and puts that level back when Pure stops — so Enhanced plays the cut in the app on the device's own level, never on a lowered one. The listener's own change in Pure (the volume keys) is kept, read as a change to the Mac's own volume. "Silent" still sets the device to its minimum, which on some devices is not silence. *The original entry:*
+
+~~**Status:** OPEN (residual of breaker B post-R1 #5, partly fixed by 124178d in PR #85) · **Severity:** LOW ·
+**Scheduled (2026-10-14):** pool · **Forward:** US-R1F-05.~~
+
+Every Enhanced start re-applies the app's gain (`AudioEngineBridge+Playback.swift:110`), so the old double-attenuation
+and wrong readout are gone. The device volume set on Pure is the macOS output volume, and the Enhanced readout shows
+only the app's gain, not it.
+
+#### KI-LIB-05 — `.opus` / `.oga` files are playable but never scanned
+
+**Status:** ✅ CLOSED in R1.1-A, "the scan admits .opus and .oga" (C-08 scanner half). Apple's decoder opens Ogg Opus and Ogg Vorbis on macOS 26, so no FFmpeg is needed; a format table holds every extension the scan admits to a real file that opens (`LibraryScanFormatsGTests`). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** LOW · **Source:** breaker A post-R1 #3 · **Scheduled (2026-10-14):** R1.1-A (Apple decodes Opus natively on macOS 26 — council R-19) · **Forward:** US-R1F-16 (was S11, format hardening).~~
+
+`LibraryScanner.supportedExtensions` (`Sources/LibraryScan/LibraryScanner.swift:50-52`) has no `opus` / `oga`, while the
+decoder plays them through the optional FFmpeg fallback and the extractor reads their tags
+(`MetadataExtractor.swift:78`). PR #85 (f69421d) added only `.aif`. The scan says nothing about skipped files.
 
 ### Fixed in R1.1-A — playback correctness (branch `r1.1a/transport`)
 
@@ -926,8 +971,9 @@ output device the user chose is not kept either (DEV-1).
 **Status:** ✅ CLOSED in R1.1-A (the C-29 slice), "Pure waits while Master Gain is turned down". Pure engages only with
 Master Gain at 0 dB (`AudioViewModel.startsOnPure`); while it is turned down, Pure waits, Enhanced keeps playing at
 the listener's level, and the Pure Mode card says why. Switching Enhanced → Pure never raises the level, in a session
-or after a relaunch. The rest of C-29 (one level across both paths, "Silent" on a device) stays in the pool with
-KI-SET-03; see *Known limitations*. *The original entry:*
+or after a relaunch. *(Superseded later in R1.1-A by "in Pure, Master Gain turns the output device's own volume down"
+(founder, 2026-10-15): Pure engages at any level, the device lowered by the cut; it waits only on a device with no
+volume the app can set — KI-SET-03, closed above, is the rest of C-29.)* *The original entry:*
 
 ~~**Status:** OPEN (by design today; close to hearing safety) · **Severity:** MEDIUM · **Scheduled (2026-10-14):**
 R1.1-A (FD-2) · **Forward:** US-R1F-05.~~
