@@ -162,7 +162,11 @@ namespace
     // NULL handle (ffmpeg dylib unresolved at runtime) is fine — every accessor is NULL-safe.
     void runFfmpegMetadataLeg()
     {
+        // FFmpeg is an opt-in, off by default (R1.1-A, FD-3): turn it on for this leg, as the
+        // listener's setting would, and back off after.
+        ffmpegSetEnabled(1);
         void* handle = ffmpegOpenMetadata(kFlacPath);
+        ffmpegSetEnabled(0);
         if (handle == nullptr)
         {
             return;

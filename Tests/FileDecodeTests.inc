@@ -261,11 +261,26 @@ namespace
     auto clearBackend() -> void { unsetenv("ADAPTIVESOUND_DECODER"); }
 
     // BackendGuard: RAII wrapper that forces a backend on construction and clears it on
-    // destruction. Copy and move are deleted so an early return cannot leave the env set.
+    // destruction. Copy and move are deleted so an early return cannot leave the env set. Forcing
+    // FFmpeg also turns it on (the listener's opt-in, off by default — R1.1-A, FD-3) unless
+    // `enableFFmpeg` is false, and the switch is put back as it was.
     struct BackendGuard
     {
-        explicit BackendGuard(Backend backend) { forceBackend(backend); }
-        ~BackendGuard() { clearBackend(); }
+        explicit BackendGuard(Backend backend, bool enableFFmpeg = true)
+            : ffmpegWasOn(AdaptiveSound::ffmpeg::isEnabled())
+        {
+            forceBackend(backend);
+            if (backend == Backend::FFmpeg)
+            {
+                AdaptiveSound::ffmpeg::setEnabled(enableFFmpeg);
+            }
+        }
+        ~BackendGuard()
+        {
+            clearBackend();
+            AdaptiveSound::ffmpeg::setEnabled(ffmpegWasOn);
+        }
+        bool ffmpegWasOn;
         BackendGuard(const BackendGuard&) = delete;
         BackendGuard(BackendGuard&&) = delete;
         auto operator=(const BackendGuard&) -> BackendGuard& = delete;

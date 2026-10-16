@@ -13,12 +13,13 @@
 // A native-integer passthrough is a future follow-up; 32-bit-int PCM files are rare.
 //
 // Apple-native (AudioToolbox / ExtAudioFile) — no third-party dependency, nothing to bundle.
-// FFmpeg is reserved for the exotic formats Apple cannot decode (DSD/Opus/Ogg), added later.
+// FFmpeg is an opt-in fallback for a file Apple cannot open, off by default (FFmpegLoader.h).
 //
 // pimpl: the AudioToolbox / threading / ring details stay out of this header so consumers (the
 // engine bridge, the signal-path UI) need not pull in CoreAudio.
 //
 
+#include "DeviceCapability.h"
 #include "PureModeSource.h"
 
 #include <cstdint>
@@ -35,6 +36,20 @@ namespace AdaptiveSound
         FFmpeg = 1,
     };
 
+    // What a file is to Pure's decoder, read without starting a decode (FileDecodeSource::probe).
+    struct FileProbe
+    {
+        enum class Outcome : uint8_t
+        {
+            Opened,      // a decoder opened it; `format` and `decoder` say what it is
+            NeedsFFmpeg, // Apple's decoder can't read it, and FFmpeg is off (FFmpegLoader.h)
+            Unreadable,  // no decoder that may run can read it (or it isn't there)
+        };
+        Outcome outcome = Outcome::Unreadable;
+        FileFormat format;
+        DecoderKind decoder = DecoderKind::Apple;
+    };
+
     class FileDecodeSource final : public PureModeSource
     {
       public:
@@ -48,7 +63,12 @@ namespace AdaptiveSound
 
         // Off-RT: open `path`, read its native format, start the background decode thread.
         // Returns false on any failure (missing/unsupported file, bad format, > 8 channels).
+        // Apple's decoder first; FFmpeg only when Apple can't open it AND FFmpeg is on.
         [[nodiscard]] bool open(const char* path);
+
+        // Off-RT: what `path` is to the decoder open() would pick — the same backends, in the same
+        // order — read and closed again, with no decode thread. Why it won't open, when it won't.
+        [[nodiscard]] static FileProbe probe(const char* path);
 
         // Off-RT: stop + join the decode thread and close the file. Idempotent; called by the dtor.
         void close() noexcept;

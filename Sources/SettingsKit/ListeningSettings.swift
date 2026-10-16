@@ -2,7 +2,8 @@
 // council C-102, C-12, DEV-1): one typed value, kept whole by `SettingsStore`.
 //
 // A NEW INSTALL PLAYS FAITHFULLY. Every default here is the music as it was recorded: Pure off, Master
-// Gain at unity, crossfeed off, the queue in order, nothing repeated. Two things the app also starts
+// Gain at unity, crossfeed off, the queue in order, nothing repeated — and FFmpeg, an in-process parser
+// for files from anywhere, off (founder decision FD-3). Two things the app also starts
 // faithfully are not kept here: Intensity, hidden and held at 0 until its effects are real (S17), so
 // never restored; and the EQ, which keeps its own per-output memory (`EQStore`, `eqStateV2`) and starts
 // Off on a new install.
@@ -36,6 +37,9 @@ public struct ListeningSettings: Equatable, Sendable {
     /// The UID of the output device the user chose (a pick, or turning "Keep playback on this device"
     /// on), `nil` when none is chosen. The device the app launches on is never a choice.
     public var chosenOutputUID: String?
+    /// "Use FFmpeg for other formats": FFmpeg may read a file Apple's decoder can't (R1.1-A, FD-3).
+    /// Off by default.
+    public var useFFmpeg: Bool
 
     /// Settings as given; every default is the faithful one (`faithful`).
     public init(
@@ -46,7 +50,8 @@ public struct ListeningSettings: Equatable, Sendable {
         shuffle: Bool = false,
         repeatMode: Int = 0,
         keepPlaybackOnDevice: Bool = true,
-        chosenOutputUID: String? = nil
+        chosenOutputUID: String? = nil,
+        useFFmpeg: Bool = false
     ) {
         self.pureMode = pureMode
         self.masterGainDecibels = masterGainDecibels
@@ -56,6 +61,7 @@ public struct ListeningSettings: Equatable, Sendable {
         self.repeatMode = repeatMode
         self.keepPlaybackOnDevice = keepPlaybackOnDevice
         self.chosenOutputUID = chosenOutputUID
+        self.useFFmpeg = useFFmpeg
     }
 
     /// A new install: the music as it was recorded.
@@ -86,7 +92,7 @@ public struct ListeningSettings: Equatable, Sendable {
 extension ListeningSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case version, pureMode, masterGainDecibels, crossfeed, crossfeedStrength, shuffle, repeatMode
-        case keepPlaybackOnDevice, chosenOutputUID
+        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg
     }
 
     /// The format this build writes.
@@ -106,7 +112,8 @@ extension ListeningSettings: Codable {
             shuffle: container.field(.shuffle) ?? faithful.shuffle,
             repeatMode: Self.validRepeatMode(container.field(.repeatMode)),
             keepPlaybackOnDevice: container.field(.keepPlaybackOnDevice) ?? faithful.keepPlaybackOnDevice,
-            chosenOutputUID: container.field(.chosenOutputUID).flatMap { (uid: String) in uid.isEmpty ? nil : uid }
+            chosenOutputUID: container.field(.chosenOutputUID).flatMap { (uid: String) in uid.isEmpty ? nil : uid },
+            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg
         )
     }
 
@@ -121,6 +128,7 @@ extension ListeningSettings: Codable {
         try container.encode(repeatMode, forKey: .repeatMode)
         try container.encode(keepPlaybackOnDevice, forKey: .keepPlaybackOnDevice)
         try container.encodeIfPresent(chosenOutputUID, forKey: .chosenOutputUID)
+        try container.encode(useFFmpeg, forKey: .useFFmpeg)
     }
 }
 

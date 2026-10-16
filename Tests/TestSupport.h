@@ -39,12 +39,18 @@
 #include <utility>
 #include <vector>
 
+#include <dlfcn.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "DeviceCapability.h"
 #include "DSPKernel.h"
 #include "EQ/EQModule.h"
 #include "EQ/EQTargets.h"
 #include "EQ/GraphicEQDesigner.h"
 #include "EQDesignBridge.h"
+#include "FFmpegBridge.h"
+#include "FFmpegLoader.h"
 #include "FileDecodeSource.h"
 #include "FlushToZero.h"
 #include "GaplessSource.h"
@@ -54,6 +60,7 @@
 #include "Loudness/LufsMeter.h"
 #include "Loudness/TrackLoudnessProfile.h"
 #include "Loudness/TrackLoudnessProfiler.h"
+#include "MetadataBridge.h"
 #include "MultichannelView.h"
 #include "PureModeFormat.h"
 #include "PureModeSource.h"
