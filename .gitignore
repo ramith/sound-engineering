@@ -30,10 +30,9 @@ Thumbs.db
 # (self-made/public-domain tagged audio; see Tests/Fixtures/artwork-audio/README.md).
 !Tests/Fixtures/artwork-audio/*
 
-# Compiled test binaries (built locally by Scripts/build-null-test.sh)
+# Compiled test binaries (built locally by scripts/build-null-test.sh and scripts/validate-lufs.sh)
 Tests/DSPKernelNullTest
 Tests/lufs-tool
-Tests/EQSafetyClampTest
 # Leak-detection harness binaries + plant-a-leak log (built by scripts/build-leak-check.sh)
 Tests/HandleLeakHarness
 Tests/HandleLeakHarness-planted

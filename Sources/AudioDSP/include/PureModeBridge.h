@@ -11,7 +11,7 @@
 // Two implementation files back this surface:
 //   * PureModeBridgePolicy.cpp — CoreAudio-FREE; implements ONLY pureModeEvaluate(). Compiles into
 //     the C++ test harness (which links no CoreAudio).
-//   * PureModeBridge.mm        — CoreAudio (Obj-C++) glue for capability querying + the engine.
+//   * PureModeBridge.cpp       — CoreAudio glue for capability querying + the engine.
 //
 // Opaque-handle convention (mirrors DeviceBridge.h): the engine is owned through a void* handle;
 // the caller creates it with pureModeEngineCreate() and destroys it with pureModeEngineDestroy()

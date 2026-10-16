@@ -103,14 +103,14 @@ if ((${#swift_files[@]})); then
 fi
 
 # ---------------------------------------------------------------------------
-# 3. clang-tidy (blocking; graceful skip if unavailable)
+# 3. clang-tidy (blocking; REQUIRED — a missing clang-tidy fails the commit)
 # ---------------------------------------------------------------------------
 if ((${#cpp_files[@]})); then
     if [[ -n "$CLANG_TIDY" ]]; then
         # Parse flags come from the single source of truth shared with the strict-gate
         # and build-null-test.sh (scripts/lib/cxx-analysis-flags.sh, sourced above with the
         # clang-tidy resolver), so the hook analyses the SAME translation units the
-        # compiler builds (incl. the -isystem/-D flags that make FileDecodeSource.mm's
+        # compiler builds (incl. the -isystem/-D flags that make FileDecodeSource.cpp's
         # __has_include(<libavformat/...>) FFmpeg branch parse). See the library header.
         # Constant across files: resolve once (xcrun etc.) rather than per file.
         core_flags=($(cxx_analysis_core_flags))
@@ -141,7 +141,7 @@ if ((${#cpp_files[@]})); then
         done
     else
         red "❌ clang-tidy not found — REQUIRED for staged C++ files."
-        red "    Install with: brew install llvm  (see docs/development/DEVELOPMENT.md), or bypass with --no-verify."
+        red "    Install with: brew install llvm@${CXX_CLANG_TIDY_MAJOR_PIN}  (see docs/development/DEVELOPMENT.md), or bypass with --no-verify."
         fail=1
     fi
 fi

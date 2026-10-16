@@ -1,14 +1,14 @@
 #!/bin/bash
-# Scripts/build-null-test.sh
+# scripts/build-null-test.sh
 #
 # Builds and optionally runs the DSPKernel null test.
 #
 # Usage:
-#   ./Scripts/build-null-test.sh                 # build + run (default)
-#   ./Scripts/build-null-test.sh --build         # build only, do not run
-#   ./Scripts/build-null-test.sh --sanitize      # build + run with ASan + UBSan
-#   ./Scripts/build-null-test.sh --tsan          # build + run with ThreadSanitizer
-#   ./Scripts/build-null-test.sh --release-strict # -O2 -Werror compile only (no run)
+#   ./scripts/build-null-test.sh                 # build + run (default)
+#   ./scripts/build-null-test.sh --build         # build only, do not run
+#   ./scripts/build-null-test.sh --sanitize      # build + run with ASan + UBSan
+#   ./scripts/build-null-test.sh --tsan          # build + run with ThreadSanitizer
+#   ./scripts/build-null-test.sh --release-strict # -O2 -Werror compile only (no run)
 #
 # --sanitize / --tsan add runtime instrumentation (mutually exclusive: ASan and
 # TSan cannot coexist in one binary). Both imply -g -fno-omit-frame-pointer so

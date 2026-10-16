@@ -17,8 +17,9 @@
 # code. The stylistic-modernize backlog is deferred to a dedicated sweep (§5.3: don't enable
 # rules incompatible with the work).
 #
-# clang-tidy runs on STAGED files in the pre-commit hook (.githooks/pre-commit); the
-# strict-gate uses clang-format + build -Werror + sanitizers as the repo-wide C++ net.
+# clang-tidy runs on STAGED files in the pre-commit hook (.githooks/pre-commit) and over every
+# AudioDSP + Tests translation unit in the strict gate (scripts/strict-gate.sh, beside clang-format,
+# the -Werror build and the sanitizers).
 Checks: >
   -*,
   bugprone-*,
