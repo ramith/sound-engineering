@@ -567,7 +567,10 @@ load it at all. *(As found at `a206107`:)* the tag pass ran FFmpeg's demuxers fi
 Pause is a stop (`AudioViewModel+Transport.swift:45-47`); on Pure, stop runs `tearDownPure()`, which releases hog mode
 and restores the device's original nominal rate (`HALOutputEngine.mm:350-351`). A 44.1 kHz file on a DAC that sits at
 48 kHz switches rate at every pause and again at resume. Many DACs click or mute when that happens, and another app
-can take the device during the pause.
+can take the device during the pause. *(R1.1-A, founder 2026-10-16:)* the device's **volume** no longer moves with it:
+the engine knows a pause from a stop (`stopAudio(epoch:pausing:)`), and Pure's hold on the device's volume lasts while
+Pure is the device's path (`MasterGainOnPure`, `PureVolumeEvent`) — a pause keeps the level Pure set; only the rate
+and hog mode still go and come back.
 
 *(KI-UI-02 — the spectrum analyser read about 4 dB high and two 20 Hz timers ran while idle — and KI-UI-03 — the
 analysis workers polled about 200 times a second while paused — were fixed in R1.1-A; see
@@ -584,7 +587,7 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 — release readiness, deferred (FD-7, 2026-10-14) |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, d540c5c; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
-| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure stops; a volume-key press in Pure is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain") | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). A device unplugged while lowered gets its level back at the next launch, or the next Pure start on it | — (by design) |
+| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure is left — a stop that ends playback, Enhanced starting, the output moving, quit — but **not at a pause** (founder 2026-10-16: playback resumes there, so the level stays and the Mac's volume indicator doesn't jump); a volume-key press in Pure, or while paused in it, is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain") | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). A device unplugged while lowered gets its level back at the next launch, or the next Pure start on it | — (by design) |
 | **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, d540c5c; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool (council C-57) |
@@ -790,7 +793,12 @@ down …". Each fix landed with its red test first (C++: `FFmpegLoaderTests.inc`
   (`pureModeEvaluateFile`), not a second `AVAudioFile` probe.
 - **C-33 — a 24-bit file on a 16-bit-only device was labelled bit-perfect.** `bitExactness`: Pure decodes through
   float32 (24 significant bits), so an integer source is bit-perfect only up to min(24, the device's bits). It plays,
-  labelled "Not bit-perfect" with both depths. (The truncation is still undithered — Pure writes what it decoded.)
+  labelled "Not bit-perfect" with both depths. *(Follow-up, founder 2026-10-16:)* where the device's integer word is
+  narrower than what Pure carries, the float → integer step adds TPDF dither (±1 LSB, triangular, rounded to nearest —
+  `convertFloatToNativeDithered`, `ditherWhenConverting`) instead of truncating: a −100 dBFS 1 kHz tone into int16
+  comes out at −100.0 dBFS (truncation: silence); at −80 dBFS the 3rd / 5th harmonics fall from −97.9 / −115.6 to
+  −139.0 / −150.4 dBFS; the error has no DC and the same power (¼ LSB²) at every input fraction. Exact depth stays
+  bit-exact.
 - **C-35 — the FFmpeg seek ignored the stream's start time, and a refused seek skipped the buffered audio.** Both
   count from the stream's start now (`streamStart`), and a refused seek moves nothing
   (`FileDecode_Seek_FFmpegHonoursStreamStart`, `_RefusedKeepsBufferedAudio`; fixture `Tests/Fixtures/ffmpeg-seek/`).
