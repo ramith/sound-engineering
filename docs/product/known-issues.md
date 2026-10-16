@@ -53,7 +53,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
 | KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | pool (first candidate) | US-R1F-06 |
 | KI-DEV-03 | An Enhanced start just after a device connects can end silent or on the wrong device | MEDIUM | Engine sprint | EP-PLAYENGINE |
-| KI-LIB-02 | Paused / failed folders are invisible; an emptied folder keeps its songs | MEDIUM | R1.1-A (the paused display: founder decision) | US-R1F-03 |
+| KI-LIB-02 | A folder whose walk fails outright says nothing; there is no Rescan control *(narrowed in R1.1-A: a paused folder says why)* | ~~MEDIUM~~ LOW | ~~R1.1-A~~ the rest: for triage | US-R1F-03 |
 | LIB-VOL-1 | A paused folder on a replaced or UUID-less drive stays paused; re-adding it loses play stats | MEDIUM | R1.1-B ("Use this drive") | US-R1F-03 |
 | KI-LIB-03 | A failed first metadata pass leaves "No Music Yet", with no retry | MEDIUM | pool | US-R1F-03 |
 | KI-LIB-04 | Dragging a multi-selection onto a playlist adds one song | MEDIUM | pool | US-R1F-04 |
@@ -78,7 +78,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-LIB-10 | An empty playlist says "No Tracks Yet" (the app says "songs") | LOW | pool | US-R1F-04 |
 | KI-UI-01 | VoiceOver keeps the app fairly busy while a song plays — its code causes are fixed (R1.1-A, live readouts); not yet confirmed with VoiceOver | LOW | R1.1-A (founder's VoiceOver check) | US-R1F-15 |
 | KI-ENG-02 | The main-thread stall self-test lacks the breaker's two extra modes and the 5 ms bound | internal | pool | US-R1F-07 |
-| KI-ENG-03 | A stale comment names the removed `loudnessMeter` field | internal | R1.1-A (hygiene) | US-R1F-07 |
 | KI-ENG-04 | The `eq-light-folded` picture sheet flakes in the renderer | internal | pool | US-R1F-07 |
 
 **Known limitations (by design or not yet built — not defects):** see [the last section](#known-limitations-by-design-or-not-yet-built).
@@ -334,10 +333,24 @@ into the RT tap for a path that is not yet primary.
 
 ## Library and playlists
 
-### KI-LIB-02 — Paused / failed folders are invisible; an emptied folder keeps its songs
+### KI-LIB-02 — ~~Paused / failed folders are invisible; an emptied folder keeps its songs~~ A folder whose walk fails outright says nothing; there is no Rescan control
 
-**Status:** OPEN (slightly improved by 95870a5, PR #85: launch now reconciles every folder and pauses an unreachable one)
-· **Severity:** MEDIUM · **Source:** breaker A post-R1 #8 · **Scheduled (2026-10-14):** R1.1-A (council C-55) · **Forward:** US-R1F-03.
+**Status:** OPEN, narrowed in R1.1-A (a paused folder says why — below) · **Severity:** ~~MEDIUM~~ LOW (the rest) ·
+**Source:** breaker A post-R1 #8 · **Scheduled (2026-10-14):** R1.1-A (council C-55); the rest awaits triage · **Forward:** US-R1F-03.
+
+*(R1.1-A, branch `r1.1a/hygiene` — founder decision 2026-10-15, "a paused folder says why":)* a paused folder's Music
+Folders row shows a folder with a question mark, in the warning colour, and its caption line — the slot "Scanning…"
+uses — gives the reason in a few words, one per refusal: "Not found — is its drive connected?", "Another drive is using
+this name", "Can’t confirm this is the folder’s drive", "Can’t open this folder — check its permissions", "Looks empty —
+songs kept". Hovering it says "Its songs stay in your library and playlists, and come back when it’s back."; VoiceOver
+reads the reason with the folder's path. The reason travels with the pause (`ReconcileState.paused`), and its words
+live in one place (`LibraryBrowseKit`, `MusicFolderStatus`). A volume mount or unmount now asks every folder for a walk,
+so a folder whose drive was just unplugged is paused at once instead of reading "watching". An emptied folder still
+keeps its songs, by design (S8.4's "never wipe on an empty walk"), and now says so. Tests first:
+`Tests/AdaptiveSoundTests/VolumeMonitorPauseTests.swift` (the unplugged folder read "watching" before the fix) and
+`Tests/LibraryBrowseKitTests/MusicFolderStatusTests.swift`; the `folder-paused` picture sheet shows the look. **Still
+open:** a walk that fails outright — a store error, not a refusal — says nothing on its row, and there is no Rescan
+control. *The entry as it stood:*
 
 `reconcileState` / `lastReconcileError` (`LibraryModel.swift:118-120`) have no UI reader. Songs on an unplugged drive
 look normal and fail only on play; a folder whose files were all deleted keeps listing them, because the empty-walk
@@ -350,7 +363,8 @@ can't read no longer pauses its folder. The walk is evidence of what it read: it
 not read and sweeps, and reads the tags of, the rest (`LibraryScanner`, `LibraryStore.sweepOrphans(…sparing:)`); only a
 folder it cannot open at all is still refused, `.incompleteWalk`. Showing a paused folder waits for a founder decision on
 its treatment. Also: the volume monitor does not walk a folder whose drive was just unplugged (`handleVolumeChange`
-walks only reachable folders), so its state can read "watching" until a walk of it is refused.)*
+walks only reachable folders), so its state can read "watching" until a walk of it is refused.)* *(Both fixed in
+R1.1-A, above.)*
 
 ### LIB-VOL-1 — A music folder is bound to its drive; a sweep needs evidence (R1 sweep-evidence fix)
 
@@ -446,13 +460,6 @@ run (or Activity Monitor's CPU) with VoiceOver on, Now Playing showing, a song p
 
 `Debug/MainThreadStallSelfTest.swift:27-43` runs `stop`, `start`, `device-loss` and `ended-advance` with a 25 ms bound
 (1% may exceed 5 ms). Port the breaker harness's engineQueue-holder and first-play modes and tighten to <5 ms.
-
-### KI-ENG-03 — A stale comment names the removed `loudnessMeter` field
-
-**Status:** OPEN (the residual of rev-arch's "removed APIs" note; the semgrep message and the gapless comments were
-fixed in 17bef99 / 13f6281, PR #86) · **Severity:** internal · **Scheduled (2026-10-14):** R1.1-A (hygiene, council C-88) · **Forward:** US-R1F-07.
-
-`Sources/AdaptiveSound/LoudnessMeterHandle.swift:25` still says "drops the wrapper (nils `loudnessMeter`)".
 
 ### KI-ENG-04 — The `eq-light-folded` picture sheet flakes in the renderer
 
@@ -741,6 +748,30 @@ one, bit for bit. *The original entry:*
 *(As found at `481c822`:)* The dual-release branch is dead code (`LimiterModule.h:398-416`); in practice it is one 500 ms release. A single snare
 hit that touches the ceiling ducks the music for about a second. Only audible when the limiter engages (Enhanced, with
 Intensity above 0 or the EQ on).
+
+### Fixed in R1.1-A — hygiene, and a paused folder says why (branch `r1.1a/hygiene`)
+
+Council C-86, C-87 and C-88, and the founder's paused-folder decision of 2026-10-15 (KI-LIB-02, narrowed — see its entry
+under Library). Also closed here, with no entry of its own: council C-87's latent crash — the effects AU's render block
+called the host's pull block without checking it, so a render with nothing connected upstream would have crashed (the
+spatial AU's copy of the same scaffold checked it). Both AUs now share one scaffold, and with it the one guard:
+nothing upstream answers "no connection". Its test came first: `Tests/AdaptiveSoundTests/InProcessAUNoUpstreamTests.swift`
+renders each AU through its own render block with no pull block; before the fix the test process died with a
+segmentation fault, after it both answer `kAudioUnitErr_NoConnection`. Removed as dead (no caller in the app, its gates
+or its tests; C-86): the AUs' direct create / destroy, parameter stubs, second publish plane and spatial routing
+override; `RtSwappableResource` (it leaked) and `PerChannel`; the Pure test tone `ToneSource`; and the Enhanced
+reference tone, which scheduled a mono buffer on the stereo player — a start now always names its file. Stale
+contracts, comments and scripts fixed (C-88): the dead `build-eq-clamp-test.sh`, the snapshot's always-true `bool`
+(`TripleBufferSnapshot`), the "swift test is broken" notes, and the docs-arch drift list.
+
+#### KI-ENG-03 — A stale comment names the removed `loudnessMeter` field
+
+**Status:** ✅ CLOSED in R1.1-A (hygiene, council C-88): the comment now says the wrapper is dropped by resetting the taps'
+analysis. *The original entry:*
+
+~~**Status:** OPEN (the residual of rev-arch's "removed APIs" note; the semgrep message and the gapless comments were fixed in 17bef99 / 13f6281, PR #86) · **Severity:** internal · **Scheduled (2026-10-14):** R1.1-A (hygiene, council C-88) · **Forward:** US-R1F-07.~~
+
+*(As found:)* `Sources/AdaptiveSound/LoudnessMeterHandle.swift:25` said "drops the wrapper (nils `loudnessMeter`)".
 
 ### Fixed in R1.1-A — Pure honesty, Master Gain on Pure, FFmpeg as an opt-in (branch `r1.1a/pure-ffmpeg`)
 

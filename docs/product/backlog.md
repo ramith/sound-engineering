@@ -210,7 +210,7 @@ As a **developer** I want a C++ DSP module framework that exposes a process(buff
 
 As a **developer** I want a single-producer, single-consumer ring buffer (e.g., TPCircularBuffer) wiring the UI/adaptivity thread to the DSP audio thread, so that all parameter updates arrive without mutex or blocking on the render callback.
 
-**Status (2026-10-13):** Shipped (different mechanism) · proven-by: `SnapshotConcurrencyTests.inc` under `make tsan` · delivered: S6 (#15) + PR #31 (wait-free SPSC triple-buffer snapshot) · `include/RtSwappableResource.h`, `include/SpscRing.h`, `AudioEngine/Realizer.h`. *(Not TPCircularBuffer: the control plane publishes a whole `TargetState` snapshot through an in-house triple buffer, and `SpscRing` carries the loudness samples. DEP-09 is therefore unused.)*
+**Status (2026-10-13):** Shipped (different mechanism) · proven-by: `SnapshotConcurrencyTests.inc` under `make tsan` · delivered: S6 (#15) + PR #31 (wait-free SPSC triple-buffer snapshot) · ~~`include/RtSwappableResource.h`~~ *(deleted in R1.1-A, council C-86: it had no production user after the SVF EQ, and it leaked)*, `include/SpscRing.h`, `AudioEngine/Realizer.h`. *(Not TPCircularBuffer: the control plane publishes a whole `TargetState` snapshot through an in-house triple buffer, and `SpscRing` carries the loudness samples. DEP-09 is therefore unused.)*
 
 **Acceptance Criteria:**
 - Parameter messages are consumed by the audio thread within the next render cycle after being enqueued (FR-ADAPT-02).
@@ -281,7 +281,7 @@ As a **Ramith** I want a bit-perfect playback path that drives the DAC directly 
 
 As a **developer** I want a runtime engine that selects between the bit-perfect **Pure** path and the DSP **Enhanced** path (with automatic fallback) on a per-session/per-track basis, so that the listener gets bit-exact output when no processing is requested and the full N-channel DSP graph when it is.
 
-**Status:** Shipped · proven-by: two-path engine (Pure = US-ENG-07; Enhanced = two-AU N-channel graph ≤7.1, 48 kHz float, EQ → loudness → limiter → spatial-passthrough) on the Tier-3 DSP spine (`Realizer` + `RtSwappableResource<T>` + steerable equal-power wet/dry intensity, intensity-0 = bit-exact anchor)
+**Status:** Shipped · proven-by: two-path engine (Pure = US-ENG-07; Enhanced = two-AU N-channel graph ≤7.1, 48 kHz float, EQ → loudness → limiter → spatial-passthrough) on the Tier-3 DSP spine (`Realizer` + ~~`RtSwappableResource<T>`~~ *(deleted in R1.1-A, council C-86: it had no production user after the SVF EQ, and it leaked)* + steerable equal-power wet/dry intensity, intensity-0 = bit-exact anchor)
 *(Amended 2026-10-10, Sprint EQ decision 25, PR #73: the EQ now runs AHEAD of the wet/dry blend — the dry tap is the EQ'd signal — so Intensity scales only the adaptive enhancement (today: loudness normalisation + crossfeed; Clarity / BRIR are stubs). The bit-exact anchor is now **Intensity 0 with the EQ Off** (`DSPKernel.cpp:191-210`, `EQModule::isIdentity`, with a 2 s hold); Intensity 0 with the EQ on plays EQ → limiter. Pure Mode is unchanged. Since PR #86 the main thread reads the engine only through `EngineSnapshot` / `TransportSnapshot` — architecture.md "Threading rules".)*
 **Traceability:** FR-PLAY-01, NFR-QUAL-01..04, NFR-PERF-01, CON-01, CON-02
 
@@ -302,7 +302,7 @@ As a **Marcus** I want the engine to measure program loudness to the BS.1770-5 s
 
 As a **developer** I want a comprehensive multi-discipline review of the shipped codebase before any new feature work, with the agreed fixes landed and the C++ gate green, so that we harden the foundation and confirm the DSP spine carries the Phase-2 adaptive vision before building eight sprints on it.
 
-**Status:** Shipped · proven-by: [`s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md) (4-discipline review, all three fix tiers landed) + the Tier-3 DSP spine (`Realizer` + `RtSwappableResource<T>` + steerable intensity + `GaplessController`) per [`s6-tier3-spine-design.md`](../sprints/s6-tier3-spine-design.md) + C++ null-test gate
+**Status:** Shipped · proven-by: [`s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md) (4-discipline review, all three fix tiers landed) + the Tier-3 DSP spine (`Realizer` + ~~`RtSwappableResource<T>`~~ *(deleted in R1.1-A, council C-86: it had no production user after the SVF EQ, and it leaked)* + steerable intensity + `GaplessController`) per [`s6-tier3-spine-design.md`](../sprints/s6-tier3-spine-design.md) + C++ null-test gate
 **Traceability:** NFR-PERF-01/03, NFR-QUAL-01..03, CON-01, CON-02
 
 ---
@@ -526,7 +526,7 @@ As a **Marcus** I want a "Recently Played" view that lists each track once with 
 
 As a **Tom** I want a graphic EQ where I can drag the response curve per band and see the resulting curve update in real time, so that I can fine-tune the sound to my preference as a manual escape hatch.
 
-**Status:** Shipped · proven-by: 31-band EQ path (migrated onto Tier-3 `RtSwappableResource<T>` + off-RT `Realizer` cascade realization) + `VerifyAUGraph` 31-band FR sweep. ⚠ Deviation: this backlog (here + the US-ENG-02 scaffold) specified a **10-band parametric** EQ; what shipped is a **31-band graphic** EQ — recorded for traceability honesty (band count + interaction model changed; FR-TONAL-01 intent still met). Still missing (not this Done): EQ **presets** (US-TON-06), **parametric** bands + **device-correction/AutoEq import** (US-TON-02) → S12/S13.
+**Status:** Shipped · proven-by: 31-band EQ path (migrated onto Tier-3 ~~`RtSwappableResource<T>`~~ *(deleted in R1.1-A, council C-86: it had no production user after the SVF EQ, and it leaked)* + off-RT `Realizer` cascade realization) + `VerifyAUGraph` 31-band FR sweep. ⚠ Deviation: this backlog (here + the US-ENG-02 scaffold) specified a **10-band parametric** EQ; what shipped is a **31-band graphic** EQ — recorded for traceability honesty (band count + interaction model changed; FR-TONAL-01 intent still met). Still missing (not this Done): EQ **presets** (US-TON-06), **parametric** bands + **device-correction/AutoEq import** (US-TON-02) → S12/S13.
 *(Rebuilt 2026-10-11 in **Sprint EQ**, PR #73 — decisions 21–33 in the [glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md), design in [docs/design/eq-lens/](../design/eq-lens/README.md). The old engine did not play what it showed (a 1–2 bell fitter under a summed-dB clamp); now: an accurate 31-band graphic EQ (`EQ/GraphicEQBands.h`, ±12 dB per point, `EQEditKit/EQBands.swift:24-33`), the 31 points the only thing on the graph, five **Tone** macros (Bass / Body / Mids / Presence / Air) that move them, a loudness-neutral output gain from the track's own spectrum, the played-curve graph, hold-to-Compare, "Bring back edits", per-output pins. The EQ now always plays in full, ahead of the Intensity blend (decision 25). Presets are US-TON-06 (shipped). Parametric bands + AutoEq import → S12; device correction → S13.)*
 **Traceability:** FR-TONAL-01, FR-UI-02
 
@@ -1048,7 +1048,7 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live Bootlegs," "Podcasts") and have the app treat each as an independent library root that I can play from, browse, or remove independently, so that I am not forced to consolidate my collection into one folder tree to get library features.
 
-**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:388-389`.)* *(R1, PR #88: each folder is bound to its drive's volume UUID — `folders.volume_uuid`, migration v8 — and a walk sweeps only on evidence, else pauses the folder — `LibraryScan/SweepRefusal.swift`.)* Open: KI-LIB-02 (paused / failed folders are invisible), LIB-VOL-1 (a paused folder on a replaced or UUID-less drive has no lossless way back).
+**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:388-389`.)* *(R1, PR #88: each folder is bound to its drive's volume UUID — `folders.volume_uuid`, migration v8 — and a walk sweeps only on evidence, else pauses the folder — `LibraryScan/SweepRefusal.swift`.)* Open: KI-LIB-02 (paused / failed folders are invisible; *R1.1-A: a paused folder says why on its row — a failed walk and a Rescan item remain*), LIB-VOL-1 (a paused folder on a replaced or UUID-less drive has no lossless way back).
 
 **Acceptance Criteria:**
 - The store's `folders` table supports multiple root rows (`parent_id IS NULL`, `is_root = 1`); no artificial limit on the number of roots (S8.1 schema already supports this — `folders.id` is a normal auto-increment key, not a singleton).
@@ -1686,13 +1686,13 @@ As a **Marcus** I want every track change to be seamless, so that gapless albums
 
 **Covers:** KI-GAP-01 (48 kHz seam gap), KI-GAP-02 (resampled seams switch ~0.4 s early; apply presentation latency), KI-GAP-03, KI-PB-02, ENH-001 (2-deep on-deck). Natural partner of S11's gapless Stage 2b (US-PLAY-07).
 **Priority:** Should | **Estimate:** 5 sp | **Traceability:** FR-PLAY-01, NFR-QUAL-03 · ~~candidate for **S11**~~
-**Scheduled (2026-10-14):** the **Engine sprint** (FD-4) — council C-21 (KI-GAP-01), C-22 (KI-GAP-04), C-23 (KI-GAP-02), C-24 (KI-GAP-05), KI-GAP-03, KI-PB-02, ENH-001 — inside [EP-PLAYENGINE](#ep-playengine--the-engine-sprint).
+**Scheduled (2026-10-14):** the **Engine sprint** (FD-4) — council C-21 (KI-GAP-01), ~~C-22 (KI-GAP-04)~~ C-22's cross-rate half, C-23 (KI-GAP-02), C-24 (KI-GAP-05), KI-GAP-03, KI-PB-02, ENH-001 — inside [EP-PLAYENGINE](#ep-playengine--the-engine-sprint). *(KI-GAP-04 closed in R1.1-A, brought forward by the founder 2026-10-14: a same-rate join plays through one converter; the Engine sprint keeps only a join to another rate or width.)*
 
 #### US-R1F-03 — Library honesty and safety
 
 As a **Ramith** I want the library to tell me when a folder is unreachable or a scan failed, and never to delete a playlist entry because a drive is unplugged, so that I can trust what I see.
 
-**Covers:** KI-LIB-01 (HIGH: Remove Missing must exclude songs under a paused / unreachable folder, or say so), KI-LIB-02 (show paused / failed folders; a Rescan item), KI-LIB-03 (retry a failed metadata pass; refresh Songs), LIB-VOL-1 (a lossless "use this drive" action on a paused folder, so nobody removes and re-adds it — founder, 2026-10-14).
+**Covers:** KI-LIB-01 (HIGH: Remove Missing must exclude songs under a paused / unreachable folder, or say so), KI-LIB-02 (show paused / failed folders; a Rescan item — *paused shown, with its reason, in R1.1-A*), KI-LIB-03 (retry a failed metadata pass; refresh Songs), LIB-VOL-1 (a lossless "use this drive" action on a paused folder, so nobody removes and re-adds it — founder, 2026-10-14).
 **Priority:** Must (KI-LIB-01) / Should | **Estimate:** 5 sp | **Traceability:** EP-LIBRARY, US-LIB-01, US-PLIST-02
 **Scheduled (2026-10-14):** **R1.1-A** — KI-LIB-01 without a tombstone (FD-10) and KI-LIB-02 (council C-55: a refusal scoped to the unreadable subfolder, "paused" shown). **R1.1-B** — LIB-VOL-1, "Use this drive" (C-54; founder: "later, via the council list"). **Pool** — KI-LIB-03 (with C-68).
 
@@ -1900,10 +1900,10 @@ As a **Marcus** I want the first launch on a fresh Mac to just work, so that not
 > [P3 state of the art](../reviews/2026-10-council/working/panel-p3-path-sota.md). **Replaces** the council's
 > one-week SFB adoption spike.
 
-**Carries (council rows):** C-07 (two engines); C-14 / F1 seam identity (KI-PB-16, KI-PB-17); C-21 (KI-GAP-01); C-22
-(KI-GAP-04); C-23 (KI-GAP-02); C-24 (KI-GAP-05); C-28 (KI-DEV-03); C-36 (seek and the decode ring); C-37 (one format
+**Carries (council rows):** C-07 (two engines); C-14 / F1 seam identity (KI-PB-16, KI-PB-17); C-21 (KI-GAP-01); ~~C-22
+(KI-GAP-04)~~ C-22's cross-rate half — a join to another rate or width; C-23 (KI-GAP-02); C-24 (KI-GAP-05); C-28 (KI-DEV-03); C-36 (seek and the decode ring); C-37 (one format
 predicate); C-48 (one rate domain); C-08 (one probe / decode path); C-04's bounded-source half; and, through
-US-R1F-02, ENH-001, KI-GAP-03 and KI-PB-02. **Not in it:** Pure's HAL output (FD-5), crossfade, CUE parsing.
+US-R1F-02, ENH-001, KI-GAP-03 and KI-PB-02. **Not in it:** Pure's HAL output (FD-5), crossfade, CUE parsing. *(KI-GAP-04 closed in R1.1-A, brought forward by the founder 2026-10-14: a same-rate join plays through one converter; the Engine sprint keeps only a join to another rate or width.)*
 **Guardrails:** agents never play audio — checks that need ears or a device plugged in are the founder's; no engine
 call on the main thread (the PR #86 rule); finish-or-revert, and two Enhanced engines never ship.
 
