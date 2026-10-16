@@ -28,7 +28,7 @@ import TrackLoudnessKit
 /// discipline; the lock is a leaf (no other lock/queue taken while held) so no deadlock
 /// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
 /// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /
-/// SpectrumDoubleBuffer / the C loudness-meter handle). The public API is therefore safe
+/// SpectrumTripleBuffer / the C loudness-meter handle). The public API is therefore safe
 /// to call from any thread — which is why the class can honestly be `Sendable` even though
 /// the compiler cannot see the queue/lock model. An `actor` would violate RT-safety
 /// (executor hops on the control path, cannot express the tap/render boundary).
@@ -323,7 +323,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// data has been published yet (engine not running or no signal).
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool {
-        tapAnalysis.spectrum?.doubleBuffer.read(into: &out) ?? false
+        tapAnalysis.spectrum?.frames.read(into: &out) ?? false
     }
 
     // MARK: - Monitoring read (per-channel before/after)
@@ -340,7 +340,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         let analysis = tapAnalysis
         let analyzers = (tap == .before) ? analysis.before : analysis.after
         guard channel >= 0, channel < analyzers.count else { return false }
-        return analyzers[channel].doubleBuffer.read(into: &out)
+        return analyzers[channel].frames.read(into: &out)
     }
 
     // EQ control plane (withEffectsAU + publishEQ) lives in AudioEngineBridge+EQControl.swift.
