@@ -11,7 +11,7 @@ import SwiftUI
 /// transport controls · flexible scrubber · condensed signal-path slot. Idle and loaded states
 /// share identical geometry (R1 is fixed-width, R4 is a reserved slot), so nothing reflows
 /// horizontally or vertically when playback starts/stops. `AudioViewModel` is `@Observable`, so
-/// the 20 Hz playback tick invalidates only the scrubber/signal leaf views — never the other tabs.
+/// the 20 Hz playback tick invalidates only the scrubber's groove — never the other tabs.
 struct NowPlayingBar: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -213,31 +213,25 @@ private struct FooterControlButtonStyle: ButtonStyle {
 
 /// Compact port of `TransportScrubberView` for the footer: the same proven drag/fraction/seek
 /// math, with a hover-reveal thumb and footer-scale tokens. This is the app's ONLY scrubber now.
+///
+/// Two layers by rate (council C-53, VM-4): this one — the times and the VoiceOver readout — reads the
+/// playhead in whole seconds (`elapsedSeconds`), so it and its accessibility modifiers re-evaluate once
+/// a second; only the groove (`FooterScrubberTrack`) follows the 20 Hz playhead.
 private struct FooterScrubber: View {
     @Environment(AudioViewModel.self) private var viewModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var isDragging = false
     @State private var dragFraction: Double = 0
-    @State private var isHovered = false
 
-    private var displayPosition: Double {
-        isDragging ? dragFraction * viewModel.duration : viewModel.playbackPosition
-    }
-
-    private var fraction: Double {
-        guard viewModel.duration > 0 else { return 0 }
-        return min(max(displayPosition / viewModel.duration, 0), 1)
-    }
-
-    private var isInterrupted: Bool {
-        viewModel.signalPath.interrupted
+    /// The time shown at the left: the playhead's whole second, or the drag's.
+    private var shownSeconds: Double {
+        isDragging ? dragFraction * viewModel.duration : Double(viewModel.elapsedSeconds)
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            timeLabel(formatDuration(displayPosition), prominent: isDragging, alignment: .trailing)
-            track
+            timeLabel(formatDuration(shownSeconds), prominent: isDragging, alignment: .trailing)
+            FooterScrubberTrack(isDragging: $isDragging, dragFraction: $dragFraction)
                 .frame(minWidth: DesignSystem.Footer.scrubberTrackMinWidth, maxWidth: .infinity)
                 .frame(height: DesignSystem.Footer.scrubberHitHeight)
             timeLabel(
@@ -249,9 +243,7 @@ private struct FooterScrubber: View {
         // No .layoutPriority: a lone `maxWidth: .infinity` child (the track) already absorbs all
         // surplus against the fixed/capped siblings. An explicit higher priority here risked
         // starving R1's title/artist to its min at every width (architect gate, the-fool #1).
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Playback position")
-        .accessibilityValue(accessibilityValue)
+        .liveReadout("Playback position", value: accessibilityValue)
         .accessibilityAdjustableAction { direction in
             guard viewModel.duration > 0 else { return }
             let step = max(viewModel.duration * 0.02, 5)
@@ -263,7 +255,46 @@ private struct FooterScrubber: View {
         }
     }
 
-    private var track: some View {
+    private func timeLabel(_ text: String, prominent: Bool, alignment: Alignment) -> some View {
+        Text(text)
+            .font(DesignSystem.Font.monoSmall)
+            .monospacedDigit()
+            .foregroundStyle(prominent ? DesignSystem.Color.labelSecondary : DesignSystem.Color.labelTertiary)
+            .frame(width: DesignSystem.Footer.timeLabelWidth, alignment: alignment)
+            .accessibilityHidden(true)
+    }
+
+    private var accessibilityValue: String {
+        guard viewModel.duration > 0 else { return "Duration unknown" }
+        var value = "\(formatDuration(shownSeconds)) of \(formatDuration(viewModel.duration))"
+        if viewModel.signalPath.interrupted {
+            value += " — playback paused, device disconnected"
+        }
+        return value
+    }
+}
+
+/// The scrubber's groove, its hover thumb and its drag: the one part that follows the playhead at the
+/// transport tick's 20 Hz. It carries no accessibility of its own (the scrubber's readout does).
+private struct FooterScrubberTrack: View {
+    @Environment(AudioViewModel.self) private var viewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @Binding var isDragging: Bool
+    @Binding var dragFraction: Double
+    @State private var isHovered = false
+
+    private var fraction: Double {
+        guard viewModel.duration > 0 else { return 0 }
+        let position = isDragging ? dragFraction * viewModel.duration : viewModel.playbackPosition
+        return min(max(position / viewModel.duration, 0), 1)
+    }
+
+    private var isInterrupted: Bool {
+        viewModel.signalPath.interrupted
+    }
+
+    var body: some View {
         GeometryReader { geo in
             let trackWidth = geo.size.width
             ZStack(alignment: .leading) {
@@ -337,15 +368,6 @@ private struct FooterScrubber: View {
             }
     }
 
-    private func timeLabel(_ text: String, prominent: Bool, alignment: Alignment) -> some View {
-        Text(text)
-            .font(DesignSystem.Font.monoSmall)
-            .monospacedDigit()
-            .foregroundStyle(prominent ? DesignSystem.Color.labelSecondary : DesignSystem.Color.labelTertiary)
-            .frame(width: DesignSystem.Footer.timeLabelWidth, alignment: alignment)
-            .accessibilityHidden(true)
-    }
-
     private var fillStyle: AnyShapeStyle {
         if isInterrupted {
             return AnyShapeStyle(DesignSystem.Color.labelTertiary)
@@ -353,15 +375,6 @@ private struct FooterScrubber: View {
         return viewModel.isPlaying
             ? AnyShapeStyle(DesignSystem.Gradient.meterFill)
             : AnyShapeStyle(DesignSystem.Color.scrubberPausedFill)
-    }
-
-    private var accessibilityValue: String {
-        guard viewModel.duration > 0 else { return "Duration unknown" }
-        var value = "\(formatDuration(displayPosition)) of \(formatDuration(viewModel.duration))"
-        if isInterrupted {
-            value += " — playback paused, device disconnected"
-        }
-        return value
     }
 }
 
