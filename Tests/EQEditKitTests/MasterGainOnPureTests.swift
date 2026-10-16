@@ -176,6 +176,20 @@ struct MasterGainOnPureTests {
         #expect(rule.unreturned.isEmpty)
     }
 
+    @Test("loans a previous run left are adopted as unreturned, never over a loan already held for that device")
+    func adoptKeptLoans() {
+        let dac = FakeVolumeDevice(level: -20)
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        let stale = PureVolumeLoan(deviceUID: Self.uid, ceiling: -5, anchor: -5, lastSet: -40)
+        let other = PureVolumeLoan(deviceUID: "HDMI", ceiling: -10, anchor: -10, lastSet: -16)
+        rule.adopt([stale, other])
+        #expect(rule.loan?.ceiling == -20, "the loan held now is the truth for its device")
+        #expect(rule.unreturned == [other])
+        rule.adopt([other])
+        #expect(rule.unreturned == [other], "adopting twice keeps one")
+    }
+
     @Test("crash-safe: a loan kept through a crash is put back at the next launch, unless the level was changed")
     func crashSafeReturn() throws {
         let dac = FakeVolumeDevice(level: -20)

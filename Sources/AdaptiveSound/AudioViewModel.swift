@@ -107,8 +107,9 @@ final class AudioViewModel {
     /// User intent: whether to attempt the bit-perfect Pure HAL path on next playback start.
     /// Pure is mutually exclusive with DSP/EQ by construction (the bit-perfect stream is
     /// untouched). Setting this to `true` does NOT immediately affect running playback —
-    /// it takes effect on the next `startPlayback()` call, and only with Master Gain at 0 dB
-    /// (`startsOnPure`). Kept across launches (`ListeningSettings`).
+    /// it takes effect on the next `startPlayback()` call (not at a gapless join, KI-PB-05); there
+    /// Master Gain turns the device's own volume down instead (`+MasterGain`). Kept across launches
+    /// (`ListeningSettings`).
     var pureModeEnabled: Bool = false {
         didSet {
             logUX("pureMode → \(pureModeEnabled)")
@@ -228,9 +229,8 @@ final class AudioViewModel {
     /// level"). Turn-down only — 0 dB, unity, at the top and on a new install; `MasterGainLaw` maps
     /// it to the slider and to the player's linear gain, and the inspector reads it back as it plays.
     /// Published on every change and at engine-ready. On Pure the bit-perfect stream is never scaled:
-    /// the slider shows and sets the output device's own volume instead (`+MasterGain`), so Pure waits
-    /// while this is turned down (`startsOnPure`). Kept across launches and never restored louder than
-    /// it was left (council C-102; `ListeningSettings`).
+    /// the engine turns the output device's own volume down by it instead (`+MasterGain`). Kept across
+    /// launches and never restored louder than it was left (council C-102; `ListeningSettings`).
     var masterGain: Float = MasterGainLaw.unity {
         didSet {
             logMasterGain("master gain → \(MasterGainLaw.text(masterGain))")
@@ -239,9 +239,10 @@ final class AudioViewModel {
         }
     }
 
-    /// The last level the user asked of the output device while Pure plays — so the knob holds it
-    /// until the device answers, and while the device still reads that answer (`masterGainControl`).
-    var deviceVolumeAsked: Float?
+    /// The output devices whose own volume Pure turned down and has not yet put back, as the engine
+    /// last reported them (`EngineSnapshot.pureVolumeLoans`) — kept with the listener's settings and
+    /// handed back to the engine at the next engine-ready, so a crash leaves no device turned down.
+    @ObservationIgnored var pureVolumeLoans: [PureVolumeLoan] = []
 
     // MARK: - Spectrum Analyzer State
 
