@@ -57,7 +57,7 @@ final class AudioViewModel {
         didSet { logUX("tab → \(selectedTab.rawValue)") }
     }
 
-    /// Live playhead position in seconds (polled at the spectrum-timer rate).
+    /// Live playhead position in seconds (polled at the transport tick's rate).
     var playbackPosition: Double = 0
     /// Resume point for a position-preserving Pause (D2 / UI-3): set by `pause()` to the playhead
     /// at the moment of pausing, moved by a scrub while paused, consumed + cleared by `play()` to
@@ -65,6 +65,7 @@ final class AudioViewModel {
     /// (S10.8 G): a queue edit that shifts the row keeps it. Any explicit new-track action
     /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`.
     var resumePoint: ResumePoint<UUID>?
+
     /// The number of the latest transport request (start, seek, stop) sent to the engine. The tick
     /// ignores engine samples older than it (`TransportSnapshot.isCurrent(for:)`): until the engine
     /// reaches the request — it can queue behind a slow device start — they describe the playback
@@ -76,6 +77,7 @@ final class AudioViewModel {
     /// and only the newest one's outcome is applied. `nil`: none; `isPlaying` says what plays. The play
     /// / pause control reads it (`playIntent`).
     var transportCommand: TransportCommand?
+
     /// The playback the on-deck requests belong to (`OnDeckTicket.session`): the epoch of the newest
     /// start. The engine applies only the newest request of the playback it is in (council D41).
     /// Not UI-bound.
@@ -151,7 +153,7 @@ final class AudioViewModel {
     @ObservationIgnored var chosenOutputUID: String?
 
     /// Live signal-path snapshot: which path is active, achieved rate, bit depth, etc.
-    /// Updated at 20 Hz in `tickSpectrum()`.
+    /// Updated by the transport tick (`pollEngineReadouts`) and when an intent it carries changes.
     var signalPath: SignalPathInfo = .init()
 
     /// Convenience derived property: `true` when the Pure HAL path is actually rendering.
@@ -244,32 +246,16 @@ final class AudioViewModel {
     /// handed back to the engine at the next engine-ready, so a crash leaves no device turned down.
     @ObservationIgnored var pureVolumeLoans: [PureVolumeLoan] = []
 
-    // MARK: - Spectrum Analyzer State
+    // MARK: - Live spectrum and the transport tick
 
-    /// 88 normalised bar heights in [0, 1] for the spectrum display.
-    /// Updated on the main thread at ~20 Hz by `spectrumTimer`.
-    /// Index 0 = lowest frequency band; index 87 = highest.
-    var spectrumBars: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
-    /// Peak-hold caps above the bars (S10.7 PR 3): published beside `spectrumBars` from the
-    /// same 20 Hz tick so `@Observable` coalesces both into ONE view invalidation. Values
-    /// resolve in `DesignTokenKit.PeakHoldTracker` (pure, time-fed — freeze-on-pause is
-    /// structural: no feed, no decay).
-    var peakCaps: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
-    var peakTracker = PeakHoldTracker(bandCount: SpectrumConstants.displayBarCount)
+    /// The one reader of the analysers for every live view — the lens, the EQ's silhouette,
+    /// Monitoring (council C-52). Not observable: the live views draw it on their own clock
+    /// (`LiveTimeline`), so the analyser's stream never passes through Observation.
+    @ObservationIgnored let spectrum: SpectrumSampler
 
-    /// Retained so we can invalidate on shutdown.
-    /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can read and invalidate it.
-    var spectrumTimer: Timer?
-
-    /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss) at ~20 Hz — a
-    /// SEPARATE timer from `spectrumTimer` so auto-advance never shares fate with the spectrum
-    /// visualizer (VM-3). The visualizer timer may one day be gated on view visibility; transport
-    /// must keep polling whenever the engine is alive, so it has its own always-on timer.
-    var transportTimer: Timer?
-
-    /// Scratch array — reused each tick, never reallocated.
-    /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can write into it.
-    var spectrumScratch: [Float] = .init(repeating: 0, count: SpectrumConstants.bandCount)
+    /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss, the readouts) at 20 Hz
+    /// from engine-ready to shutdown. Internal (not private) for `+TransportTick`.
+    @ObservationIgnored var transportTimer: Timer?
 
     // MARK: - Playlist State
 
@@ -415,13 +401,13 @@ final class AudioViewModel {
 
     /// Last observed seam count (the snapshot's `transitionCount`). An increase means the on-deck
     /// track has become the current track (a gapless seam just completed).
-    /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
+    /// Internal (not private) so the transport-tick and auto-advance extensions can read/write it.
     var lastTransitionCount: UInt64 = 0
 
     /// Playlist index of the track currently on deck (set with the engine's request by `armOnDeck`).
     /// `nil` means no track is queued (end of playlist, repeat-one handled inline,
     /// or playback has not started yet).
-    /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
+    /// Internal (not private) so the transport-tick and auto-advance extensions can read/write it.
     var pendingNextIndex: Int?
 
     let engine: any AudioPlaybackEngine
@@ -437,6 +423,7 @@ final class AudioViewModel {
         self.defaults = defaults
         self.engine = engine
         settingsStore = SettingsStore(defaults: defaults)
+        spectrum = SpectrumSampler(engine: engine)
         eqDesignRate = engine.snapshot().eqDesignRate
         restoreListeningSettings()
     }
@@ -444,7 +431,7 @@ final class AudioViewModel {
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
     // AudioViewModel+Lifecycle.swift.
 
-    // Spectrum timer + tickSpectrum live in AudioViewModel+SpectrumTimer.swift.
+    // The transport tick (tickTransport) lives in AudioViewModel+TransportTick.swift.
 
     // Device management (selectDevice, refreshDevices, retryInitialization) lives in AudioViewModel+Devices.swift.
 

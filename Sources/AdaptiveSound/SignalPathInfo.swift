@@ -91,7 +91,7 @@ struct SignalPathInfo: Equatable {
     /// Master Gain slider at 0 dB (the device has no volume to turn down). `nil` on Enhanced.
     var deviceVolume: DeviceVolume?
 
-    // MARK: - Enhancement overlay (F4 — copied from VM in tickSpectrum)
+    // MARK: - Enhancement overlay (F4 — copied from the VM: `refreshSignalPathIntents`, the tick)
 
     /// Current Reimagine intensity in [0, 1], copied from `AudioViewModel.intensity` each tick.
     /// Used by the signal-path badge to display "… · 23%". Default 0.

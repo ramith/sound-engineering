@@ -26,7 +26,7 @@ enum SpectrumConstants {
         minHz * powf(2.0, band / 6.0)
     }
 
-    /// The centre (Hz) of display bar `bar` of `barCount` (the 44 bands upsampled, `spectrumBars`).
+    /// The centre (Hz) of display bar `bar` of `barCount` (the 44 bands upsampled, `SpectrumSampler`).
     static func barCentreHz(_ bar: Int, of barCount: Int = displayBarCount) -> Float {
         bandCentreHz(barCount > 1 ? Float(bar) / Float(barCount - 1) * Float(bandCount - 1) : 0)
     }

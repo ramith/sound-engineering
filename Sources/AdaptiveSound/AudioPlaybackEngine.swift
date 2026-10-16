@@ -64,6 +64,9 @@ extension AudioPlaybackEngine {
 
     /// Default: no-op — no device volume was ever lowered.
     func returnPureVolumeLoans(_: [PureVolumeLoan]) {}
+
+    /// Default: no-op — a conformer without per-channel analysers has nothing to run or rest.
+    func setMonitorAnalysis(_: Bool) {}
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -268,4 +271,9 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Returns `false` if unavailable (not ready, channel out of range, or no data yet).
     @discardableResult
     func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool
+
+    /// Run the per-channel analysers while Monitoring shows (`true`), rest them otherwise (council
+    /// C-52): the main thread says so as the tab appears and goes. Non-blocking (one atomic store).
+    /// Default: no-op.
+    func setMonitorAnalysis(_ isOn: Bool)
 }
