@@ -41,7 +41,7 @@ namespace AdaptiveSound
     // ## PRECONDITION: exactly one producer thread and one consumer thread (SPSC)
     //
     // `publish()` must be driven from ONE control thread (the Realizer's serial queue).
-    // `tryCopySnapshot()` must be driven from ONE RT thread. `writeIndex_` is mutated only by the
+    // `copySnapshot()` must be driven from ONE RT thread. `writeIndex_` is mutated only by the
     // producer, `readIndex_` only by the consumer, and `control_` is the sole cross-thread word.
     // Two producers or two consumers would break the invariant and race — not supported.
     //
@@ -51,7 +51,7 @@ namespace AdaptiveSound
     //     (writeIndex_, readIndex_, index(control_)). Initially (0,1,2) — distinct. `control_` is
     //     mutated ONLY by the two `exchange`s below, which the atomic's modification order totally
     //     orders. `publish` does `C := W` (via exchange) then `W := oldC`: a transposition of W and
-    //     C. A fresh `tryCopySnapshot` does `C := R` (via exchange) then `R := oldC`: a
+    //     C. A fresh `copySnapshot` does `C := R` (via exchange) then `R := oldC`: a
     //     transposition of R and C. Each RMW reads the LIVE C (not a stale copy), so every
     //     transaction is a transposition regardless of interleaving; a transposition of a
     //     permutation is a permutation. Therefore {W,R,C} stay pairwise distinct — in particular
@@ -71,10 +71,10 @@ namespace AdaptiveSound
     //     consumer reads. No tearing, no mixed generation, no UB. (The last-good path re-reads the
     //     consumer's OWN slot, which the producer never writes — also race-free.)
     //
-    // (2) The reader is WAIT-FREE. `tryCopySnapshot` executes a bounded, constant number of steps:
+    // (2) The reader is WAIT-FREE. `copySnapshot` executes a bounded, constant number of steps:
     //     one acquire load, at most one acquire exchange, one `memcpy`. No loop, no retry, no lock,
     //     no allocation, no CAS spin. It ALWAYS returns true (fresh -> newest generation; not fresh
-    //     -> last good). The `bool` is retained only for API compatibility with existing callers.
+    //     -> last good), so it returns nothing: there is no failure to report.
     //
     // (3) No standalone fence is needed. Every cross-thread ordering edge is carried by an operation
     //     ON `control_`: BOTH `exchange`s are `acq_rel` (release publishes / acquires reuse — PROOF
@@ -100,12 +100,12 @@ namespace AdaptiveSound
     //     enough to slip a handful of TSan runs. This is the subtle edge; the research + expert
     //     review caught it, so both RMWs are `acq_rel`.
     //
-    // The historical name `DoubleBufferSnapshot` is retained (it is THE RT parameter-snapshot type
-    // referenced throughout the kernel); the mechanism is now the triple buffer described above.
-    template <typename T> class alignas(kCacheLineBytes) DoubleBufferSnapshot
+    // Named for the mechanism (R1.1-A, council DSP-16): it was `DoubleBufferSnapshot`, with a `bool`
+    // `copySnapshot` kept from the seqlock it replaced, whose bool signalled a straddle.
+    template <typename T> class alignas(kCacheLineBytes) TripleBufferSnapshot
     {
         static_assert(std::is_trivially_copyable_v<T>,
-                      "DoubleBufferSnapshot<T> requires a trivially-copyable T: each slot is "
+                      "TripleBufferSnapshot<T> requires a trivially-copyable T: each slot is "
                       "published/consumed by a plain memcpy under exclusive single-thread "
                       "ownership.");
         // NOTE: the previous `sizeof(T) % 8 == 0` assert is deliberately GONE — the payload is no
@@ -136,7 +136,7 @@ namespace AdaptiveSound
         // would bypass to raw passthrough and change the hash. `slots_{}` value-initializes each
         // element, invoking T's default member initializers. The trailing publish rotates the buffer
         // once and sets the fresh flag so the first consumer claim picks up a defined ready slot.
-        DoubleBufferSnapshot() noexcept
+        TripleBufferSnapshot() noexcept
         {
             publish(T{});
         }
@@ -164,11 +164,10 @@ namespace AdaptiveSound
 
         // RT reader (SINGLE consumer). Copy the current snapshot into `out`. WAIT-FREE.
         //
-        // Returns true on every call (API-compat with the former seqlock, whose bool signaled a
-        // straddle): fresh -> the newest published generation; not fresh -> the last good snapshot
-        // (parameters are ramped, so one block of a consistent one-generation-stale value is
-        // inaudible). NON-const: it advances buffer ownership (readIndex_/control_).
-        [[nodiscard]] bool tryCopySnapshot(T& out) noexcept
+        // Always copies one complete generation: fresh -> the newest published one; not fresh -> the
+        // last good snapshot (parameters are ramped, so one block of a consistent one-generation-stale
+        // value is inaudible). NON-const: it advances buffer ownership (readIndex_/control_).
+        void copySnapshot(T& out) noexcept
         {
             // ACQUIRE-load the control word to read the fresh flag. (The load-bearing acquire is the
             // exchange below; this load's acquire is a harmless, conventional superset.)
@@ -193,7 +192,6 @@ namespace AdaptiveSound
             // fresh. The producer never writes readIndex_ (writeIndex_ != readIndex_), so this copy
             // races with nothing.
             std::memcpy(&out, &slots_[readIndex_], sizeof(T));
-            return true;
         }
 
       private:
