@@ -52,7 +52,7 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
 
     func shutdown() async throws {}
 
-    func startAudio(fileURL: URL?, pureMode: Bool, startAt _: Double, epoch: UInt64) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool, startAt _: Double, epoch: UInt64) async throws {
         if await transport(.start(fileURL, pure: pureMode, epoch: epoch)) {
             throw AudioBridgeError.unsupportedFormat("flac")
         }

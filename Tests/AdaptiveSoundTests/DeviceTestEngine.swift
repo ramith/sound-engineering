@@ -58,7 +58,7 @@ final class DeviceTestEngine: AudioPlaybackEngine {
 
     func shutdown() async throws {}
 
-    func startAudio(fileURL _: URL?, pureMode: Bool, startAt: Double, epoch _: UInt64) async throws {
+    func startAudio(fileURL _: URL, pureMode: Bool, startAt: Double, epoch _: UInt64) async throws {
         state.withLock {
             $0.starts.append(startAt)
             $0.pureModes.append(pureMode)
