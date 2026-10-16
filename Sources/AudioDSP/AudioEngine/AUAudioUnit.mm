@@ -101,6 +101,8 @@ namespace
         // had storage for only one AudioBuffer — stack corruption for planar/multi-buffer
         // input, #11) and the memcpy that wrote input-sized bytes into possibly-smaller
         // output buffers (#4). AVAudioEngine provides non-null output buffer pointers.
+        // No upstream connected (a nil pull block): nothing to render (council C-87).
+        if (pull == nullptr) { return kAudioUnitErr_NoConnection; }
         OSStatus pullStatus = pull(flags, timestamp, frames, 0, out);
         if (pullStatus != noErr) { return pullStatus; }
 
