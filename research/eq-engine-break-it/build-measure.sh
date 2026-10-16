@@ -37,7 +37,6 @@ xcrun clang++ $(cxx_analysis_core_flags) -fobjc-arc -fblocks ${OPT[@]+"${OPT[@]}
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeBridgePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp" \
-    "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/GaplessSource.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/AudioEngine/Realizer.mm" \
