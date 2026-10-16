@@ -14,9 +14,13 @@
 //   nothing in answer. It reads the change as a change to the Mac's own volume, with Master Gain's cut
 //   still on top: the loan's ANCHOR — the level Master Gain's 0 dB stands for — moves to the new level
 //   plus the cut (never above the ceiling), and the slider moves from there.
-// - LEAVING PURE (a stop or pause, Enhanced, another device, quit) puts the anchor back, and Master Gain
-//   plays in the app again — the same loudness. Only while the device still reads what Pure last set;
-//   otherwise the listener changed it since, and their level stands.
+// - LEAVING PURE puts the anchor back, and Master Gain plays in the app again — the same loudness. Only
+//   while the device still reads what Pure last set; otherwise the listener changed it since, and their
+//   level stands. The hold lasts while Pure is the device's PATH, not only while a Pure session renders
+//   (founder decision 2026-10-16; `PureVolumeEvent`): a pause keeps the level Pure set (the session is
+//   torn down, but playback resumes there), as does a device that went away; Pure is left by a stop
+//   that ends playback (Stop, the end of the queue, the queue cleared, quit), Enhanced starting, or the
+//   output moving to another device.
 // - A DEVICE WITH NO VOLUME THE APP CAN SET (many DACs, HDMI): turned down, Pure waits — Enhanced keeps
 //   playing at the listener's level until Master Gain is back at 0 dB (`waitsForMasterGain`).
 // - CRASH-SAFE: every loan not yet settled (`allLoans`) is kept with the listener's settings. A loan a
@@ -68,6 +72,22 @@ public struct PureVolumeLoan: Codable, Equatable, Sendable {
         self.anchor = anchor
         self.lastSet = lastSet
     }
+}
+
+/// Something that may end Pure's hold on a device's volume (founder decision 2026-10-16): the hold lasts
+/// while Pure is that device's path, not only while a Pure session renders.
+public enum PureVolumeEvent: Equatable, Sendable {
+    /// Playback paused: it resumes on this device, so the device keeps the level Pure set.
+    case paused
+    /// The device went away mid-Pure: nothing is asked of a dying device; the loan stays held, and
+    /// is given back when the device is seen again — or kept for the next launch.
+    case deviceLost
+    /// Playback stopped for good: the Stop command, the end of the queue, the queue cleared, quit.
+    case stopped
+    /// Enhanced starts: Pure is left.
+    case enhancedStarted
+    /// The app's output moved to the device `toUID`: Pure is left on any other device.
+    case outputMoved(toUID: String)
 }
 
 /// Master Gain on Pure: the loan Pure holds now, and those it could not yet put back.
@@ -148,6 +168,25 @@ public struct MasterGainOnPure: Sendable {
         held.anchor = min(reading.level - min(gain, MasterGainLaw.unity), held.ceiling)
         held.lastSet = reading.level
         loan = held
+    }
+
+    /// Whether `event` ends the hold Pure has on the device `heldUID`.
+    public static func ends(_ event: PureVolumeEvent, heldOn heldUID: String) -> Bool {
+        switch event {
+        case .paused, .deviceLost: false
+        case .stopped, .enhancedStarted: true
+        case let .outputMoved(toUID): toUID != heldUID
+        }
+    }
+
+    /// Apply `event`: when it ends Pure's hold, put the level back (`leave`) on the held device
+    /// (`device(uid)`). True when the hold ended — the engine stops following the device then.
+    @discardableResult
+    public mutating func handle<Device: DeviceVolumeControl>(_ event: PureVolumeEvent,
+                                                             device: (String) -> Device) -> Bool {
+        guard let held = loan, Self.ends(event, heldOn: held.deviceUID) else { return false }
+        leave(device: device(held.deviceUID))
+        return true
     }
 
     /// Pure stops on its device: put the anchor back.
