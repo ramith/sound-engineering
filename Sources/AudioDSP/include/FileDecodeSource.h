@@ -75,8 +75,9 @@ namespace AdaptiveSound
 
         // Off-RT control-plane: reposition decoding to `seconds` from the start (clamped to >= 0).
         // Joins the decode thread, repositions the backend SAMPLE-ACCURATELY, discards buffered
-        // pre-seek audio, and restarts decoding. Returns false if the backend reposition failed
-        // (playback still resumes from the prior position so the source is never left dead).
+        // pre-seek audio, and restarts decoding. Returns false if the backend reposition failed:
+        // then nothing moved — the buffered audio stays and decoding carries on from where it was,
+        // so playback continues exactly where it was (council C-35).
         //
         // PRECONDITION: pullFloat() MUST NOT run concurrently. The Pure seek satisfies this by
         // holding the HAL engine's render gate around it (HALOutputEngine::holdRender). NOT
