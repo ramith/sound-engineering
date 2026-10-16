@@ -238,8 +238,7 @@ struct LibrarySidebar: View {
             }
             .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
             .padding(.top, DesignSystem.Spacing.small)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.updatesFrequently)
+            .liveReadout("Library scan", value: status)
         }
     }
 

@@ -30,20 +30,17 @@ struct LoudnessMetersView: View {
                      valueText: lufsText(snapshot.integratedLufs, hasSignal: snapshot.hasSignal),
                      fraction: lufsFraction(snapshot.integratedLufs, hasSignal: snapshot.hasSignal),
                      hot: false,
-                     spokenSuffix: "")
+                     spokenValue: LoudnessSpeech.lufs(snapshot.integratedLufs, hasSignal: snapshot.hasSignal))
             MeterRow(label: "Short-term",
                      valueText: lufsText(snapshot.shortTermLufs, hasSignal: snapshot.hasSignal),
                      fraction: lufsFraction(snapshot.shortTermLufs, hasSignal: snapshot.hasSignal),
                      hot: false,
-                     spokenSuffix: "")
+                     spokenValue: LoudnessSpeech.lufs(snapshot.shortTermLufs, hasSignal: snapshot.hasSignal))
             MeterRow(label: "True peak",
                      valueText: truePeakText(snapshot, live: peakLive, hot: hot),
                      fraction: truePeakFraction(snapshot, live: peakLive),
                      hot: hot,
-                     // Non-color cue for the hot state (A-M5 posture): the spoken value
-                     // names the ceiling; sighted users get the ▲ glyph (shape, not hue)
-                     // beside the amber tail + value.
-                     spokenSuffix: hot ? ", above the −1 dBTP ceiling" : "")
+                     spokenValue: LoudnessSpeech.truePeak(snapshot.truePeakDb, live: peakLive, hot: hot))
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Loudness meters")
@@ -83,7 +80,8 @@ private struct MeterRow: View {
     let valueText: String
     let fraction: Double
     let hot: Bool
-    let spokenSuffix: String
+    /// What VoiceOver says for the reading (`LoudnessSpeech`): coarser than `valueText`.
+    let spokenValue: String
 
     var body: some View {
         HStack(spacing: 10) {
@@ -105,7 +103,28 @@ private struct MeterRow: View {
                 .monospacedDigit()
                 .foregroundStyle(hot ? DesignSystem.Color.meterHotText : Color.asLabel)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(valueText)\(spokenSuffix)")
+        .liveReadout(label, value: spokenValue)
+    }
+}
+
+// MARK: - What VoiceOver says
+
+/// The meters' readings as VoiceOver says them (council C-53): in each row's VALUE (its label names
+/// the meter), quantised to what is worth saying, so a reading that moves by a tenth of a dB 20 times
+/// a second does not rewrite the accessibility tree each time.
+enum LoudnessSpeech {
+    /// A LUFS reading to the nearest LU; "no reading" until the meter has one.
+    static func lufs(_ lufs: Double, hasSignal: Bool) -> String {
+        guard hasSignal, lufs.isFinite else { return "no reading" }
+        return "\(Int(lufs.rounded())) LUFS"
+    }
+
+    /// The true peak rounded UP to a whole dB — a peak reading never reads below the peak — and, above
+    /// the ceiling, the non-color cue for the hot state (A-M5: sighted users get the ▲ glyph and the
+    /// amber tail; VoiceOver hears the ceiling named).
+    static func truePeak(_ decibels: Double, live: Bool, hot: Bool) -> String {
+        guard live, decibels.isFinite else { return "no reading" }
+        let reading = "\(Int(decibels.rounded(.up))) dBTP"
+        return hot ? reading + ", above the −1 dBTP ceiling" : reading
     }
 }
