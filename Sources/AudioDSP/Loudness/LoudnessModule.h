@@ -108,12 +108,12 @@ namespace AdaptiveSound
                      const MultichannelView& block,
                      std::span<const float> contribution = {}) noexcept;
 
-        // Lock-free telemetry getters (UI / Milestone 4); callable from any thread.
+        // Lock-free telemetry getters, callable from any thread. The null test's measurements read
+        // them; the app does not (its loudness readout is the mixer tap's meter).
         [[nodiscard]] float measuredLufsIntegrated() const noexcept;
         [[nodiscard]] float measuredLufsShortTerm() const noexcept;
         [[nodiscard]] float measuredLufsMomentary() const noexcept;
         [[nodiscard]] float currentMakeupGainLinear() const noexcept;
-        [[nodiscard]] uint64_t droppedFrameCount() const noexcept;
 
       private:
         // RT: apply the smoothed (and optionally contribution-weighted) makeup gain in place.
@@ -140,8 +140,7 @@ namespace AdaptiveSound
         SpscRing<float, kLoudnessRingElems> sampleRing_;
 
         // --- 8-byte-aligned members ---
-        std::atomic<uint64_t> droppedFrames_{0U}; // RT→diagnostics
-        double currentMakeupDb_ = 0.0;            // worker-owned (measurementThread_ only)
+        double currentMakeupDb_ = 0.0; // worker-owned (measurementThread_ only)
         WorkerParking parking_{kWorkerNap, kWorkerParkAfter}; // RT/control → worker wake-ups
         // Per-sample gain scratch and interleave scratch: heap-allocated to maxFrames_ (and
         // maxFrames_*kMaxChannels) in initialize() so they scale with the host's

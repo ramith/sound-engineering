@@ -89,11 +89,10 @@ namespace AdaptiveSound
             }
         }
         // All or nothing, so the ring only ever holds whole frames and the worker's frame-aligned
-        // reads stay aligned.
-        if (!ring_.tryPushAll(pushBuf_.data(), static_cast<size_t>(frames) * channels))
-        {
-            droppedFrames_.fetch_add(frames, std::memory_order_relaxed);
-        }
+        // reads stay aligned. A full ring drops the block whole: the estimate degrades, the audio
+        // never waits.
+        static_cast<void>(
+            ring_.tryPushAll(pushBuf_.data(), static_cast<size_t>(frames) * channels));
         // Wakes the worker only if it parked (a resume): no syscall in steady playback.
         parking_.notify();
     }
