@@ -379,6 +379,9 @@ private struct FooterSignalSlot: View {
             }
         }
         .frame(width: DesignSystem.Footer.signalSlotWidth, alignment: .trailing)
+        // Why Pure isn't playing bit-perfect (C-34), on hover: the slot itself has no room for it.
+        .help(viewModel.signalPath.pureReason
+            .map { $0.detail(in: viewModel.signalPath, masterGain: viewModel.masterGain) } ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Signal path")
         .accessibilityValue(accessibilityValue)
@@ -451,6 +454,6 @@ private struct FooterSignalSlot: View {
         }
         let pathStr = info.path == .pure ? "Pure mode" : "Enhanced mode"
         let rate = info.achievedSampleRate > 0 ? info.spokenRate : "unknown rate"
-        return "\(pathStr), \(rate)"
+        return "\(pathStr), \(rate)" + (info.pureReason.map { " — " + $0.note } ?? "")
     }
 }

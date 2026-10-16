@@ -152,7 +152,10 @@ namespace
         {
             return;
         }
-        (void)pureModeEngineStart(engine, /*deviceID=*/0U, kM4aPath, /*startSeconds=*/0.0);
+        uint8_t reason = 0U;
+        (void)pureModeEngineStart(engine, /*deviceID=*/0U, kM4aPath, /*startSeconds=*/0.0, &reason);
+        CPureModeEvaluation evaluation{};
+        (void)pureModeEvaluateFile(/*deviceID=*/0U, kM4aPath, &evaluation);
         pureModeEngineDestroy(engine);
     }
 
