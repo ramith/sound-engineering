@@ -61,6 +61,14 @@ namespace AdaptiveSound
                 return "RateUnsupportedResample";
             case PureModeReason::ChannelCountMismatch:
                 return "ChannelCountMismatch";
+            case PureModeReason::DeviceShallowerThanSource:
+                return "DeviceShallowerThanSource";
+            case PureModeReason::DeviceWouldNotStart:
+                return "DeviceWouldNotStart";
+            case PureModeReason::FileUnreadable:
+                return "FileUnreadable";
+            case PureModeReason::FileNeedsFFmpeg:
+                return "FileNeedsFFmpeg";
         }
         // Unreachable for a valid enumerator; keeps the function total without a throw.
         return "Unknown";
@@ -152,6 +160,29 @@ namespace AdaptiveSound
             result.reason = PureModeReason::RateMatchedFloatNoSRC;
         }
         return result;
+    }
+
+    PureModeReason bitExactness(const FileFormat& file,
+                                uint32_t outputBits,
+                                bool outputIsFloat,
+                                PureModeReason engaged)
+    {
+        // Pure decodes to float32: 24 significant bits reach the converter, whatever the device.
+        constexpr uint32_t kFloat32SignificantBits = 24U;
+        constexpr uint32_t kFloat32Bits = 32U;
+        if (file.bitsPerChannel == 0U || outputBits == 0U)
+        {
+            return engaged; // no stated depth to compare (a compressed source, an unknown output)
+        }
+        if (file.isFloat)
+        {
+            const bool carried = outputIsFloat && file.bitsPerChannel <= kFloat32Bits;
+            return carried ? engaged : PureModeReason::DeviceShallowerThanSource;
+        }
+        const uint32_t reaching =
+            outputIsFloat ? kFloat32SignificantBits : std::min(outputBits, kFloat32SignificantBits);
+        return (file.bitsPerChannel <= reaching) ? engaged
+                                                 : PureModeReason::DeviceShallowerThanSource;
     }
 
 } // namespace AdaptiveSound

@@ -57,31 +57,27 @@ extension AudioEngineBridge {
 
     /// Attempt the Pure (bit-perfect HAL) path. Returns `true` when Pure fully started (the caller
     /// resumes its continuation and returns); `false` when the caller must continue to the Enhanced
-    /// path. In all non-started cases it records the `fellBackToEnhanced` flag exactly as before.
-    /// Runs on `engineQueue` (called directly from the `startAudio` body — no new dispatch, and the
-    /// `resampleQueue.sync` sequencing inside `startPure`/`stopEnhancedPlayback` is unchanged).
+    /// path. Whenever Pure was asked for and Enhanced plays, it records why (`pureReason`, C-34); with
+    /// Pure not asked for, no reason. Runs on `engineQueue` (called directly from the `startAudio`
+    /// body — no new dispatch, and the `resampleQueue.sync` sequencing inside
+    /// `startPure`/`stopEnhancedPlayback` is unchanged).
     private func attemptPureStart(fileURL: URL?, pureMode: Bool, startAt: Double) -> Bool {
-        // Attempt Pure path when requested, a file is provided, and capability allows.
-        if pureMode, let url = fileURL {
-            let viable = evaluatePureViable(fileURL: url, deviceID: currentDeviceID)
-            if viable {
-                // Tear down any live Enhanced playback before entering Pure
-                // (keep the graph intact for fast fallback — just stop the player).
-                stopEnhancedPlayback()
-                let started = startPure(fileURL: url, deviceID: currentDeviceID, startAt: startAt)
-                if started {
-                    return true
-                }
-                // Pure engine started but achievedState.running == 0 → fall through
-                // to Enhanced. Record that we fell back.
-                NSLog("[AudioEngineBridge] Pure Mode start failed — falling back to Enhanced")
-                mutateSignalPath { $0.fellBackToEnhanced = true }
-            } else {
-                mutateSignalPath { $0.fellBackToEnhanced = true }
-            }
-        } else {
-            mutateSignalPath { $0.fellBackToEnhanced = false }
+        guard pureMode, let url = fileURL else {
+            mutateSignalPath { $0.pureReason = nil }
+            return false
         }
+        if let declined = pureDeclineReason(fileURL: url, deviceID: currentDeviceID) {
+            mutateSignalPath { $0.pureReason = declined }
+            return false
+        }
+        // Tear down any live Enhanced playback before entering Pure (keep the graph intact for fast
+        // fallback — just stop the player).
+        stopEnhancedPlayback()
+        guard let failed = startPure(fileURL: url, deviceID: currentDeviceID, startAt: startAt) else {
+            return true
+        }
+        NSLog("[AudioEngineBridge] Pure Mode start failed (\(failed)) — falling back to Enhanced")
+        mutateSignalPath { $0.pureReason = failed }
         return false
     }
 
@@ -125,8 +121,8 @@ extension AudioEngineBridge {
             // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
             // line. Append only the Pure-fallback note here so it isn't double-logged.
             playing = try playFile(at: url, engine: engine, playerNode: playerNode, startAt: startAt) != .ended
-            if loadSignalPath().fellBackToEnhanced {
-                logUX("Enhanced started '\(url.lastPathComponent)' (fell back from Pure)")
+            if let reason = loadSignalPath().pureReason {
+                logUX("Enhanced started '\(url.lastPathComponent)' (Pure declined: \(reason))")
             }
         } else {
             playReferenceTone(on: playerNode)
@@ -135,7 +131,7 @@ extension AudioEngineBridge {
 
         setActivePath(.enhanced)
         enhancedPlayIntent = playing
-        let fellBack = loadSignalPath().fellBackToEnhanced
+        let pureReason = loadSignalPath().pureReason
         // The device's actual output rate (the honest "device is running at" value, per the
         // field's doc + the D5 device-pill readout). Enhanced processes internally at the graph
         // rate; the outputNode format reflects the hardware, so a 48 kHz device reads "48 kHz".
@@ -145,7 +141,7 @@ extension AudioEngineBridge {
             path: .enhanced,
             decision: .fallbackEnhanced,
             achievedSampleRate: engine.outputNode.outputFormat(forBus: 0).sampleRate,
-            fellBackToEnhanced: fellBack
+            pureReason: pureReason
         ))
     }
 

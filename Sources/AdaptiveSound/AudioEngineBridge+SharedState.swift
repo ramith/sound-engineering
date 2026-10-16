@@ -57,7 +57,7 @@ extension AudioEngineBridge {
 
     /// Thread-safe read-modify-write of the cached signal path. `mutate` runs UNDER the leaf lock
     /// and so must only touch the struct's fields (no call-outs) — callers pass a simple closure
-    /// such as `{ $0.fellBackToEnhanced = true }`.
+    /// such as `{ $0.pureReason = .bluetooth }`.
     func mutateSignalPath(_ mutate: (inout SignalPathInfo) -> Void) {
         withStateLock { mutate(&storedCachedSignalPath) }
     }

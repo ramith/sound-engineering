@@ -72,7 +72,7 @@ extension AudioEngineBridge {
 
         // Refresh the device rate: a config change can be a switch to a device running at a
         // different rate, so the stored Enhanced snapshot's achievedSampleRate would otherwise
-        // go stale. One field only (mutate, not store) so fellBackToEnhanced/interrupted stand.
+        // go stale. One field only (mutate, not store) so pureReason/interrupted stand.
         // On configChangeQueue here — the engine is settled, so this outputNode read is safe.
         // Read the rate BEFORE taking the lock: the main thread takes `stateLock` every tick, and this
         // AVFAudio read waits on the engine's lock (the leaf-lock rule, AudioEngineBridge+SharedState).
