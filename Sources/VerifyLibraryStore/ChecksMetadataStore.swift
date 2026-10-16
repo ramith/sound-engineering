@@ -203,21 +203,21 @@ private func checkArtworkReachabilitySweep(_ store: LibraryStore, number: Int, r
 // MARK: - v — MetadataExtractor FS-tolerance smoke (Slice 2; full extraction is Slice 5)
 
 func checkExtractorVanishedFile(number: Int, url: URL) async -> Bool {
-    // A vanished/unreadable file yields nil (never a throw, never a crash) on BOTH routing
-    // paths — flac (FFmpeg-first) and m4a (AVFoundation-first). Full extraction correctness
-    // (real tagged fixtures) is Slice 5's M1/M2. `url` (the temp store path) is unused here.
+    // A vanished/unreadable file yields nil (never a throw, never a crash) for flac and m4a alike —
+    // AVFoundation reads first for every format, and FFmpeg only when the listener turned it on
+    // (R1.1-A, FD-3; off here). Full extraction correctness (real tagged fixtures) is Slice 5's
+    // M1/M2. `url` (the temp store path) is unused here.
     _ = url
     let extractor = MetadataExtractor()
     let ghostFlac = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/ghost.flac")
     let ghostM4a = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/ghost.m4a")
     guard await extractor.extract(from: ghostFlac) == nil else {
-        printFail(number, "extractor: expected nil for a vanished .flac (FFmpeg path)"); return false
+        printFail(number, "extractor: expected nil for a vanished .flac"); return false
     }
     guard await extractor.extract(from: ghostM4a) == nil else {
-        printFail(number, "extractor: expected nil for a vanished .m4a (AVFoundation path)"); return false
+        printFail(number, "extractor: expected nil for a vanished .m4a"); return false
     }
-    printPass(number, "extractor FS-tolerance: a vanished file yields nil (no crash) on both the "
-        + "FFmpeg-first (.flac) and AVFoundation-first (.m4a) routing paths")
+    printPass(number, "extractor FS-tolerance: a vanished file yields nil (no crash), .flac and .m4a alike")
     return true
 }
 

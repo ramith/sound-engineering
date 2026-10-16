@@ -3,10 +3,11 @@
 //
 // MetadataBridge.h — Pure C header for Swift bridging (S8.3).
 //
-// The FFmpeg-fallback metadata read for MetadataExtractor: for FLAC/Ogg (and any file
-// AVFoundation returns empty tags for), Swift reads embedded tags + cover art + audio
-// properties out of a file via the ALREADY-resolved libav* dlopen backend in
-// FileDecodeSource.mm — no new dlopen machinery, no link-time FFmpeg.
+// The FFmpeg-fallback metadata read for MetadataExtractor: for a file AVFoundation can't
+// read, or reads no tags from, Swift reads embedded tags + cover art + audio properties via
+// the libav* dlopen backend in FileDecodeSource.cpp — no new dlopen machinery, no link-time
+// FFmpeg. Only while the listener has FFmpeg ON (FFmpegBridge.h; off by default, R1.1-A FD-3):
+// while it is off, ffmpegOpenMetadata returns NULL and loads nothing.
 //
 // MUST be valid ISO C11 (no C++, no <cstdint>): it is re-exported by DeviceBridge.h, the
 // single Swift-visible module header. #pragma once guards the double-include.
@@ -44,8 +45,8 @@ extern "C"
 #endif
 
     /// Open `path` and extract its metadata into an owned handle, or NULL on ANY failure
-    /// (FFmpeg absent, open failure, no such file, `path` NULL). The caller MUST balance a
-    /// non-NULL return with exactly one ffmpegCloseMetadata().
+    /// (FFmpeg off or absent, open failure, no such file, `path` NULL). The caller MUST balance
+    /// a non-NULL return with exactly one ffmpegCloseMetadata().
     void* ffmpegOpenMetadata(const char* path) AUDIODSP_C_NOEXCEPT;
 
     /// Destroy a handle from ffmpegOpenMetadata(). NULL-safe.

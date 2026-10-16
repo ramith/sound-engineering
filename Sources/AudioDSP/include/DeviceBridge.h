@@ -27,6 +27,10 @@
 // Pure C11; #pragma once guards double-include.
 #include "MetadataBridge.h"
 
+// Re-export the pure-C FFmpeg switch (R1.1-A, FD-3): "Use FFmpeg for other formats", off by
+// default — ffmpegSetEnabled / ffmpegIsEnabled / ffmpegState. Pure C11; #pragma once guards.
+#include "FFmpegBridge.h"
+
 // Re-export the pure-C graphic-EQ designer (Sprint EQ, EQ1a) so `import AudioDSP` exposes
 // asEqDesignerCreate / asEqDesign / asEqDesignerDestroy to the Swift EQDesigner wrapper.
 // Pure C11; #pragma once guards double-include.

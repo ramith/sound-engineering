@@ -1,6 +1,7 @@
 import DesignTokenKit
 import EQEditKit
 import Foundation
+import LibraryScan
 import PlaybackQueueKit
 import SettingsKit
 
@@ -111,6 +112,19 @@ final class AudioViewModel {
     var pureModeEnabled: Bool = false {
         didSet {
             logUX("pureMode → \(pureModeEnabled)")
+            rememberListeningSettings()
+        }
+    }
+
+    /// "Use FFmpeg for other formats" (R1.1-A, founder decision FD-3): FFmpeg may read a file Apple's
+    /// decoder can't — its tags, and its sound in Pure Mode. Off by default: FFmpeg is an in-process
+    /// parser for files from anywhere, and while this is off nothing loads it. Sets the process's one
+    /// switch (`FFmpegOptIn`) — at launch from the kept setting, before the library starts any work.
+    /// Kept across launches (`ListeningSettings`).
+    var useFFmpeg: Bool = false {
+        didSet {
+            FFmpegOptIn.isOn = useFFmpeg
+            logUX("useFFmpeg → \(useFFmpeg)")
             rememberListeningSettings()
         }
     }

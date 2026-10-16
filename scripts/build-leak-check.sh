@@ -61,6 +61,7 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/FFmpegLoader.cpp" # FileDecodeSource dep: the FFmpeg opt-in + load
     "$REPO_ROOT/Sources/AudioDSP/GaplessSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/AudioEngine/Realizer.mm"
     "$REPO_ROOT/Sources/AudioDSP/EQ/GraphicEQDesigner.cpp"

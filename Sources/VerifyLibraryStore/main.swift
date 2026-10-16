@@ -349,7 +349,7 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep; "
         + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail; "
         + "S8.3 Slice 4: X metadata-pass [enrich+idempotency+anti-loop]; "
-        + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [FFmpeg]; "
+        + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [AVFoundation + FLAC PICTURE, FFmpeg off]; "
         + "S8.3 review: AA album-cover-deterministic [C8], AB metadata-pass-cancellation "
         + "[skips sweep], AC real-no-tags [empty-not-crash + marked]; "
         + "S8.4 Slice 1: AD move-reference-survives [Gate-2: play_count/loved/rating keep the id], "
