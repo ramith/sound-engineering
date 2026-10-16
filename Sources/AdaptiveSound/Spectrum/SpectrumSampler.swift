@@ -32,7 +32,8 @@ struct MonitorFrame: Equatable {
 ///
 /// Motion, in real time (council C-51 D57):
 /// - A bar eases to each new frame over `easeSeconds` (the shipped `.easeOut(duration: 0.08)`),
-///   from wherever it stood; Reduce Motion shows each frame as it is.
+///   from wherever it stood; Reduce Motion — and a paused lens, which draws once — shows each frame
+///   as it is.
 /// - The peak caps ride the bars as drawn. `PeakHoldTracker` is fed the real time between draws
 ///   while a song plays: a cap holds 0.6 s, then falls 1.25 of full scale a second. (Before: each
 ///   new frame fed a nominal 1/20 s, but frames arrive every ~100 ms — caps held 1.2 s and fell at
@@ -88,7 +89,8 @@ final class SpectrumSampler {
             return SpectrumLensFrame(bars: targets, caps: targets)
         }
         pullOutput(at: date)
-        let shown = reduceMotion ? targets : eased(at: date)
+        // Paused, the lens draws once and holds: it shows the latest frame as it is, not part-way there.
+        let shown = reduceMotion || !isPlaying ? targets : eased(at: date)
         if isPlaying {
             for bar in shown.indices {
                 peakFeed[bar] = Double(shown[bar])
