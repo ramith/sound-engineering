@@ -538,7 +538,7 @@ static auto testLoudnessMeterBridgeIntegratedPerTrack() -> void
 {
     static const char* const kName = "Loudness_MeterBridge_IntegratedPerTrack";
     constexpr uint32_t kFs = kOracleRate48k;
-    constexpr size_t kTapFrames = 4096U; // SpectrumConstants.fftSize: the mixer tap's buffer
+    constexpr size_t kTapFrames = 4096U; // SpectrumConstants.tapBufferFrames: the mixer tap's request
     constexpr double kTolLu = 0.1;
     constexpr uint64_t kTrackA = 0xA11CEULL;
     constexpr uint64_t kTrackB = 0xB0BULL;
