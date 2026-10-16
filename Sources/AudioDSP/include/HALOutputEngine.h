@@ -87,6 +87,13 @@ namespace AdaptiveSound
         // threads.
         [[nodiscard]] AchievedOutputState achievedState() const;
 
+        // Whether the float → native step reduces bits the source has, and so adds TPDF dither
+        // (convertFloatToNativeDithered — R1.1-A, founder decision 2026-10-16). Off by default: the
+        // plain conversion is bit-exact. Set after configure() and before start(), from the depth rule
+        // (ditherWhenConverting); a session's format and source depth are fixed (a gapless seam
+        // joins only tracks of one depth). Control-plane only.
+        void setDither(bool reducesBits);
+
       private:
         class Impl; // opaque; owns the AudioUnit + CoreAudio state (defined in the .mm)
         std::unique_ptr<Impl> impl_;
