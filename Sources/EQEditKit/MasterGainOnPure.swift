@@ -98,6 +98,14 @@ public struct MasterGainOnPure: Sendable {
         self.unreturned = unreturned
     }
 
+    /// Take in loans a previous run left (kept with the listener's settings) as unreturned — except
+    /// for a device whose loan is held or already kept: what this run knows is newer.
+    public mutating func adopt(_ kept: [PureVolumeLoan]) {
+        for kept in kept where !allLoans.contains(where: { $0.deviceUID == kept.deviceUID }) {
+            unreturned.append(kept)
+        }
+    }
+
     /// Pure is about to play on the device `deviceUID` (`device`) with Master Gain at `gain` dB.
     public mutating func enter(deviceUID: String, gain: Float, device: some DeviceVolumeControl) -> Entry {
         if let held = loan, held.deviceUID == deviceUID {

@@ -133,6 +133,20 @@ struct SettingsStoreTests {
         #expect(load().useFFmpeg, "turned on, it stays on")
     }
 
+    @Test("SETTINGS-10: Pure's device-volume loans are kept, so a crash puts them back; a bad value reads none")
+    func pureVolumeLoansKept() {
+        let loan = PureVolumeLoan(deviceUID: "AppleUSBAudioEngine:DAC:1", ceiling: -20, anchor: -20, lastSet: -32)
+        let store = SettingsStore(defaults: defaults)
+        var settings = store.load()
+        #expect(settings.pureVolumeLoans.isEmpty)
+        settings.pureVolumeLoans = [loan]
+        store.save(settings)
+        store.flush()
+        #expect(load().pureVolumeLoans == [loan])
+        stored(#"{"version":1,"pureVolumeLoans":"lowered"}"#)
+        #expect(load().pureVolumeLoans.isEmpty)
+    }
+
     @Test("SETTINGS-06: Master Gain is never restored louder than it was left")
     func masterGainNeverLouder() {
         let silent = -Float.infinity

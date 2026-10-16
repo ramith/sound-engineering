@@ -50,7 +50,7 @@ extension AudioViewModel {
         // Snapshot index and mode for use inside the Task (avoids capturing `self` for
         // values that could change between now and when the Task body runs).
         let startIndex = selectedTrackIndex
-        let pureModeSnapshot = startsOnPure
+        let pureModeSnapshot = pureModeEnabled // the engine decides how Master Gain plays on Pure
         // Numbered now, synchronously: until the engine begins this start, the ticks ignore the
         // samples of the playback it replaces (the old track's playhead and end flag). It owns the
         // transport and its on-deck requests from now on (the engine drops any made for the playback

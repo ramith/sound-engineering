@@ -1,5 +1,4 @@
 import DesignTokenKit
-import EQEditKit
 import SwiftUI
 
 // MARK: - Signal-path status (Settings › Pure Mode)
@@ -7,17 +6,16 @@ import SwiftUI
 /// Compact live readout of the achieved signal path, at the foot of the Pure Mode card: Playing
 /// through, Format, Decoder and EQ Preset — omits Exclusive (always false) and Decision — then why
 /// Pure isn't playing bit-perfect, when it was asked for: the one named reason (`PureModeReason`, the
-/// sentence the Now Playing note's tooltip shows), Master Gain turned down, or that it starts the next
-/// time a song is started (KI-PB-05: not at a gapless join).
+/// sentence the Now Playing note's tooltip shows — Master Gain on a device with no volume among them),
+/// or that it starts the next time a song is started (KI-PB-05: not at a gapless join).
 ///
 /// The labels sit in a fixed column and the values take the rest of the card's width, wrapping rather
 /// than truncating (a My Preset's name is the user's own); SLOT-07 holds both at the 880 pt window.
 struct SignalPathStatus: View {
     let info: SignalPathInfo
     let requested: Bool
-    /// Master Gain's level while Pure waits for it to be back at 0 dB (`pureWaitsForMasterGain`),
-    /// else `nil`.
-    let waitingAtMasterGain: Float?
+    /// Master Gain, for the sentence when Pure waits for it.
+    let masterGain: Float
     /// Current EQ preset display name ("Flat", "Custom", etc.). Passed in as a
     /// value snapshot so the readout remains a pure function of its inputs.
     let eqPresetName: String
@@ -34,18 +32,12 @@ struct SignalPathStatus: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(DesignSystem.Color.statusWarningText)
                         .accessibilityHidden(true) // the line says it
-                    Text(reason.detail(in: info, masterGain: waitingAtMasterGain ?? 0))
+                    Text(reason.detail(in: info, masterGain: masterGain))
                         .font(DesignSystem.Font.caption)
                         .foregroundStyle(DesignSystem.Color.labelSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
-            } else if let level = waitingAtMasterGain {
-                Text("Master Gain is turned down (\(MasterGainLaw.text(level))). Pure Mode plays at your "
-                    + "device’s own volume, which would be louder, so it waits until Master Gain is back at 0 dB.")
-                    .font(DesignSystem.Font.caption)
-                    .foregroundStyle(DesignSystem.Color.labelSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             } else if requested && info.path != .pure {
                 Text("Pure Mode starts the next time you start a song.")
                     .font(DesignSystem.Font.caption)

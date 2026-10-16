@@ -22,7 +22,7 @@ struct PureModeSettingsSection: View {
             SignalPathStatus(
                 info: audioViewModel.signalPath,
                 requested: audioViewModel.pureModeEnabled,
-                waitingAtMasterGain: audioViewModel.pureWaitsForMasterGain ? audioViewModel.masterGain : nil,
+                masterGain: audioViewModel.masterGain,
                 eqPresetName: eqPresetName
             )
         }

@@ -71,12 +71,21 @@ extension AudioEngineBridge {
             return false
         }
         // Tear down any live Enhanced playback before entering Pure (keep the graph intact for fast
-        // fallback — just stop the player).
+        // fallback — just stop the player). Nothing plays from here until the new start, so the device
+        // volume below changes in silence.
         stopEnhancedPlayback()
+        // Master Gain on Pure is the device's own volume: lowered by the cut before Pure renders — or,
+        // on a device with no volume the app can set, Pure waits and Enhanced plays at the app's level.
+        guard enterPureVolume(deviceID: currentDeviceID) == .engaged else {
+            NSLog("[AudioEngineBridge] Pure waits: Master Gain is turned down, the device has no volume to set")
+            mutateSignalPath { $0.pureReason = .waitsForMasterGain }
+            return false
+        }
         guard let failed = startPure(fileURL: url, deviceID: currentDeviceID, startAt: startAt) else {
             return true
         }
         NSLog("[AudioEngineBridge] Pure Mode start failed (\(failed)) — falling back to Enhanced")
+        leavePureVolume() // Enhanced plays the cut in the app: the device's own level goes back
         mutateSignalPath { $0.pureReason = failed }
         return false
     }
