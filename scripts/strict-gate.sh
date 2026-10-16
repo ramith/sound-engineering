@@ -315,6 +315,7 @@ null_test_allowlist=(
   Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp
   Sources/AudioDSP/AudioEngine/AUAudioUnit.mm
   Sources/AudioDSP/AudioEngine/HALOutputEngine.mm
+  Sources/AudioDSP/AudioEngine/InProcessEffectAU.mm
   Sources/AudioDSP/AudioEngine/SpatialRendererAU.mm
 )
 # uncovered = (every production .mm/.cpp/.cc) minus (files build-null-test.sh actually compiles,
