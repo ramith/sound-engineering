@@ -1,67 +1,36 @@
 import EQEditKit
 import Foundation
 
-// MARK: - AudioViewModel Master Gain (S10.8 G, break-it G-GAIN-1)
+// MARK: - AudioViewModel Master Gain (S10.8 G, break-it G-GAIN-1; R1.1-A, C-29)
 
-/// Master Gain shows the level that plays (founder decision 2026-10-12, "Show the real level"). Off
-/// Pure that is the app's own gain (`masterGain`), which the engine has from engine-ready on. On Pure
-/// the bit-perfect stream is never scaled, so the one gain is the output device's own volume: the
-/// slider shows what the device reads and sets the device when moved. Engaging Pure reads that
-/// volume and never writes it — playing Pure must not make the device louder than it was — and Pure
-/// engages only with the app's gain at 0 dB, so switching to it never makes the music louder either
-/// (`startsOnPure`).
+/// Master Gain is ONE level on both paths (founder decisions 2026-10-12, "Show the real level", and
+/// 2026-10-15, "turn the Mac's volume down instead"). Off Pure the engine plays it as the app's own gain.
+/// On Pure the bit-perfect stream is never scaled, so the engine turns the output device's own volume
+/// down by it instead (`MasterGainOnPure`, EQEditKit): Pure engages at any Master Gain and the music is
+/// as loud as it was; on a device with no volume the app can set, Pure waits while Master Gain is turned
+/// down, and says why (`PureModeReason.waitsForMasterGain`). The view model only asks for Pure — the
+/// engine knows the device. The loans of a device's volume not yet put back are kept with the listener's
+/// settings (`pureVolumeLoans`), so a crash leaves no device turned down.
 extension AudioViewModel {
-    /// Whether a start plays Pure: asked for, and Master Gain at 0 dB (`pureWaitsForMasterGain`).
-    var startsOnPure: Bool {
-        pureModeEnabled && !pureWaitsForMasterGain
-    }
-
-    /// Pure is asked for, but Master Gain is turned down. Pure plays the file untouched, at the output
-    /// device's own volume: louder than Enhanced plays now, by the cut. So it waits, and Enhanced keeps
-    /// playing at the listener's level until Master Gain is back at 0 dB — switching Enhanced → Pure
-    /// never raises the level (council C-29, KI-SET-02). The Pure card says so. NaN reads as a cut, the
-    /// law's safe reading of a bad value.
-    var pureWaitsForMasterGain: Bool {
-        pureModeEnabled && !(masterGain >= MasterGainLaw.unity)
-    }
-
-    /// How the next start takes Pure, for the play log: "on", "off", or why it waits.
+    /// How the next start takes Pure, for the play log.
     var pureStartNote: String {
-        guard pureModeEnabled else { return "off" }
-        return startsOnPure ? "on" : "waits (Master Gain \(MasterGainLaw.text(masterGain)))"
+        pureModeEnabled ? "on (Master Gain \(MasterGainLaw.text(masterGain)))" : "off"
     }
 
     /// What the Master Gain slider shows and moves right now.
     var masterGainControl: MasterGainControl {
         guard pureModeEngaged else { return .app(decibels: masterGain) }
-        guard case let .decibels(shown) = signalPath.deviceVolume else { return .deviceFixed }
-        return .device(shown: shown, knob: heldDeviceKnob(shown: shown) ?? shown)
+        return signalPath.deviceVolume == .fixed ? .deviceFixed : .pureDevice(decibels: masterGain)
     }
 
-    /// Where the knob holds instead of following the device: at the level asked for, until the
-    /// device answers it (the set runs off the main thread), and then while the device still reads
-    /// its answer — a device can step its volume more coarsely than the slider, and the next key
-    /// press must still move on from where the knob is. Anything else moving the device (the volume
-    /// keys) changes the reading, and the knob follows the device again.
-    private func heldDeviceKnob(shown: Float) -> Float? {
-        guard let asked = deviceVolumeAsked else { return nil }
-        guard let set = signalPath.deviceVolumeSet, set.decibels == asked else { return asked }
-        return set.answer == .decibels(shown) ? asked : nil
-    }
-
-    /// The slider moved to `position`: set the app's gain, or on Pure the device's own volume.
+    /// The slider moved to `position`: Master Gain — the engine plays it in the app, or on Pure turns
+    /// the device's own volume down by it (`publishMasterGain`, off the main thread).
     func setMasterGain(position: Float) {
+        guard masterGainControl.isAdjustable else { return }
         let level = MasterGainLaw.decibels(position: position)
-        guard pureModeEngaged else {
-            if masterGain != level {
-                masterGain = level
-            }
-            return
+        if masterGain != level {
+            masterGain = level
         }
-        // Off the main thread: the engine sets the device and the snapshot brings back its answer.
-        engine.requestDeviceVolume(decibels: level)
-        deviceVolumeAsked = level
-        logMasterGain("device volume → \(MasterGainLaw.text(level)) asked (Pure)")
     }
 
     /// Hand the engine the app's gain: on every change and at engine-ready
@@ -84,17 +53,16 @@ extension AudioViewModel {
 enum MasterGainControl: Equatable {
     /// Off Pure: the app's own gain, in dB.
     case app(decibels: Float)
-    /// Pure, on a device with its own volume: what the device reads (`shown`) and where the knob
-    /// sits (`knob`), both in dB on the device's scale.
-    case device(shown: Float, knob: Float)
-    /// Pure, on a device with no volume the app can set.
+    /// Pure, on a device with its own volume: Master Gain in dB, which the engine applies by turning
+    /// the device's volume down.
+    case pureDevice(decibels: Float)
+    /// Pure, on a device with no volume the app can set (Pure engages there only at 0 dB).
     case deviceFixed
 
-    /// The readout: the level that plays ("-3.0 dB", "Silent"), or where it is set.
+    /// The readout: the level ("-3.0 dB", "Silent"), or where it is set.
     var readout: String {
         switch self {
-        case let .app(decibels): MasterGainLaw.text(decibels)
-        case let .device(shown, _): MasterGainLaw.text(shown)
+        case let .app(decibels), let .pureDevice(decibels): MasterGainLaw.text(decibels)
         case .deviceFixed: "Set on device"
         }
     }
@@ -103,7 +71,7 @@ enum MasterGainControl: Equatable {
     var spoken: String {
         switch self {
         case let .app(decibels): MasterGainLaw.spoken(decibels)
-        case let .device(shown, _): MasterGainLaw.spoken(shown) + ", output device volume"
+        case let .pureDevice(decibels): MasterGainLaw.spoken(decibels) + ", on the output device's volume"
         case .deviceFixed: "set on the output device"
         }
     }
@@ -111,8 +79,7 @@ enum MasterGainControl: Equatable {
     /// Where the knob sits on the slider's travel.
     var position: Float {
         switch self {
-        case let .app(decibels): MasterGainLaw.position(decibels: decibels)
-        case let .device(_, knob): MasterGainLaw.position(decibels: knob)
+        case let .app(decibels), let .pureDevice(decibels): MasterGainLaw.position(decibels: decibels)
         case .deviceFixed: 1 // nothing applied in the app: the top
         }
     }
@@ -122,21 +89,15 @@ enum MasterGainControl: Equatable {
         self != .deviceFixed
     }
 
-    /// The tooltip: what the slider controls when that isn't the app's own gain.
+    /// The tooltip: how Master Gain plays when that isn't the app's own gain.
     var help: String {
         switch self {
         case .app: ""
-        case .device: "Pure Mode plays the file untouched, so Master Gain sets your output device's own volume."
+        case .pureDevice:
+            "Pure Mode plays the file untouched, so Master Gain turns your output device’s own volume down instead."
         case .deviceFixed:
             "Pure Mode plays the file untouched, and this output has no volume the app can set. "
-                + "Use the device's own volume control."
+                + "Use the device’s own volume control."
         }
     }
-}
-
-/// A level the user set on the output device while Pure plays, and what the device read back
-/// (`SignalPathInfo.deviceVolumeSet`).
-struct DeviceVolumeRequest: Equatable {
-    let decibels: Float
-    let answer: DeviceVolume
 }

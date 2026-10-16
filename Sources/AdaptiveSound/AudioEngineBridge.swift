@@ -243,19 +243,31 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// `engineQueue`: written by `publishMasterGain`, read where a player is built or started.
     var masterGainDecibels: Float = MasterGainLaw.unity
 
-    /// The device Pure plays on, whose volume Master Gain shows and sets, and the listener following
-    /// that volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on
-    /// `engineQueue` (Pure start), taken on `engineQueue` (teardown), read on `deviceVolumeQueue`.
+    /// The device Pure plays on, whose volume Master Gain steers, and the listener following that
+    /// volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on `engineQueue`
+    /// (Pure start), taken on `engineQueue` (teardown), read on `deviceVolumeQueue`.
     var deviceVolumeWatch: DeviceVolumeWatch?
 
-    /// Serial queue for the Pure device's volume: the user's sets (`requestDeviceVolume`) and the
-    /// device's change listener — HAL calls that must never run on the main thread.
+    /// Serial queue for the Pure device's volume: Master Gain on Pure (`MasterGainOnPure` — the entry,
+    /// the slider's moves, leaving, the loans a previous run left) and the device's change listener —
+    /// HAL calls that must never run on the main thread.
     let deviceVolumeQueue = DispatchQueue(label: "com.adaptivesound.device-volume")
 
-    /// The newest level asked of the Pure device, not yet applied, and whether a drain is posted
-    /// (latest value wins — `requestDeviceVolume`). Guarded by `stateLock`.
-    var pendingDeviceVolume: Float?
-    var deviceVolumeDrainPosted = false
+    /// Master Gain on Pure: the loan of the device's volume Pure holds, and those not yet put back.
+    /// Confined to `deviceVolumeQueue`.
+    var masterGainOnPure = MasterGainOnPure()
+
+    /// The Master Gain the Pure device was last steered to (the listener's change is read against it).
+    /// Confined to `deviceVolumeQueue`.
+    var pureGain: Float = MasterGainLaw.unity
+
+    /// The newest Master Gain for the Pure device, not yet applied, and whether a drain is posted
+    /// (latest value wins — `steerPureVolume`). Guarded by `stateLock`.
+    var pendingPureGain: Float?
+    var pureGainDrainPosted = false
+
+    /// `masterGainOnPure.allLoans` as last published, for the snapshot. Guarded by `stateLock`.
+    var publishedPureVolumeLoans: [PureVolumeLoan] = []
 
     // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 
@@ -339,7 +351,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// through a borrow of the AU). No AVFAudio, no HAL, no queue hop.
     func snapshot() -> EngineSnapshot {
         EngineSnapshot(transport: transportSnapshots.read(), signalPath: loadSignalPath(),
-                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
+                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate(),
+                       pureVolumeLoans: withStateLock { publishedPureVolumeLoans })
     }
 
     /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`), read through

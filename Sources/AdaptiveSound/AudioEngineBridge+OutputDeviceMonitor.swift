@@ -266,7 +266,16 @@ extension AudioEngineBridge {
     /// output stream yet). 0 if not, or no UID. Its id may differ from the one it had when chosen: a
     /// reconnect can give a device a new id, never a new UID.
     private static func liveDevice(uid: String) -> UInt32 {
-        guard !uid.isEmpty else { return 0 }
+        guard let deviceID = deviceID(forUID: uid) else { return 0 }
+        return OutputDevicePolicy.chosenDevice(deviceID, alive: isDeviceAlive(deviceID),
+                                               listed: isListedOutputDeviceC(deviceID) != 0)
+    }
+
+    /// The device with this UID as it is connected now (`kAudioHardwarePropertyTranslateUIDToDevice`),
+    /// or nil when none is — a reconnect can give a device a new id, never a new UID. A HAL read: off
+    /// the main thread.
+    static func deviceID(forUID uid: String) -> AudioObjectID? {
+        guard !uid.isEmpty else { return nil }
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -281,9 +290,8 @@ extension AudioEngineBridge {
                 UInt32(MemoryLayout<CFString>.size), uidPointer, &size, &deviceID
             )
         }
-        guard status == noErr else { return 0 }
-        return OutputDevicePolicy.chosenDevice(deviceID, alive: isDeviceAlive(deviceID),
-                                               listed: isListedOutputDeviceC(deviceID) != 0)
+        guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
+        return deviceID
     }
 
     private static func describe(_ facts: OutputDeviceFacts) -> String {

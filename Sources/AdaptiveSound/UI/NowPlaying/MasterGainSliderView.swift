@@ -3,10 +3,10 @@ import SwiftUI
 
 // MARK: - Master Gain Slider
 
-/// Master Gain (S10.8 G; founder decision 2026-10-12, "Show the real level"): turn-down only, 0 dB at
-/// the top, and the readout is the level that plays — the app's gain, or on Pure the output device's
-/// own volume (`AudioViewModel.masterGainControl`). The slider moves along `MasterGainLaw`'s dB-linear
-/// travel in 1 dB steps.
+/// Master Gain (S10.8 G; founder decisions 2026-10-12, "Show the real level", and 2026-10-15): turn-down
+/// only, 0 dB at the top, one level on both paths — the app's gain, or on Pure the cut the engine makes
+/// on the output device's own volume (`AudioViewModel.masterGainControl`). The slider moves along
+/// `MasterGainLaw`'s dB-linear travel in 1 dB steps.
 struct MasterGainSliderView: View {
     @Environment(AudioViewModel.self) var viewModel
 

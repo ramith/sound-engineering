@@ -175,10 +175,10 @@ struct ListeningSettingsTests {
         #expect(launch().masterGain == MasterGainLaw.unity)
     }
 
-    // MARK: - Enhanced → Pure never raises the level (C-29 slice)
+    // MARK: - Master Gain on Pure is the device's own volume (C-29; founder 2026-10-15)
 
-    @Test("with Master Gain turned down, Pure waits: Enhanced keeps playing at the listener's level")
-    func pureWaitsForMasterGain() async {
+    @Test("turned down, the view model still asks for Pure: the engine turns the device down, or waits")
+    func pureIsAskedForAtAnyLevel() async {
         let engine = DeviceTestEngine()
         let viewModel = launch(engine)
         viewModel.isEngineReady = true
@@ -187,24 +187,36 @@ struct ListeningSettingsTests {
         viewModel.pureModeEnabled = true
         viewModel.startPlayback()
         await settle()
-        #expect(engine.state.withLock { $0.pureModes } == [false], "Pure plays at the device's volume: 20 dB louder")
-        #expect(viewModel.pureWaitsForMasterGain, "the Pure card says why")
+        // The engine knows the device: it lowers its volume by Master Gain (MasterGainOnPure), or — on a
+        // device with no volume the app can set — waits, and says so (PureModeReason.waitsForMasterGain).
+        #expect(engine.state.withLock { $0.pureModes } == [true])
+        #expect(engine.state.withLock { $0.masterGains.last } == -20, "the engine has the level to turn down by")
+    }
 
-        // The same after a relaunch: both settings come back, and Pure still waits.
-        let relaunchedEngine = DeviceTestEngine()
-        let relaunched = launch(relaunchedEngine)
-        relaunched.isEngineReady = true
-        queueOneSong(relaunched)
-        relaunched.startPlayback()
-        await settle()
-        #expect(relaunchedEngine.state.withLock { $0.pureModes } == [false])
-
-        // Master Gain back at 0 dB: nothing is lost by going bit-perfect, and Pure starts.
+    @Test("on Pure the slider is still Master Gain; on a device with no volume the app can set, it stays at 0 dB")
+    func sliderOnPure() {
+        let viewModel = launch()
+        viewModel.masterGain = -12
+        viewModel.signalPath.path = .pure
+        viewModel.signalPath.deviceVolume = .decibels(-32)
+        #expect(viewModel.masterGainControl == .pureDevice(decibels: -12))
+        viewModel.setMasterGain(position: MasterGainLaw.position(decibels: -6))
+        #expect(abs(viewModel.masterGain - -6) < 0.01, "the engine moves the device from the level it found")
         viewModel.masterGain = MasterGainLaw.unity
-        viewModel.startPlayback()
+        viewModel.signalPath.deviceVolume = .fixed
+        #expect(viewModel.masterGainControl == .deviceFixed)
+        #expect(!viewModel.masterGainControl.isAdjustable)
+    }
+
+    @Test("the device-volume loans the engine holds are kept, and handed back to the engine at the next launch")
+    func loansKeptAcrossALaunch() async {
+        let loan = PureVolumeLoan(deviceUID: "AppleUSBAudioEngine:DAC:1", ceiling: -20, anchor: -20, lastSet: -32)
+        let (viewModel, _) = await launchReady(on: Self.speakers, devices: [Self.speakers])
+        viewModel.rememberPureVolumeLoans([loan]) // as the tick reads them from the snapshot
         await settle()
-        #expect(engine.state.withLock { $0.pureModes } == [false, true])
-        #expect(!viewModel.pureWaitsForMasterGain)
+        // The app died while Pure had the DAC turned down: the next launch hands the loan back.
+        let (_, relaunchedEngine) = await launchReady(on: Self.speakers, devices: [Self.speakers])
+        #expect(relaunchedEngine.state.withLock { $0.returnedLoans } == [[loan]])
     }
 
     // MARK: - The chosen output device (DEV-1)

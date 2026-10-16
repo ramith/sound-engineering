@@ -104,8 +104,9 @@ extension AudioEngineBridge {
         // activePath becomes .pure a `withPureEngine` borrow finds it.
         setActivePath(.pure)
         var pureInfo = makeSignalPathInfo(from: state)
-        // Master Gain shows the device's own volume on Pure: read it (never set it — engaging Pure must
-        // not change how loud the device is) into the snapshot that turns the path Pure, and follow it.
+        // Master Gain steers the device's own volume on Pure (`enterPureVolume` already lowered it by
+        // the cut): read it into the snapshot that turns the path Pure — `.fixed` holds the slider at
+        // 0 dB — and follow it, so the listener's own change is seen.
         pureInfo.deviceVolume = watchDeviceVolume(deviceID: deviceID)
         storeSignalPath(pureInfo)
         // No listener of its own: Pure plays on the app's device, which the output monitor already
@@ -216,9 +217,11 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Stop and destroy the Pure-Mode engine. This releases hog mode and restores
-    /// the device's nominal sample rate. Safe to call when pureEngine is nil.
+    /// Stop and destroy the Pure-Mode engine. This releases hog mode and restores the device's nominal
+    /// sample rate — and, once the render has stopped, its own volume (`leavePureVolume`: Master Gain
+    /// plays in the app again). Safe to call when pureEngine is nil.
     func tearDownPure() {
+        defer { leavePureVolume() }
         unwatchDeviceVolume()
         // Detach the session + reset activePath to .enhanced under stateLock, then do the SLOW HAL
         // teardown OUTSIDE the lock: `stop()` restores the device rate + releases hog, and dropping

@@ -1,4 +1,5 @@
 import AVFoundation
+import EQEditKit
 import Foundation
 import PlaybackQueueKit
 import SettingsKit
@@ -21,7 +22,7 @@ import SettingsKit
 /// makes one. State comes back as ONE copy (`snapshot()`); the rest hand values to non-blocking
 /// sinks, or read a value under a lock held only for the read. Anything that must touch the hardware
 /// is `async`, or hands its work to an engine queue and answers through the snapshot
-/// (`requestDeviceVolume`).
+/// (`publishMasterGain` on Pure, `returnPureVolumeLoans`).
 extension AudioPlaybackEngine {
     // MARK: Gapless defaults (overridden by the live engine + the mock)
 
@@ -61,8 +62,8 @@ extension AudioPlaybackEngine {
     /// Default: no-op. Conformers with a player override this.
     func publishMasterGain(decibels _: Float) {}
 
-    /// Default: no-op — nothing plays on Pure, so there is no device volume to set.
-    func requestDeviceVolume(decibels _: Float) {}
+    /// Default: no-op — no device volume was ever lowered.
+    func returnPureVolumeLoans(_: [PureVolumeLoan]) {}
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -173,18 +174,19 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     // MARK: Master Gain
 
-    /// Publish Master Gain — the app's own level in dB, ≤ 0 (−∞ = silent; `MasterGainLaw`). The
-    /// player plays it at its linear gain from then on, on every Enhanced start and after a rebuild
-    /// too. Never reaches Pure: the bit-perfect stream is not scaled (see `requestDeviceVolume`).
-    /// Synchronous and off-RT; calls apply in the order made. Default impl: no-op.
+    /// Publish Master Gain — the app's own level in dB, ≤ 0 (−∞ = silent; `MasterGainLaw`). On
+    /// Enhanced the player plays it at its linear gain from then on, on every Enhanced start and after
+    /// a rebuild too. On Pure the bit-perfect stream is not scaled: the output device's own volume is
+    /// turned down by it instead (`MasterGainOnPure` — at Pure's start, and as it moves), off the main
+    /// thread. Synchronous; calls apply in the order made. Default impl: no-op.
     func publishMasterGain(decibels: Float)
 
-    /// While Pure plays, set the output device's own volume to `decibels` (clamped to the device's
-    /// range and to 0 dB at most; −∞ is its minimum). Returns at once: the engine sets the device off
-    /// the main thread and puts what it reads back into the signal-path snapshot
-    /// (`deviceVolume`, and `deviceVolumeSet` for this request). Calls apply in the order made. A
-    /// no-op when Pure is not playing. Default impl: no-op.
-    func requestDeviceVolume(decibels: Float)
+    /// Hand back the device-volume loans an earlier run left (`EngineSnapshot.pureVolumeLoans`, kept
+    /// with the listener's settings): the engine puts back the level of each device that is here and
+    /// still reads what Pure set — a crash, or a device that went away mid-Pure, leaves no device
+    /// turned down. Returns at once (the HAL work runs on an engine queue); the snapshot's loans say
+    /// what is still out. Call at engine-ready. Default impl: no-op.
+    func returnPureVolumeLoans(_ loans: [PureVolumeLoan])
 
     // MARK: DSP Parameters
 
