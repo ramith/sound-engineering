@@ -310,20 +310,6 @@ namespace
     return _renderBlock;
 }
 
-// Off-RT control plane. Stores the desired sample rate / buffer size applied on the next
-// allocateRenderResources.
-- (void)setRequestedSampleRate:(uint32_t)sampleRate bufferFrames:(uint32_t)bufferFrames {
-    if (sampleRate != 0U) { _sampleRate = sampleRate; }
-    if (bufferFrames != 0U) { _bufferFrames = bufferFrames; }
-}
-
-// Off-RT control plane. Explicit routing override for callers that do NOT drive width via the
-// negotiated bus formats. Normally unnecessary — allocateRenderResources derives N/M from the
-// connect-negotiated bus formats — but exposed for the C-ABI configureSpatialChannels().
-- (void)configureInputChannels:(uint32_t)inChannels outputChannels:(uint32_t)outChannels {
-    if (_kernel != nullptr) { _kernel->configure(inChannels, outChannels); }
-}
-
 @end
 
 // MARK: - C ABI (off-RT control plane). Pure-C signatures mirror the AdaptiveSoundAU C-ABI.
@@ -350,12 +336,6 @@ void registerSpatialRendererAUSubclass(void) AUDIODSP_C_NOEXCEPT {
                                  name:@"AdaptiveSound: SpatialRendererAU"
                               version:kComponentVersion];
     });
-}
-
-void configureSpatialChannels(void* auHandle, uint32_t inChannels, uint32_t outChannels) AUDIODSP_C_NOEXCEPT {
-    if (auHandle == nullptr) { return; }
-    SpatialRendererAU* audioUnit = (__bridge SpatialRendererAU*)auHandle; // non-owning borrow
-    [audioUnit configureInputChannels:inChannels outputChannels:outChannels];
 }
 
 } // extern "C"

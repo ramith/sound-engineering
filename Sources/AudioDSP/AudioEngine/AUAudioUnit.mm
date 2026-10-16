@@ -2,12 +2,10 @@
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AsLog.h" // AdaptiveSound::log::line — off-RT control-plane logging seam
 #include "../include/AudioConstants.h"
-#include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement for AU functions
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
 #include "../include/CoreAudioDevice.h"
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
-#include "../include/TargetState.h"
 #include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
 #include "../Loudness/TrackLoudnessHandle.h"  // AsLoudnessProfile: one shared profile reference
@@ -180,8 +178,7 @@ namespace
 }
 
 - (void)dealloc {
-    // The single, off-RT teardown point (runs when the last reference drops via
-    // __bridge_transfer in destroyAdaptiveAudioUnit / ARC).
+    // The single, off-RT teardown point (runs when the engine releases the AU's last reference).
     //
     // Teardown ORDER is load-bearing (the review's BLOCKER, design §1):
     //  1. Drain the Realizer's serial queue via a dispatch_sync barrier, so no queued drain
@@ -202,26 +199,10 @@ namespace
     return _renderBlock;
 }
 
-// Off-RT control plane. Stores the desired sample rate / buffer size that will be
-// applied the next time render resources are allocated.
-- (void)setRequestedSampleRate:(uint32_t)sampleRate bufferFrames:(uint32_t)bufferFrames {
-    if (sampleRate != 0) { _sampleRate = sampleRate; }
-    if (bufferFrames != 0) { _bufferFrames = bufferFrames; }
-}
-
 // Off-RT control plane. Borrow the Realizer (the shared_ptr<Realizer> owner). All
 // feed-forward control now flows through it; the canonical TargetState lives inside it.
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer {
     return _realizer;
-}
-
-// Off-RT control plane. Forwards a fully-formed TargetState directly to the RT kernel via the
-// lock-free double-buffer (SPSC producer side; never called on the render thread). Retained
-// only for the publishTargetState C-ABI (tests). NOTE: this is a SECOND publish plane parallel
-// to the Realizer; the two are unordered w.r.t. each other (design §1.4). Production control
-// flows through the Realizer (publishEQ/publishIntensity/publishCrossfeed), not this.
-- (void)publishState:(const TargetState&)state {
-    if (_kernel != nullptr) { _kernel->publishTargetState(state); }
 }
 
 // Off-RT control plane. Decodes the source layout tag (off-RT, allocation-free) and forwards the
@@ -236,7 +217,8 @@ namespace
 
 @end
 
-// MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitBridge.h exactly.
+// MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitRegistrationBridge.h and
+// DeviceBridge.h exactly (both are included above, so a mismatch fails to compile).
 
 // Helper: map C++ AudioDevice::Type to the uint8_t used in CDeviceInfo
 static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type type) {
@@ -364,66 +346,6 @@ int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
             static_cast<int>(status));
     }
     return 1;
-}
-
-void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) AUDIODSP_C_NOEXCEPT {
-    // Attach into the AVAudioEngine graph is driven Swift-side via AVAudioUnit.instantiate()
-    // using adaptiveAudioUnitComponentDescription(); this direct-alloc path remains for callers
-    // that want the subclass instance directly.
-    (void)audioEngine;
-    registerAdaptiveAudioUnitSubclass();
-
-    NSError* error = nil;
-    AdaptiveSoundAU* audioUnit =
-        [[AdaptiveSoundAU alloc] initWithComponentDescription:adaptiveAudioUnitComponentDescription()
-                                                      options:0
-                                                        error:&error];
-    if (audioUnit == nil) { return nullptr; }
-
-    [audioUnit setRequestedSampleRate:sampleRate bufferFrames:bufferFrames];
-
-    // Transfer an owning (+1) reference to the C caller. Balanced by
-    // destroyAdaptiveAudioUnit() via __bridge_transfer.
-    return (__bridge_retained void*)audioUnit;
-}
-
-void destroyAdaptiveAudioUnit(void* auUnit) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr) { return; }
-    // Reclaim the +1 reference handed out by createAdaptiveAudioUnit(); ARC releases
-    // when this transferred reference goes out of scope.
-    AdaptiveSoundAU* audioUnit = (__bridge_transfer AdaptiveSoundAU*)auUnit;
-    [audioUnit deallocateRenderResources];
-    audioUnit = nil;
-}
-
-bool setAUParameter(void* auUnit, uint64_t paramID, float value) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr) { return false; }
-    (void)paramID;
-    (void)value;
-    // Intentionally a dead stub returning false. The intensity surface (AUParameterID::Intensity)
-    // is routed through the dedicated publishIntensity() C-ABI (design §1.5) — the single
-    // intensity surface that posts to the Realizer's pending-intensity slot. We deliberately do
-    // NOT also accept it here, to avoid two contradictory surfaces. EQ likewise drives the kernel
-    // via publishEQ -> the Realizer, not an AU parameter tree. This stub stays part of
-    // the stable exported C-ABI; it returns false rather than caching values that never reach the
-    // kernel. See publishIntensity().
-    return false;
-}
-
-float getAUParameter(void* auUnit, uint64_t paramID) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr) { return 0.0F; }
-    (void)paramID;
-    // No readable parameter store yet — see setAUParameter. Part of the stable
-    // exported C-ABI surface.
-    return 0.0F;
-}
-
-bool publishTargetState(void* auUnit, const void* state) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr || state == nullptr) { return false; }
-    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
-    const TargetState* targetState = static_cast<const TargetState*>(state);
-    [audioUnit publishState:*targetState];
-    return true;
 }
 
 bool publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT {
