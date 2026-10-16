@@ -123,4 +123,12 @@ namespace AdaptiveSound
                                               bool outputIsFloat,
                                               PureModeReason engaged);
 
+    // Whether Pure's float → integer step reduces bits the source has, and so is dithered (TPDF,
+    // PureModeFormat.h — R1.1-A, founder decision 2026-10-16): the depth rule says "not bit-perfect"
+    // (bitExactness) on an integer word narrower than 32 bits. A float output has no integer step; a
+    // 32-bit word takes the decoded float32 exactly (what a 32-bit source lost, it lost in decoding);
+    // at the exact depth nothing is reduced, and the conversion stays bit-exact.
+    [[nodiscard]] bool
+    ditherWhenConverting(const FileFormat& file, uint32_t outputBits, bool outputIsFloat);
+
 } // namespace AdaptiveSound

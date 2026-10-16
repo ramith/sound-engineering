@@ -185,4 +185,12 @@ namespace AdaptiveSound
                                                  : PureModeReason::DeviceShallowerThanSource;
     }
 
+    bool ditherWhenConverting(const FileFormat& file, uint32_t outputBits, bool outputIsFloat)
+    {
+        constexpr uint32_t kWidestWord = 32U; // takes the decoded float32 exactly
+        return !outputIsFloat && outputBits > 0U && outputBits < kWidestWord &&
+               bitExactness(file, outputBits, false, PureModeReason::BitPerfectInteger) ==
+                   PureModeReason::DeviceShallowerThanSource;
+    }
+
 } // namespace AdaptiveSound
