@@ -82,7 +82,7 @@ namespace AdaptiveSound
 
         // Snap the intensity ramp to whatever has been published so far (no launch fade-in).
         intensityRamp_.initialize(kIntensityRampTauSeconds, static_cast<float>(sampleRate));
-        (void)targetStateSnapshot_.tryCopySnapshot(currentState_);
+        targetStateSnapshot_.copySnapshot(currentState_);
         intensityRamp_.target = currentState_.intensityLinear;
         intensityRamp_.snap();
         loudnessContribution_ = loudnessContributionAt(intensityRamp_.current);
@@ -146,8 +146,8 @@ namespace AdaptiveSound
         // host of the kernel, and never left set on a thread Apple's own nodes share.
         const ScopedFlushToZero flushToZero;
 
-        // Copy the snapshot ONCE into RT-owned storage (S6 RACE-1); wait-free, always succeeds.
-        (void)targetStateSnapshot_.tryCopySnapshot(scratchState_);
+        // Copy the snapshot ONCE into RT-owned storage (S6 RACE-1); wait-free.
+        targetStateSnapshot_.copySnapshot(scratchState_);
         currentState_ = scratchState_;
         const TargetState& state = currentState_;
         const MultichannelView block = MultichannelView::fromABL(ioData, inNumberFrames);

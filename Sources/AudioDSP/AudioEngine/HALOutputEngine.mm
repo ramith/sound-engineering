@@ -935,7 +935,7 @@ class HALOutputEngine::Impl
     // entire lifetime of a started session — start()/stop() bracket every mutation, so there is no
     // concurrent reader during a write and no torn read on the RT thread. If the format ever needed
     // to change mid-session it would have to be published atomically (e.g. behind
-    // DoubleBufferSnapshot<T>); today that path does not exist.
+    // TripleBufferSnapshot<T>); today that path does not exist.
     std::atomic<PureModeSource*> source_{nullptr};
     // Render ⇄ control-plane handshake around every source access (RenderGate.h).
     RenderGate gate_;
