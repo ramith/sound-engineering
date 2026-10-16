@@ -25,6 +25,8 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var starts: [Double] = []
         /// Every `startAudio` call's `pureMode`.
         var pureModes: [Bool] = []
+        /// Every `stopAudio` call: a pause (playback resumes; Pure keeps the device's volume) or a stop.
+        var stops: [StopKind] = []
         /// Every Intensity published.
         var intensities: [Float] = []
         /// Every crossfeed published: whether it plays.
@@ -50,6 +52,11 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var spectrumFrames: [[Float]] = []
     }
 
+    /// What a `stopAudio` call was.
+    enum StopKind: Equatable {
+        case pause, stop
+    }
+
     let state = Mutex(State())
 
     func initialize() async throws -> Bool {
@@ -65,7 +72,9 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         }
     }
 
-    func stopAudio(epoch _: UInt64) async throws {}
+    func stopAudio(epoch _: UInt64, pausing: Bool) async throws {
+        state.withLock { $0.stops.append(pausing ? .pause : .stop) }
+    }
 
     func setNextTrack(_: URL?) async {}
 

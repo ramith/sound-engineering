@@ -250,9 +250,10 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// `engineQueue`: written by `publishMasterGain`, read where a player is built or started.
     var masterGainDecibels: Float = MasterGainLaw.unity
 
-    /// The device Pure plays on, whose volume Master Gain steers, and the listener following that
-    /// volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on `engineQueue`
-    /// (Pure start), taken on `engineQueue` (teardown), read on `deviceVolumeQueue`.
+    /// The device whose volume Pure holds (and Master Gain steers), and the listener following that
+    /// volume (`watchDeviceVolume`) — for as long as the hold lasts, through a pause; `nil` otherwise.
+    /// Guarded by `stateLock`: set and taken on `engineQueue` (`enterPureVolume`, `pureVolumeEvent`),
+    /// read on `deviceVolumeQueue`.
     var deviceVolumeWatch: DeviceVolumeWatch?
 
     /// Serial queue for the Pure device's volume: Master Gain on Pure (`MasterGainOnPure` — the entry,
