@@ -11,14 +11,20 @@
 //   only, 21 % of the audio at 192 kHz.)
 // - The same resolution at every rate. The window keeps the shipped 48 kHz window's length in time
 //   (4096 frames), as a power of two: 4096 at 44.1 / 48 kHz, 8192 at 88.2 / 96, 16 384 at
-//   176.4 / 192. Its bins are ≈ 11 Hz apart at every rate, zero-padded ×2 to ≈ 5.5 Hz, which bounds
-//   the window's scalloping to 0.35 dB. (Before: 4096 at every rate, 47 Hz bins at 192 kHz.)
+//   176.4 / 192. Its bins are ≈ 11 Hz apart at every rate, zero-padded ×4 to 2.7–2.9 Hz: the
+//   narrowest band (20–23.4 Hz, 3.4 Hz wide) still owns a bin, and the window's scalloping stays
+//   under 0.1 dB. (Before: 4096 at every rate, 47 Hz bins at 192 kHz.)
 // - True levels. A sine of amplitude A reads A: each bin's magnitude is divided by the window's sum
 //   (vDSP's real FFT returns twice the DFT, which the sine's two-sided split cancels), so a
 //   full-scale sine reads 0 dBFS. (Before: +4.26 dB — the normalised Hann's gain taken as 1/2.)
-// - Bands, not bins. Each band owns the bins inside its 1/6-octave span; no bin is in two bands. A
-//   band narrower than a bin reads the spectrum at its centre. The window's mean is removed first:
-//   DC is not music, and no band holds it. (Before: shared bins, and DC in the lowest bands.)
+// - Bands, not bins, across 20 Hz – 20 kHz. The 44 bands tile the audible range in equal log steps
+//   (`SpectrumConstants.bandEdgeHz`); each owns the bins inside its span, no bin is in two bands,
+//   and at every rate the app plays every band owns one (only at a rate below 44.1 kHz could a band
+//   read the spectrum at its centre instead, or lie above Nyquist and read nothing). The window's
+//   mean is removed first: DC is not music, and no band holds it. (Before: shared bins, DC in the
+//   lowest bands, and nothing above 6 kHz.)
+//   The bass is honest about the window: an 85 ms window resolves ≈ 12 Hz, so a 30 Hz tone also
+//   lights the bands beside its own, a little lower. Its own band reads it at its level.
 // - Meter ballistics: instant attack; release y = max(x, α·y) on the display's 0…1 scale, with
 //   α = exp(−Δt / τ) for the buffer's own duration Δt — the shipped 0.85 per 100 ms buffer,
 //   now whatever buffer size the system picks.
@@ -89,7 +95,7 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         let rate = sampleRate > 0 ? sampleRate : 48000
         self.sampleRate = rate
         windowLength = Self.windowLength(sampleRate: rate)
-        fftLength = 2 * windowLength
+        fftLength = Self.zeroPadding * windowLength
         log2FFTLength = vDSP_Length(fftLength.trailingZeroBitCount)
         hop = windowLength / 2
         guard let setup = vDSP_create_fftsetup(log2FFTLength, FFTRadix(kFFTRadix2)) else {
@@ -97,7 +103,7 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         }
         fftSetup = setup
         frames = SpectrumTripleBuffer(count: SpectrumConstants.bandCount)
-        layout = RealtimeBandLayout(Self.bandLayout(binHertz: rate / Double(fftLength), binCount: fftLength / 2))
+        layout = RealtimeBandLayout(Self.bandLayout(sampleRate: rate))
 
         hann = Self.zeroed(windowLength)
         vDSP_hann_window(hann, vDSP_Length(windowLength), Int32(vDSP_HANN_DENORM))
@@ -129,6 +135,10 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         buffer.initialize(repeating: 0, count: count)
         return buffer
     }
+
+    /// The transform's length over the window's: zero padding that puts bins 2.7–2.9 Hz apart at every
+    /// rate, closer than the narrowest band is wide.
+    static let zeroPadding = 4
 
     /// The analysis window at `sampleRate`: the shipped 48 kHz window's length in time
     /// (`SpectrumConstants.windowSeconds`, 4096 frames), as the power of two that holds it.
@@ -276,14 +286,18 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         }
     }
 
+    /// Where each band reads the spectrum at `sampleRate`: over the bins of this rate's window and
+    /// padding (`windowLength`, `zeroPadding`).
+    static func bandLayout(sampleRate: Double) -> [BandSpan] {
+        let fftLength = zeroPadding * windowLength(sampleRate: sampleRate)
+        return bandLayout(binHertz: sampleRate / Double(fftLength), binCount: fftLength / 2)
+    }
+
     /// Each band's span over `binCount` bins `binHertz` apart. Band b spans
-    /// [minHz·2^((b − ½)/6), minHz·2^((b + ½)/6)) — half a 1/6-octave step either side of its centre;
-    /// a bin belongs to the band whose span holds its frequency, so no bin is in two bands, and bin 0
-    /// (DC) is below every band.
+    /// [`bandEdgeHz(b)`, `bandEdgeHz(b + 1)`); a bin belongs to the band whose span holds its
+    /// frequency, so no bin is in two bands, and bin 0 (DC) is below every band.
     static func bandLayout(binHertz: Double, binCount: Int) -> [BandSpan] {
-        let edges = (0 ... SpectrumConstants.bandCount).map { edge in
-            Double(SpectrumConstants.minHz) * pow(2.0, (Double(edge) - 0.5) / 6.0)
-        }
+        let edges = (0 ... SpectrumConstants.bandCount).map(SpectrumConstants.bandEdgeHz)
         return (0 ..< SpectrumConstants.bandCount).map { band in
             let first = max(1, Int((edges[band] / binHertz).rounded(.up)))
             let last = min(binCount - 1, Int((edges[band + 1] / binHertz).rounded(.up)) - 1)
