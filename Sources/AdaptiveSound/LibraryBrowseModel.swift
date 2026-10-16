@@ -232,9 +232,12 @@ final class LibraryBrowseModel {
     /// `loadAlbums` so a slow read can't overwrite a newer one (add/remove + libraryRevision +
     /// scan-progress all trigger reloads concurrently — review S3/#2).
     func loadRoots() async {
+        // No store yet (the launch is still building it), or none at all (the picture sheets): there
+        // is nothing to read, so the list stays as it is — empty at launch.
+        guard let store else { return }
         loadRootsEpoch &+= 1
         let epoch = loadRootsEpoch
-        let loaded = (try? await store?.roots()) ?? []
+        let loaded = (try? await store.roots()) ?? []
         guard epoch == loadRootsEpoch else { return }
         roots = loaded
     }
@@ -442,13 +445,19 @@ extension LibraryBrowseModel {
     extension LibraryBrowseModel {
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): show `fixture` as the loaded Songs
         /// list, and `albumFixture` as the Albums grid, without a store. Lives here because their
-        /// arrays and states have private setters. No fixture has folder roots, so an EMPTY one is
-        /// the first-run state, as `loadSongs` decides.
+        /// arrays and states have private setters. An EMPTY Songs fixture is the first-run state, as
+        /// `loadSongs` decides.
         func seedRenderFixture(songs fixture: [LibraryTrackDisplay], albums albumFixture: [AlbumFacet] = []) {
             songs = fixture
             songsState = fixture.isEmpty ? .firstRun : .loaded
             albums = albumFixture
             albumsState = albumFixture.isEmpty ? .firstRun : .loaded
+        }
+
+        /// Picture-sheet renderer only: list `fixture` as the Music Folders (the folder-paused world;
+        /// the others have none). Without a store, `loadRoots` keeps it.
+        func seedRenderFixture(roots fixture: [LibraryFolder]) {
+            roots = fixture
         }
     }
 #endif

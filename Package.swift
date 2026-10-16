@@ -166,10 +166,11 @@ let package = Package(
         // Pure Library-browse decision core (S9.5). Same rationale as PlaybackQueueKit: extracted
         // from LibraryBrowseModel/SongsView so the app and LibraryBrowseKitTests link the identical
         // sort-mapping / search-epoch / row-resolver logic — no untested UI-glue. Depends on
-        // LibraryStore only for the sort-column types.
+        // LibraryStore for the sort-column types, and on LibraryScan for the walk's refusal reasons
+        // a paused Music Folders row says (MusicFolderStatus, R1.1-A).
         .target(
             name: "LibraryBrowseKit",
-            dependencies: ["LibraryStore"],
+            dependencies: ["LibraryStore", "LibraryScan"],
             path: "Sources/LibraryBrowseKit"
         ),
         // Design-token data + pure surface/accessibility resolvers (S10.7 R0). Same rationale
