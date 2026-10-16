@@ -151,9 +151,9 @@ step "S10.7 layer-policy guards (Kit purity + fixed-band Dynamic Type clamp)"
 # DesignTokenKit's testability contract IS its zero-UI-imports purity (design §3.2 R0): the
 # moment it imports SwiftUI/AppKit, the headless RES/TOK/R4 tests stop meaning anything.
 # EQEditKit (Sprint EQ) holds the same contract for the EQ editing rules, OutputDeviceKit (Sprint G)
-# for the output-device rule.
-if grep -rnE '^import(\s+(struct|class|enum|protocol|func|typealias|var|let))?\s+(SwiftUI|AppKit)' Sources/DesignTokenKit/ Sources/EQEditKit/ Sources/OutputDeviceKit/; then
-  red "ERROR: a pure Kit (DesignTokenKit / EQEditKit / OutputDeviceKit) imports a UI framework — Kits stay headless (s10-7 design §3.2)."
+# for the output-device rule, SettingsKit (R1.1-A) for the listener's settings and their store.
+if grep -rnE '^import(\s+(struct|class|enum|protocol|func|typealias|var|let))?\s+(SwiftUI|AppKit)' Sources/DesignTokenKit/ Sources/EQEditKit/ Sources/OutputDeviceKit/ Sources/SettingsKit/; then
+  red "ERROR: a pure Kit (DesignTokenKit / EQEditKit / OutputDeviceKit / SettingsKit) imports a UI framework — Kits stay headless (s10-7 design §3.2)."
   exit 1
 fi
 # A fixed ShellMetrics band must clamp text scale or accessibility text sizes overflow the
@@ -283,7 +283,7 @@ swift build -c debug
 step "Swift test"
 swift test
 
-step "make gate (C++ null test + VerifyAUGraph + VerifyLibraryStore)"
+step "make gate (C++ null test + VerifyAUGraph + SRCQualityMeasure + VerifyLibraryStore)"
 make gate
 
 # S10.8 G (the disconnect freeze): hold AVFAudio's engine-wide lock for 2.5 s on an OFFLINE engine
@@ -303,18 +303,17 @@ step "Null-test source-coverage drift guard"
 # ALLOWLIST — needs a live CoreAudio device / AU host — intentionally not in the standalone
 # null test. Derived empirically as (find-all) minus (build-null-test.sh compile list); keep
 # in sync when adding/removing a live-only glue file.
-# NOTE: PureModeBridge.cpp + Loudness/LoudnessMeterBridge.cpp are allowlisted here (they link
-# CoreAudio, so the null test can't build them) but ADDITIONALLY get runtime coverage from the
-# leak-detection harness (make leak-check, Tests/HandleLeakHarness.mm) — their C-ABI handle
-# lifecycles run under leaks(1) even though they stay out of the standalone null test.
-# (CoreAudioDevice/PureModeBridge/LoudnessMeterBridge became .cpp in the .mm→.cpp migration; they
-# remain live-only glue — CoreAudio-linked, no offline null-test coverage.)
+# NOTE: PureModeBridge.cpp is allowlisted here (it links CoreAudio, so the null test can't build
+# it) but ADDITIONALLY gets runtime coverage from the leak-detection harness (make leak-check,
+# Tests/HandleLeakHarness.mm) — its C-ABI handle lifecycle runs under leaks(1). (CoreAudioDevice
+# and PureModeBridge became .cpp in the .mm→.cpp migration; they remain live-only glue.)
+# Loudness/LoudnessMeterBridge.cpp is NOT here: the null test compiles it.
 null_test_allowlist=(
   Sources/AudioDSP/CoreAudioDevice.cpp
   Sources/AudioDSP/PureModeBridge.cpp
-  Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp
   Sources/AudioDSP/AudioEngine/AUAudioUnit.mm
   Sources/AudioDSP/AudioEngine/HALOutputEngine.mm
+  Sources/AudioDSP/AudioEngine/InProcessEffectAU.mm
   Sources/AudioDSP/AudioEngine/SpatialRendererAU.mm
 )
 # uncovered = (every production .mm/.cpp/.cc) minus (files build-null-test.sh actually compiles,

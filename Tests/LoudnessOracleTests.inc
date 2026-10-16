@@ -405,31 +405,28 @@ static auto testLoudnessOracleTruePeak() -> void
 
 // ===========================================================================
 // CF-10 (QW1 §6): crossfeed is loudness-neutral, measured by the libebur128 integrated-LUFS
-// oracle on REAL stereo content where the design's neutrality claim is operative. The gain-neutral
-// design (gDirect=1/(1+α), gCross=α/(1+α)) makes the summed magnitude unity AT DC and near-unity
-// through the cross-path LPF passband — i.e. for CENTRED, BASS/LOW-MID content (the content
-// crossfeed is designed to preserve). Above fc the LPF deliberately attenuates the cross path (the
-// inherent, benign coloration QW1 §2 flags; the downstream LoudnessModule absorbs that residual).
+// oracle on REAL stereo content where bs2b's neutrality is operative. bs2b's output gain makes the
+// centred (L = R) sum exactly unity AT DC, and its shelf falls only gently above the cut (−1.5 dB
+// for this preset at high frequencies — CF-3 pins the whole curve against bs2b itself).
 //
 // So we measure on a correlated bass stereo bed (a sustained chord, 60-180 Hz, well within the
-// cross-path LPF passband) through the Bauer ("Default", the safe default) preset: crossfeed ON vs
-// OFF must agree within 0.3 LUFS via the ebur128 oracle. (The broader broadband residual on
-// HF-dominant content is by-design and not a neutrality bug -- see CF-3 / CF-5.)
+// cross-path low-pass's passband) through the "Default" preset (bs2b Cmoy): crossfeed ON vs OFF
+// must agree within 0.3 LUFS via the ebur128 oracle.
 // ===========================================================================
 static auto testCrossfeedLoudnessNeutral() -> void
 {
     static const char* const kName = "Crossfeed_ebur128_LevelNeutral";
     constexpr double kCfLufsTolLu = 0.3;
-    constexpr uint32_t kCfBauerPreset = 1U; // CrossfeedPreset::Bauer ("Default", safe default)
+    constexpr uint32_t kCfDefaultPreset = 1U; // CrossfeedPreset::Cmoy ("Default")
 
-    // Derive the Bauer-preset POD via the shipping Realizer path.
+    // Derive the preset's POD via the shipping Realizer path.
     AdaptiveSound::CrossfeedParams params{};
     {
         auto kernel = std::make_shared<DSPKernel>();
         kernel->initialize(kOracleRate48k, 512U);
         auto realizer =
             std::make_shared<AdaptiveSound::Realizer>(kernel, static_cast<double>(kOracleRate48k));
-        realizer->applyCrossfeed({.enabled = 1U, .level = 1.0F, .preset = kCfBauerPreset});
+        realizer->applyCrossfeed({.enabled = 1U, .preset = kCfDefaultPreset});
         params = realizer->canonicalState().crossfeed;
         realizer->shutdown();
     }
@@ -483,8 +480,8 @@ static auto testCrossfeedLoudnessNeutral() -> void
         module.initialize(fs, static_cast<uint32_t>(frames));
 
         // Warm-up the mix ramp (process a short prefix repeatedly does NOT reset state, so instead
-        // we run the full buffer twice: pass 1 warms the ramp + delay line, pass 2 is the measured
-        // steady state. The input is restored before pass 2.)
+        // we run the full buffer twice: pass 1 warms the ramp + filter memory, pass 2 is the
+        // measured steady state. The input is restored before pass 2.)
         TestABL warm(static_cast<uint32_t>(frames));
         std::memcpy(warm.left.data(), inL.data(), frames * sizeof(float));
         std::memcpy(warm.right.data(), inR.data(), frames * sizeof(float));
@@ -521,6 +518,176 @@ static auto testCrossfeedLoudnessNeutral() -> void
         oss << "crossfeed not loudness-neutral: on=" << onLufs << " off=" << offLufs
             << " delta=" << delta << " LU (> " << kCfLufsTolLu << ")";
         logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+// ===========================================================================
+// Loudness_MeterBridge_IntegratedPerTrack (council C-46; D59, P2-10): the UI's "Integrated" is the
+// playing track's. EBU Tech 3341 §2.3 lets the user set the measurement interval (start, reset); a
+// Now Playing readout means the track. A NEW track — the bridge announces each one as it becomes
+// audible, a fresh start or a gapless seam — starts a new interval; the SAME track announced again
+// (playFile re-announces it on a resume, a seek or a move to another device) carries on. An
+// unknown track (token 0) can't be told apart, so it always starts anew. Before R1.1 nothing reset
+// the meter: "Integrated" spanned the whole session, and the relative gate left a quiet track after
+// a loud one reading the loud one's loudness. Judged against libebur128 over exactly each interval,
+// fed as the app's tap feeds the meter (4096-frame buffers).
+// ===========================================================================
+static auto testLoudnessMeterBridgeIntegratedPerTrack() -> void
+{
+    static const char* const kName = "Loudness_MeterBridge_IntegratedPerTrack";
+    constexpr uint32_t kFs = kOracleRate48k;
+    constexpr size_t kTapFrames = 4096U; // SpectrumConstants.tapBufferFrames: the mixer tap's request
+    constexpr double kTolLu = 0.1;
+    constexpr uint64_t kTrackA = 0xA11CEULL;
+    constexpr uint64_t kTrackB = 0xB0BULL;
+    constexpr uint64_t kUnknownTrack = 0U;
+
+    const std::vector<float> loud = genStereoSine(-6.0, 1000.0, 6.05, kFs);  // ≈ −9 LUFS; ends mid-hop
+    const std::vector<float> quiet = genStereoSine(-26.0, 440.0, 4.0, kFs);  // ≈ −29 LUFS
+    const std::vector<float> louder = genStereoSine(-20.0, 440.0, 2.0, kFs); // B's last 2 s
+    std::vector<float> wholeB = quiet;
+    wholeB.insert(wholeB.end(), louder.begin(), louder.end());
+
+    void* meter = loudnessMeterCreate(kFs);
+    if (meter == nullptr)
+    {
+        logFail(kName, "loudnessMeterCreate returned null");
+        return;
+    }
+    const auto feed = [&](const std::vector<float>& interleaved)
+    {
+        const size_t frames = interleaved.size() / kOracleStereo;
+        std::vector<float> left(kTapFrames);
+        std::vector<float> right(kTapFrames);
+        for (size_t offset = 0U; offset < frames; offset += kTapFrames)
+        {
+            const size_t chunk = std::min(kTapFrames, frames - offset);
+            for (size_t n = 0U; n < chunk; ++n)
+            {
+                left[n] = interleaved[kOracleStereo * (offset + n)];
+                right[n] = interleaved[(kOracleStereo * (offset + n)) + 1U];
+            }
+            loudnessMeterAddStereo(meter, left.data(), right.data(), static_cast<uint32_t>(chunk));
+        }
+    };
+    std::string fail;
+    const auto check = [&](const char* step, const std::vector<float>& interval)
+    {
+        double expected = 0.0;
+        if (!ebur128Integrated(interval, kFs, expected))
+        {
+            fail += std::format("\n  {}: libebur128 failed", step);
+            return;
+        }
+        const double read = loudnessMeterRead(meter).integratedLufs;
+        logInfo(std::format("  [info] {}: {}: Integrated {:.2f} LUFS (libebur128 over the interval {:.2f})\n",
+                            kName,
+                            step,
+                            read,
+                            expected));
+        if (std::abs(read - expected) > kTolLu)
+        {
+            fail += std::format("\n  {}: Integrated {:.2f} LUFS, the interval is {:.2f}", step, read, expected);
+        }
+    };
+
+    loudnessMeterBeginTrack(meter, kTrackA);
+    feed(loud);
+    check("track A", loud);
+    loudnessMeterBeginTrack(meter, kTrackB); // a new track (a seam, or the next song)
+    feed(quiet);
+    check("track B, its first 4 s", quiet);
+    loudnessMeterBeginTrack(meter, kTrackB); // the same track again: a resume / a seek
+    feed(louder);
+    check("track B resumed: all of B", wholeB);
+    loudnessMeterBeginTrack(meter, kUnknownTrack);
+    feed(loud);
+    check("an unknown track", loud);
+    loudnessMeterBeginTrack(meter, kUnknownTrack); // unknown again: can't be the same, starts anew
+    feed(quiet);
+    check("another unknown track", quiet);
+
+    loudnessMeterDestroy(meter);
+    if (!fail.empty())
+    {
+        logFail(kName, "the Integrated readout is not the track's:" + fail);
+        return;
+    }
+    logPass(kName);
+}
+
+// Loudness_MeterBridge_BeginTrack_Concurrent (council C-46): the playback bridge announces tracks on
+// its own queues while the mixer tap feeds the meter on the audio thread. The announcement only
+// bumps atomics; the tap applies it at its next buffer, so the two never touch the meter at once
+// (run under `make tsan`). A last announcement made while the tap is idle is applied on the next
+// buffer: after it, Integrated is that track's alone.
+static auto testLoudnessMeterBridgeBeginTrackConcurrent() -> void
+{
+    static const char* const kName = "Loudness_MeterBridge_BeginTrack_Concurrent";
+    constexpr uint32_t kFs = kOracleRate48k;
+    constexpr uint32_t kTapFrames = 4096U;
+    constexpr int kBuffers = 600;    // ~51 s of audio
+    constexpr int kAnnouncements = 400;
+    void* meter = loudnessMeterCreate(kFs);
+    if (meter == nullptr)
+    {
+        logFail(kName, "loudnessMeterCreate returned null");
+        return;
+    }
+    const std::vector<float> loud = genStereoSine(-6.0, 1000.0, 1.0, kFs);
+    std::vector<float> left(kTapFrames);
+    std::vector<float> right(kTapFrames);
+    for (size_t n = 0U; n < kTapFrames; ++n)
+    {
+        left[n] = loud[kOracleStereo * n];
+        right[n] = loud[(kOracleStereo * n) + 1U];
+    }
+
+    std::atomic<bool> feeding{true};
+    std::thread tap(
+        [&]
+        {
+            for (int b = 0; b < kBuffers; ++b)
+            {
+                loudnessMeterAddStereo(meter, left.data(), right.data(), kTapFrames);
+            }
+            feeding.store(false, std::memory_order_release);
+        });
+    std::thread bridge(
+        [&]
+        {
+            for (int i = 0; i < kAnnouncements && feeding.load(std::memory_order_acquire); ++i)
+            {
+                loudnessMeterBeginTrack(meter, static_cast<uint64_t>((i % 3) + 1));
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+            }
+        });
+    tap.join();
+    bridge.join();
+
+    // A new track while the tap is idle, then 2 s of a quiet one: Integrated is that track's.
+    loudnessMeterBeginTrack(meter, 0xFEEDULL);
+    const std::vector<float> quiet = genStereoSine(-26.0, 440.0, 2.0, kFs);
+    const size_t frames = quiet.size() / kOracleStereo;
+    for (size_t offset = 0U; offset < frames; offset += kTapFrames)
+    {
+        const size_t chunk = std::min<size_t>(kTapFrames, frames - offset);
+        for (size_t n = 0U; n < chunk; ++n)
+        {
+            left[n] = quiet[kOracleStereo * (offset + n)];
+            right[n] = quiet[(kOracleStereo * (offset + n)) + 1U];
+        }
+        loudnessMeterAddStereo(meter, left.data(), right.data(), static_cast<uint32_t>(chunk));
+    }
+    double expected = 0.0;
+    const bool ok = ebur128Integrated(quiet, kFs, expected);
+    const double read = loudnessMeterRead(meter).integratedLufs;
+    loudnessMeterDestroy(meter);
+    if (!ok || std::abs(read - expected) > 0.1)
+    {
+        logFail(kName, std::format("after the race, Integrated {:.2f} LUFS, the track is {:.2f}", read, expected));
         return;
     }
     logPass(kName);

@@ -133,7 +133,8 @@ final class LibraryBrowseModel {
     /// `runFilter`. `invalidate()` is called **synchronously on every `searchQuery` edit** (its
     /// `didSet`), not inside the debounced `runFilter` — so an already-dispatched `searchMatchingIDs`
     /// from a prior query is invalidated the instant the user edits and can't publish a stale result
-    /// after the field has moved on (review LOW-1). `.task(id:)` cancellation alone can't interrupt an
+    /// after the field has moved on (review LOW-1); and each `runFilter` begins its own read, so the
+    /// newer of two reads always wins (P5B-01). `.task(id:)` cancellation alone can't interrupt an
     /// in-flight actor call, hence the epoch.
     private var searchEpoch = SearchEpoch()
 
@@ -231,9 +232,12 @@ final class LibraryBrowseModel {
     /// `loadAlbums` so a slow read can't overwrite a newer one (add/remove + libraryRevision +
     /// scan-progress all trigger reloads concurrently — review S3/#2).
     func loadRoots() async {
+        // No store yet (the launch is still building it), or none at all (the picture sheets): there
+        // is nothing to read, so the list stays as it is — empty at launch.
+        guard let store else { return }
         loadRootsEpoch &+= 1
         let epoch = loadRootsEpoch
-        let loaded = (try? await store?.roots()) ?? []
+        let loaded = (try? await store.roots()) ?? []
         guard epoch == loadRootsEpoch else { return }
         roots = loaded
     }
@@ -353,17 +357,18 @@ final class LibraryBrowseModel {
     /// Run the active filter: gate on ≥2 (trimmed) chars, hit the IDs-only membership read off-main,
     /// and publish newest-wins. `nil` = not filtering (restore full list); `[]` (junk /
     /// tokenizable-no-match) = zero results. A stale epoch OR a store error keeps the last-good set
-    /// (never a silent restore-to-full). The epoch is bumped in `searchQuery`'s `didSet`, so we only
-    /// CAPTURE it here; any newer edit that lands during the read drops this publish. Debounced +
-    /// cancelled by the SongsView `.task(id:)` (§7); also called directly on a filtered background
-    /// reload (§11 #4), where no edit occurred and the captured epoch simply stays current.
+    /// (never a silent restore-to-full). Each run begins its own read (`beginRead`), so any newer edit
+    /// (`searchQuery`'s `didSet`) OR newer run that lands during the read drops this publish. Debounced
+    /// + cancelled by the SongsView `.task(id:)` (§7); also called directly on a filtered background
+    /// reload (§11 #4), where no edit occurred — and two reloads' reads may finish in either order, so
+    /// only the newer may publish (council C-58 / P5B-01).
     func runFilter() async {
-        let captured = searchEpoch.value
+        let read = searchEpoch.beginRead()
         guard SearchQueryGate.shouldQuery(searchQuery) else {
             matchedIDs = nil
             return
         }
-        guard let ids = try? await store?.searchMatchingIDs(searchQuery), searchEpoch.isCurrent(captured)
+        guard let ids = try? await store?.searchMatchingIDs(searchQuery), searchEpoch.isCurrent(read)
         else { return } // stale epoch OR store error/not-ready → keep last-good, no publish
         matchedIDs = ids // [] on junk/no-match (never nil here) → drives zero-results
     }
@@ -440,13 +445,19 @@ extension LibraryBrowseModel {
     extension LibraryBrowseModel {
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): show `fixture` as the loaded Songs
         /// list, and `albumFixture` as the Albums grid, without a store. Lives here because their
-        /// arrays and states have private setters. No fixture has folder roots, so an EMPTY one is
-        /// the first-run state, as `loadSongs` decides.
+        /// arrays and states have private setters. An EMPTY Songs fixture is the first-run state, as
+        /// `loadSongs` decides.
         func seedRenderFixture(songs fixture: [LibraryTrackDisplay], albums albumFixture: [AlbumFacet] = []) {
             songs = fixture
             songsState = fixture.isEmpty ? .firstRun : .loaded
             albums = albumFixture
             albumsState = albumFixture.isEmpty ? .firstRun : .loaded
+        }
+
+        /// Picture-sheet renderer only: list `fixture` as the Music Folders (the folder-paused world;
+        /// the others have none). Without a store, `loadRoots` keeps it.
+        func seedRenderFixture(roots fixture: [LibraryFolder]) {
+            roots = fixture
         }
     }
 #endif

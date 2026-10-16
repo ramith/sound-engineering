@@ -15,7 +15,8 @@
 //
 // The RT side mirrors LoudnessModule: it relays the channel count by atomic, interleaves into a
 // pre-allocated scratch and pushes to a lock-free SPSC ring, DROPPING on full. When the tap is not
-// running it costs one relaxed atomic load per block. Everything else — the profiler, its FFTs, the
+// running it costs one relaxed atomic load per block. The worker parks while no estimate runs, and
+// once no audio has come for a while (WorkerParking), so a paused or idle tap wakes nobody. Everything else — the profiler, its FFTs, the
 // profile's storage, the sink — runs on the worker, off-RT.
 //
 // CONTROL (off-RT, any one control thread at a time — the Realizer's queue): start(sink) begins a
@@ -27,8 +28,10 @@
 #include "../include/ChannelLayout.h"
 #include "../include/MultichannelView.h"
 #include "../include/SpscRing.h"
+#include "../include/WorkerParking.h"
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -57,6 +60,10 @@ namespace AdaptiveSound
         static constexpr size_t kRingElems = kRingFrames * kMaxChannels;
         // The worker drains in chunks of this many frames.
         static constexpr size_t kChunkFrames = 2048U;
+        // The worker's nap while an estimate runs and its ring is empty, and how long it finds
+        // nothing before it parks until the next push (WorkerParking).
+        static constexpr std::chrono::milliseconds kDrainNap{10};
+        static constexpr std::chrono::milliseconds kParkAfter{200};
 
         CausalLoudnessTap() = default;
         ~CausalLoudnessTap(); // stops and joins the worker
@@ -82,14 +89,10 @@ namespace AdaptiveSound
         void push(const MultichannelView& block) noexcept;
 
         // Diagnostics (any thread): frames the worker has fed to the current estimate (reset when
-        // the worker begins a new one), and frames the RT side dropped because the ring was full.
+        // the worker begins a new one).
         [[nodiscard]] uint64_t fedFrames() const noexcept
         {
             return fedFrames_.load(std::memory_order_acquire);
-        }
-        [[nodiscard]] uint64_t droppedFrames() const noexcept
-        {
-            return droppedFrames_.load(std::memory_order_relaxed);
         }
 
       private:
@@ -122,7 +125,6 @@ namespace AdaptiveSound
         SpscRing<float, kRingElems> ring_;
         std::vector<float> pushBuf_; // maxFrames × kMaxChannels, interleaved (RT-owned)
         std::atomic<uint32_t> channelCount_{0U};
-        std::atomic<uint64_t> droppedFrames_{0U};
 
         // Control → worker / RT.
         std::atomic<bool> running_{false};
@@ -131,6 +133,9 @@ namespace AdaptiveSound
         std::mutex sinkMutex_; // guards sink_ and weights_
         Sink sink_;
         std::array<double, kMaxChannels> weights_{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+        // RT / control → worker wake-ups.
+        WorkerParking parking_{kDrainNap, kParkAfter};
 
         // Worker-owned.
         std::vector<float> chunk_;  // kChunkFrames × kMaxChannels, interleaved

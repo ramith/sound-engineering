@@ -12,18 +12,20 @@ import PlaybackQueueKit
 /// Two sub-paths exist on the Enhanced path, and gapless is handled differently for each:
 ///
 /// **Resampler sub-path** (file rate ≠ 48 kHz, driven by `AudioEngineBridge+EnhancedResampler`):
-///   The `onResamplerEOF` hook is installed on `resampleQueue` after `startEnhancedResampler`
-///   succeeds. When the resampler's completion chain reaches end-of-file it fires the hook (still
-///   on `resampleQueue`). If a next track is armed, `rollResamplerToNext` opens the new file,
-///   builds a NEW `AVAudioConverter`, and calls `startEnhancedResampler` without stopping the
-///   player — the buffer queue stays contiguous → gap-free.
+///   The `onResamplerEOF` hook is installed on `resampleQueue` when a next track is armed. A next
+///   track of the SAME format never needs it: once the playing file runs out, the reader takes the
+///   next one and its frames continue the stream through the same converter
+///   (`continueStreamIntoNextTrack`); the seam is counted when the player reaches the join
+///   (`commitJoin`). Otherwise, when the resampler's completion chain reaches end-of-file it fires
+///   the hook (still on `resampleQueue`): `rollResamplerToNext` opens the new file, builds a NEW
+///   resampler session, and primes it (`primeEnhancedResamplerLocked`) without stopping the player.
 ///
 /// **Passthrough sub-path** (48 kHz file, `scheduleFile`):
-///   `playFile` schedules the file with `completionCallbackType: .dataPlayedBack` and dispatches
+///   `commitEnhanced` schedules the file with `completionCallbackType: .dataPlayedBack` and dispatches
 ///   onto `resampleQueue` when the hardware finishes playing the last sample. `onPassthroughEOF`
 ///   fires there. If a next track is armed and it is also 48 kHz → `scheduleFile` the new file
 ///   immediately (consecutive schedules play back-to-back, byte-exact); if the next track is a
-///   different rate → `startEnhancedResampler` for it without stopping the player.
+///   different rate → a new resampler session for it, primed without stopping the player.
 ///
 /// ## Thread model
 ///
@@ -216,10 +218,20 @@ extension AudioEngineBridge {
     /// sampleTime so `liveEnhancedPosition()` reads ~0 for the new track instead of jumping
     /// to track-A-duration and counting forward from there.
     ///
+    /// A seam inside one resampled stream (`commitJoin`) passes `endingTrackSeconds`: the next track
+    /// starts exactly where the ending one ends on the player's timeline, so the base moves back by
+    /// that track's length — exact, with no estimate from when this runs.
+    ///
     /// MUST be called on `resampleQueue` (all gapless state lives there).
-    func bumpTransitionCount(player: AVAudioPlayerNode, nextURL: URL) {
+    func bumpTransitionCount(player: AVAudioPlayerNode, nextURL: URL, endingTrackSeconds: Double? = nil) {
         gaplessTransitionCounter.wrappingAdd(1, ordering: .acquiringAndReleasing)
         trackBecameAudible(nextURL, gaplessSeam: true)
+        if let endingTrackSeconds {
+            moveEnhancedPositionBaseSeconds(by: -endingTrackSeconds)
+            setLastKnownEnhancedPositionSeconds(0)
+            logUX("gapless: seam #\(gaplessTransitionCount) — position re-based by the ending track's length")
+            return
+        }
 
         // Capture the player's sampleTime off the audio thread (safe — CoreAudio property read).
         // The player is still running at the seam, so sampleTime is the hardware clock position at
@@ -238,26 +250,6 @@ extension AudioEngineBridge {
         setEnhancedPositionBaseSeconds(baseSeconds)
         setLastKnownEnhancedPositionSeconds(0)
         logUX("gapless: seam #\(gaplessTransitionCount) — position reset")
-    }
-
-    // MARK: - Converter factory (shared by seam handlers)
-
-    /// Create a `.max`-quality `AVAudioConverter` from `file`'s processing format to the player's
-    /// output format. Returns `nil` if the converter cannot be created (caller must fall back to
-    /// `scheduleFile`). MUST be called on `resampleQueue`.
-    func makeConverter(
-        for audioFile: AVAudioFile,
-        player: AVAudioPlayerNode
-    ) -> AVAudioConverter? {
-        let inputFormat = audioFile.processingFormat
-        let outputFormat = player.outputFormat(forBus: 0)
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            NSLog("[AudioEngineBridge] AVAudioConverter creation failed "
-                + "(\(inputFormat.sampleRate) -> \(outputFormat.sampleRate))")
-            return nil
-        }
-        converter.sampleRateConverterQuality = .max
-        return converter
     }
 }
 

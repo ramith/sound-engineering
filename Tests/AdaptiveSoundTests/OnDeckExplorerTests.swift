@@ -8,8 +8,9 @@ import Testing
 //
 // Each schedule starts track 0 (Pure or Enhanced, a random order mode) and mixes, at random, what
 // the user does while it plays (Play Next, shuffle, repeat, remove the on-deck row, Next, Add to
-// Queue) with what the engine does in its own time (deliver a request — any of them —, land an open
-// — any of them —, end the current track, a render callback after the end, a tick). Two invariants:
+// Queue, drag a row — council C-17) with what the engine does in its own time (deliver a request —
+// any of them —, land an open — any of them —, end the current track, a render callback after the
+// end, a tick). Two invariants:
 //
 //   I1  when nothing is in flight, the engine's armed pick is the app's promised next (or the deck is
 //       empty because that pick can't join gaplessly);
@@ -42,7 +43,7 @@ struct OnDeckExplorer {
     }
 
     private enum Move: String {
-        case tick, playNext, shuffle, repeatMode, removeOnDeck, next, append, deliver, open, end, renderAfterEnd
+        case tick, playNext, shuffle, repeatMode, removeOnDeck, next, append, drag, deliver, open, end, renderAfterEnd
     }
 
     let semantics: ArmSemantics
@@ -88,9 +89,11 @@ struct OnDeckExplorer {
                 progress.residual = false
             }
         }
-        // Let everything land and the app follow, then check what it shows and promises.
+        // Let everything land and the app follow, then check what it shows and promises. The tick acts
+        // only once no start is on its way (council C-15): each waits for the view model to finish one.
         for _ in 0 ..< 6 {
             rig.engine.drain()
+            try await rig.waitUntil("the view model's start to finish") { rig.viewModelSettled }
             try await tick(rig, progress: &progress)
         }
         rig.engine.drain()
@@ -121,7 +124,7 @@ struct OnDeckExplorer {
     private mutating func nextMove(_ rig: Rig, progress: Progress) -> Move {
         var moves: [Move] = [.tick, .tick]
         if progress.userActions < 6 {
-            moves += [.playNext, .shuffle, .repeatMode, .next, .append]
+            moves += [.playNext, .shuffle, .repeatMode, .next, .append, .drag]
             if let pending = rig.vm.pendingNextIndex, pending != rig.vm.selectedTrackIndex {
                 moves.append(.removeOnDeck)
             }
@@ -141,7 +144,7 @@ struct OnDeckExplorer {
         return moves[random(moves.count)]
     }
 
-    private func user(_ move: Move, rig: Rig, fresh: Int) {
+    private mutating func user(_ move: Move, rig: Rig, fresh: Int) {
         switch move {
         case .playNext: rig.vm.playNext([audioFile(fresh)])
         case .shuffle: rig.vm.toggleShuffle()
@@ -149,33 +152,32 @@ struct OnDeckExplorer {
         case .next: rig.vm.nextTrack()
         case .append: rig.vm.appendToQueue([audioFile(fresh)])
         case .removeOnDeck: rig.vm.removeTrack(at: rig.vm.pendingNextIndex ?? 0)
+        case .drag:
+            let count = rig.vm.queue.count
+            rig.vm.moveByDrop(fromID: rig.vm.queue[random(count)].id, toIndex: random(count))
         default: break
         }
     }
 
-    /// One tick; when it takes a seam, the app must show what plays — or the seam is A2 / A2′: a
-    /// request the engine had not applied when the seam fired (made before it, still in flight, or
-    /// made after it, before this tick).
+    /// One tick; when it takes a seam, the app must show what plays — or the seam is A2 / A2′
+    /// (`Rig.tickJudgingSeam`).
     private mutating func tick(_ rig: Rig, progress: inout Progress) async throws {
-        let sequenceAtTick = rig.vm.onDeckSequence
-        let countBefore = rig.vm.lastTransitionCount
-        let hadSeam = rig.engine.hasUnprocessedSeam
-        rig.tick()
+        let verdict = rig.tickJudgingSeam()
         try await rig.settle()
-        guard hadSeam, rig.vm.lastTransitionCount != countBefore, let seam = rig.engine.takeProcessedSeam() else {
+        switch verdict {
+        case .none:
             return
-        }
-        if !seam.intoNewestApplied {
-            note("a seam into a pick other than the newest applied request's", rig: rig, trace: progress.trace)
-        } else if rig.engine.current == rig.shown {
+        case .shown:
             progress.residual = false
-        } else if sequenceAtTick > seam.newestApplied {
+        case .residual:
             report.residualA2 += 1
             if report.firstResidual.isEmpty {
                 report.firstResidual = describe(rig, trace: progress.trace)
             }
             progress.residual = true
-        } else {
+        case .intoStalePick:
+            note("a seam into a pick other than the newest applied request's", rig: rig, trace: progress.trace)
+        case .wrongSong:
             note("wrong song after a seam", rig: rig, trace: progress.trace)
         }
     }

@@ -57,7 +57,7 @@ extension AudioEngineBridge {
 
     /// Thread-safe read-modify-write of the cached signal path. `mutate` runs UNDER the leaf lock
     /// and so must only touch the struct's fields (no call-outs) — callers pass a simple closure
-    /// such as `{ $0.fellBackToEnhanced = true }`.
+    /// such as `{ $0.pureReason = .bluetooth }`.
     func mutateSignalPath(_ mutate: (inout SignalPathInfo) -> Void) {
         withStateLock { mutate(&storedCachedSignalPath) }
     }
@@ -132,6 +132,11 @@ extension AudioEngineBridge {
     /// Thread-safe write of the Enhanced position base offset (seconds).
     func setEnhancedPositionBaseSeconds(_ value: Double) {
         withStateLock { storedEnhancedPositionBaseSeconds = value }
+    }
+
+    /// Thread-safe move of the Enhanced position base offset by `delta` seconds (one lock hold).
+    func moveEnhancedPositionBaseSeconds(by delta: Double) {
+        withStateLock { storedEnhancedPositionBaseSeconds += delta }
     }
 
     // MARK: - lastKnownEnhancedPositionSeconds

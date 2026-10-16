@@ -156,7 +156,7 @@ struct AdaptiveSound: App {
                 // playhead), and shuffle/repeat-aware next/previous (not linear playTrack(at:)).
                 // A menu key-equivalent wins over the queue's .onKeyPress, so spacebar MUST match
                 // the footer's play button — otherwise the two global transports contradict.
-                Button(audioViewModel.isPlaying ? "Pause" : "Play") {
+                Button(audioViewModel.playIntent ? "Pause" : "Play") {
                     audioViewModel.togglePlayPause()
                 }
                 .keyboardShortcut(.space, modifiers: [])

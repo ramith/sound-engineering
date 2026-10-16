@@ -6,8 +6,9 @@ import SwiftUI
 
 /// The Now Playing hero: the 8a 28/800 title (dark-only teal halo), artist line, and the
 /// signal-path BADGE ROW — the full state mapping the retired `NowPlayingWidget` carried
-/// (design §5): `PURE` (monochrome) / `ENHANCED` + pulsing dot / the "(Pure unavailable)"
-/// fallback warning / the interrupted state — plus rate/intensity/crossfeed capsules.
+/// (design §5): `PURE` (monochrome) / `ENHANCED` + pulsing dot / why Pure isn't playing
+/// bit-perfect, in a few words (`PureModeReason.note`, R1.1-A) / the interrupted state — plus
+/// rate/intensity/crossfeed capsules.
 /// Decoder/bits live in the inspector's signal-detail line (PR 5 relocation, §5); the
 /// SPOKEN summary here deliberately keeps them — one VoiceOver stop for the whole path.
 ///
@@ -60,6 +61,7 @@ struct HeroBand: View {
             // The badge row reserves its space even when hidden (empty state) so first
             // play never reflows the hero (§5).
             SignalBadgeRow(info: viewModel.signalPath,
+                           masterGain: viewModel.masterGain,
                            format: track?.format,
                            isPlaying: viewModel.isPlaying,
                            reduceMotion: reduceMotion,
@@ -81,6 +83,8 @@ struct HeroBand: View {
 /// warning keep theirs, interrupted replaces the row. All colors/fills are audited tokens.
 private struct SignalBadgeRow: View {
     let info: SignalPathInfo
+    /// Master Gain, for the sentence when Pure waits for it.
+    let masterGain: Float
     /// The current track's file format ("MP3", "FLAC") — nil hides the segment.
     let format: String?
     let isPlaying: Bool
@@ -103,17 +107,20 @@ private struct SignalBadgeRow: View {
                 // No bits/decoder capsules: relocated to the inspector's signal-detail
                 // line (§5) — the hero-left's 300pt minimum budget (LAY-01) assumes the
                 // SHORT badge set.
-                if info.intensityLinear > 0, let strength = info.crossfeedStrength {
+                if let strength = info.audibleCrossfeed {
                     BadgeCapsule(height: badgeHeight) {
                         Text("XF:\(strength.displayName)")
                             .badgeText(DesignSystem.Color.label)
                     }
                 }
-                if info.fellBackToEnhanced {
+                // Why Pure isn't playing bit-perfect (C-34): a short note, its sentence on hover.
+                if let reason = info.pureReason {
                     BadgeCapsule(height: badgeHeight) {
-                        Text("Pure unavailable")
+                        Text(reason.note)
                             .badgeText(DesignSystem.Color.statusWarningText)
+                            .lineLimit(1)
                     }
+                    .help(reason.detail(in: info, masterGain: masterGain))
                 }
             }
         }
@@ -238,9 +245,12 @@ enum SignalPathAccessibility {
         if info.path == .pure, let decoder = info.decoder {
             parts.append(decoder == .apple ? "Apple decoder" : "FFmpeg decoder")
         }
+        if let strength = info.audibleCrossfeed {
+            parts.append("crossfeed \(strength.displayName)")
+        }
         var result = parts.joined(separator: ", ")
-        if info.fellBackToEnhanced {
-            result += " — Pure mode unavailable"
+        if let reason = info.pureReason {
+            result += " — " + reason.note
         }
         return result
     }

@@ -33,17 +33,22 @@ extension AudioViewModel {
                     return
                 }
 
-                // Enumerate real output devices from CoreAudio, and show the one the engine starts
-                // on (the system default). Starting on it is not the user's pick (founder decision,
-                // R1): nothing is chosen until they pick, so the pin follows the default until then,
-                // and a re-initialization keeps the device they did pick.
+                // Keep the picker current when devices connect/disconnect (e.g. Bluetooth), or the
+                // engine moves to the chosen device below.
+                engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
+                // The connect behaviour, then the device the user chose — in this session, or before
+                // the last quit (DEV-1). The engine starts on the system default, which is not the
+                // user's pick (founder decision, R1): handing the choice back is not a pick either,
+                // and the engine's output rule moves to it once it is here. Nothing chosen: the pin
+                // follows the default until the user picks.
+                engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
+                engine.restoreChosenOutput(uid: chosenOutputUID)
+                // A device Pure turned down and never put back (the app died, or the device went away
+                // mid-Pure) gets its level back, if it still reads what Pure set (`MasterGainOnPure`).
+                engine.returnPureVolumeLoans(pureVolumeLoans)
+                // Enumerate real output devices from CoreAudio, and show the one the engine plays on.
                 let devices = try await engine.enumerateOutputDevices()
                 showEngineOutput(among: devices)
-                // Push the connect-behaviour preference so the engine acts on it from the first
-                // device change (its default matches, but this keeps them explicitly in step).
-                engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
-                // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
-                engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
                 // Launch publish (Sprint EQ engine-plan §5.4): the engine plays the Intensity,
                 // crossfeed and Master Gain the UI shows from the first block, not its own defaults.
@@ -55,7 +60,7 @@ extension AudioViewModel {
                 errorMessage = nil
                 logUX("initializeEngine: ready — \(availableDevices.count) device(s), "
                     + "selected='\(selectedDevice?.name ?? "none")'")
-                startSpectrumTimer()
+                armTransportTick()
             } catch {
                 logUX("initializeEngine: error — \(error.localizedDescription)")
                 errorMessage = "Engine initialization failed: \(error.localizedDescription)"
@@ -88,14 +93,18 @@ extension AudioViewModel {
     /// Publish `intensity`, clamped with a LOCAL (never re-assigned — see `intensity`).
     /// Synchronous, off-RT control-plane call (borrows the AU under the leaf lock). No Task:
     /// publishIntensity has no suspension point, and an unstructured Task only risks applying an
-    /// earlier value after a later one under rapid slider drags (S3 finding F4).
+    /// earlier value after a later one under rapid slider drags (S3 finding F4). The signal path
+    /// carries it for the hero, so it is refreshed now — paused, no tick would.
     func publishIntensity() {
         engine.publishIntensity(max(0, min(1, intensity)))
+        refreshSignalPathIntents()
     }
 
-    /// Publish the crossfeed state (On/Off and strength).
+    /// Publish the crossfeed that plays (`crossfeedPlays`: chosen, on headphones) and its strength;
+    /// the hero's "XF" chip reads it from the signal path, refreshed now — paused, no tick would.
     func publishCrossfeed() {
-        engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength)
+        engine.publishCrossfeed(enabled: crossfeedPlays, strength: crossfeedStrength)
+        refreshSignalPathIntents()
     }
 
     /// AWAITABLE teardown. The terminate path (`AppDelegate.applicationShouldTerminate`) awaits
@@ -112,11 +121,12 @@ extension AudioViewModel {
         // library peer's own teardown has already run (AppDelegate ordering), but its `store` is
         // still live here, so this last SQLite write lands.
         persistQueueCursor()
+        settingsStore.flush() // a change made in the quit's own turn is written too
         queueMirrorTask?.cancel()
         await mirrorQueueNow()
-        // Stop the spectrum timer FIRST so no further `tickSpectrum` is scheduled (it polls
-        // the engine and could otherwise touch handles we're about to tear down).
-        stopSpectrumTimer()
+        // Stop the transport tick FIRST so no further tick is scheduled (it polls the engine and could
+        // otherwise touch handles we're about to tear down); disarmed, the stop below starts none.
+        disarmTransportTick()
         // S3 F5: the library subsystem (FSEvents watcher, volume monitor, in-flight scan/reconcile)
         // now lives on the LibraryModel peer, whose `shutdown()` the app-lifecycle owner
         // (AppDelegate) awaits BEFORE this — so the store is already quiescent (no scan/reconcile
@@ -129,7 +139,11 @@ extension AudioViewModel {
         // the menu bar / Control Center could pass the `isEngineReady` guard and land on
         // engineQueue AFTER the teardown block → "engine not initialized" at quit.
         isEngineReady = false
-        await performStop()
+        await performStop(epoch: nextStopEpoch())
+        // The stop put the Pure device's own volume back: keep what is still out (a device that went
+        // away), written now — the tick that would have read it has stopped.
+        rememberPureVolumeLoans(engine.snapshot().pureVolumeLoans)
+        settingsStore.flush()
         do {
             try await engine.shutdown()
         } catch {
@@ -142,38 +156,45 @@ extension AudioViewModel {
 
     func stopPlayback() {
         logUX("stop (was at \(secs(playbackPosition))s)")
-        // Clear the on-deck state synchronously so `tickSpectrum` won't react after stop.
+        // The stop takes the engine's on-deck with it.
         pendingNextIndex = nil
         // An explicit stop is not a pause: drop any position-preserving resume point so the next
         // Play starts from the top (D2).
         resumePoint = nil
-        // Fire-and-forget for the normal (non-shutdown) stop path — behaviour unchanged.
-        // The actual stop sequence lives in `performStop()` so `shutdown()` can `await` it.
-        Task { await performStop() }
+        // Numbered now (council C-15): a Play right after it is newer, and wins at the engine whatever
+        // order the two reach it in. The stop itself lives in `performStop()` so `shutdown()` can
+        // `await` it.
+        let epoch = nextStopEpoch()
+        Task { await performStop(epoch: epoch) }
     }
 
-    /// Stop the engine WITHOUT resetting the playhead — the position-preserving Pause path (D2).
-    /// Mirrors `performStop()` but leaves `playbackPosition` and `duration` intact so the scrubber
-    /// stays at the paused spot; `pause()` has already recorded `pausedResumePosition` for resume.
-    func performPause() async {
+    /// Stop the engine WITHOUT resetting the playhead — the position-preserving Pause path (D2), for
+    /// the pause numbered `epoch`. Mirrors `performStop()` but leaves `playbackPosition` and `duration`
+    /// intact so the scrubber stays at the paused spot; `pause()` has already recorded
+    /// `pausedResumePosition` for resume.
+    func performPause(epoch: UInt64) async {
         do {
-            let epoch = nextStopEpoch()
-            await engine.setNextTrack(nil, ticket: nextOnDeckTicket())
-            try await engine.stopAudio(epoch: epoch)
+            // A pause: on Pure the device keeps the volume Pure set (founder decision 2026-10-16).
+            try await engine.stopAudio(epoch: epoch, pausing: true)
+            // A Play asked since owns the transport: it plays on (the engine dropped this stop if it had
+            // begun the Play first).
+            guard finish(.stop(epoch)) else { return }
             isPlaying = false
         } catch {
             errorMessage = "Pause failed: \(error.localizedDescription)"
         }
     }
 
-    /// Stop the engine and reset transport state. Returns only once `stopAudio()` has fully
-    /// completed, so callers that must tear the engine down afterwards (e.g. `shutdown()`) can
+    /// Stop the engine and reset transport state, for the stop numbered `epoch` (`nextStopEpoch()`).
+    /// One engine call: the stop takes the on-deck pick with it. Returns only once `stopAudio()` has
+    /// fully completed, so callers that must tear the engine down afterwards (e.g. `shutdown()`) can
     /// `await` this to guarantee ordering and avoid a use-after-free of the C handles (P2-C).
-    func performStop() async {
+    func performStop(epoch: UInt64) async {
         do {
-            let epoch = nextStopEpoch()
-            await engine.setNextTrack(nil, ticket: nextOnDeckTicket())
-            try await engine.stopAudio(epoch: epoch)
+            // Playback ends: Pure is left, and the device gets its own level back.
+            try await engine.stopAudio(epoch: epoch, pausing: false)
+            // A start asked since owns the transport (and its playhead and length): leave them to it.
+            guard finish(.stop(epoch)) else { return }
             isPlaying = false
             playbackPosition = 0
             duration = 0

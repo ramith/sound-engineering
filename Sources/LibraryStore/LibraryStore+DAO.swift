@@ -90,20 +90,11 @@ public extension LibraryStore {
        OR tracks.folder_id IS NOT excluded.folder_id;
     """
 
-    /// The orphans of a sweep: the rows in the folders not seen since the generation. `placeholders` is
-    /// the `?,?,…` list for the folder ids (bound, never spliced); `last_seen_scan < ?` is the last bind.
-    private static func orphansWhereSQL(placeholders: String) -> String {
-        "folder_id IN (\(placeholders)) AND last_seen_scan < ?"
-    }
-
-    /// The folder-scoped orphan DELETE mirroring `deleteSearchRowsForSweep`.
-    private static func deleteTracksForSweepSQL(placeholders: String) -> String {
-        "DELETE FROM tracks WHERE \(orphansWhereSQL(placeholders: placeholders));"
-    }
-
-    /// The orphan COUNT — what the same sweep would delete.
-    private static func countTracksForSweepSQL(placeholders: String) -> String {
-        "SELECT count(*) FROM tracks WHERE \(orphansWhereSQL(placeholders: placeholders));"
+    /// The orphans of a sweep, with their urls: the rows in the folders not seen since the generation.
+    /// `placeholders` is the `?,?,…` list for the folder ids (bound, never spliced); `last_seen_scan < ?`
+    /// is the last bind.
+    private static func selectOrphansSQL(placeholders: String) -> String {
+        "SELECT id, url FROM tracks WHERE folder_id IN (\(placeholders)) AND last_seen_scan < ?;"
     }
 
     // MARK: - Scan roots
@@ -271,34 +262,30 @@ public extension LibraryStore {
     // MARK: - Sweep + delete
 
     /// Sweep orphans: delete tracks in `folderIDs` whose `last_seen_scan` is older than
-    /// `generation`. LOOSE tracks (folder NULL) are NEVER swept (the `IN (:folders)` filter
-    /// excludes NULL by SQL semantics, FS-4). Returns the number of rows deleted.
+    /// `generation` — except those at or under a `spared` path: a folder or file the walk could not
+    /// read, so it is no evidence of what is gone there (council C-55). LOOSE tracks (folder NULL) are
+    /// NEVER swept (the `IN (:folders)` filter excludes NULL by SQL semantics, FS-4). Each row goes with
+    /// its search-index row (`deleteTrackRows`). Returns the number of rows deleted.
     @discardableResult
-    func sweepOrphans(inFolders folderIDs: [Int64], olderThan generation: Int64) async throws -> Int {
+    func sweepOrphans(inFolders folderIDs: [Int64], olderThan generation: Int64, sparing spared: [URL] = [])
+        async throws -> Int {
         guard !folderIDs.isEmpty else { return 0 }
         return try await dbWriter.write { db in
-            // Clear the FTS rows for the swept set FIRST — after the tracks DELETE the
-            // sub-select would find nothing and the FTS rows would leak (design §4).
-            try self.deleteSearchRowsForSweep(db, inFolders: folderIDs, olderThan: generation)
-            let placeholders = databaseQuestionMarks(count: folderIDs.count)
-            try db.execute(
-                sql: Self.deleteTracksForSweepSQL(placeholders: placeholders),
-                arguments: StatementArguments(folderIDs + [generation])
-            )
-            return db.changesCount
+            let orphans = try Self.orphanIDs(db, inFolders: folderIDs, olderThan: generation, sparing: spared)
+            try self.deleteTrackRows(db, ids: orphans)
+            return orphans.count
         }
     }
 
-    /// How many rows `sweepOrphans(inFolders:olderThan:)` would delete — the ones the walk did not
-    /// see. A walk that is not evidence of what is gone refuses its sweep only when this is non-zero
-    /// (`LibraryScanner.scan`): with nothing unseen there is no deletion to refuse.
-    func orphanCount(inFolders folderIDs: [Int64], olderThan generation: Int64) async throws -> Int {
+    /// How many rows `sweepOrphans(inFolders:olderThan:sparing:)` would delete — the ones the walk did
+    /// not see, outside what it could not read. A walk that is not evidence of what is gone refuses its
+    /// sweep only when this is non-zero (`LibraryScanner.scan`): with nothing unseen there is no
+    /// deletion to refuse.
+    func orphanCount(inFolders folderIDs: [Int64], olderThan generation: Int64, sparing spared: [URL] = [])
+        async throws -> Int {
         guard !folderIDs.isEmpty else { return 0 }
         return try await dbWriter.read { db in
-            try Int.fetchOne(
-                db, sql: Self.countTracksForSweepSQL(placeholders: databaseQuestionMarks(count: folderIDs.count)),
-                arguments: StatementArguments(folderIDs + [generation])
-            ) ?? 0
+            try Self.orphanIDs(db, inFolders: folderIDs, olderThan: generation, sparing: spared).count
         }
     }
 
@@ -400,6 +387,27 @@ public extension LibraryStore {
         guard !candidates.isEmpty else { return [] }
         let referenced = try Set(Int64.fetchAll(db, sql: selectReferencedTrackIDsSQL))
         return candidates.filter { !referenced.contains($0) }
+    }
+
+    /// The orphans of a sweep (`sweepOrphans`): the rows of `folderIDs` not seen since `generation`,
+    /// less every row at or under a `spared` path (matched on the stored url key, at a path-component
+    /// boundary — `/Music/B` spares `/Music/B/x.flac`, never `/Music/Bach/x.flac`).
+    private static func orphanIDs(
+        _ db: Database, inFolders folderIDs: [Int64], olderThan generation: Int64, sparing spared: [URL]
+    ) throws -> [Int64] {
+        let sparedKeys = spared.map(PathNormalizer.normalizedString(for:))
+        let rows = try Row.fetchCursor(
+            db, sql: selectOrphansSQL(placeholders: databaseQuestionMarks(count: folderIDs.count)),
+            arguments: StatementArguments(folderIDs + [generation])
+        )
+        var orphans: [Int64] = []
+        while let row = try rows.next() {
+            let url: String = row[1]
+            if !sparedKeys.contains(where: { url == $0 || PathNormalizer.isComponentBoundaryDescendant(url, of: $0) }) {
+                orphans.append(row[0])
+            }
+        }
+        return orphans
     }
 
     /// Delete the given track rows by id (inside the caller's write transaction). One DELETE

@@ -5,9 +5,9 @@
 
 #include "AudioConstants.h"
 #include "ChannelLayout.h"
-#include "DoubleBufferSnapshot.h"
 #include "ParameterRamp.h"
 #include "TargetState.h"
+#include "TripleBufferSnapshot.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <cstdint>
 #include <functional>
@@ -29,20 +29,23 @@ namespace AdaptiveSound
 
     // DSP Kernel: the signal chain, EQ FIRST (Sprint EQ decision 25):
     //
-    //   EQ → [dry tap] → Clarity → BRIR → Crossfeed → [Intensity blend] → Loudness → Limiter
+    //   EQ → [dry tap] → Clarity → BRIR → [Intensity blend] → Loudness → Crossfeed → Limiter
     //
     // The EQ sits ahead of the Intensity blend, so what the EQ graph draws is what plays at every
-    // Intensity; the blend's dry signal is the EQ'd signal. Four paths (engine-plan §5.1):
+    // Intensity; the blend's dry signal is the EQ'd signal. The crossfeed is an output stage of
+    // its own after the blend (founder decision 2026-10-14): it plays at its preset's full strength
+    // whatever Intensity is, ahead of the limiter. Four paths (engine-plan §5.1):
     //
-    //   P0 bit-perfect  Intensity settled at 0 AND the EQ settled at its identity for ≥ 2 s:
-    //                   the input is returned untouched (the limiter's look-ahead ring is primed).
-    //   P1 EQ-only      Intensity settled at 0 otherwise: EQ → Limiter (no normaliser, so
-    //                   EQ On ↔ Off stays level-fair against the bit-perfect Off).
-    //   P2 full         Intensity settled at 1: EQ → coloration → Loudness → Limiter.
+    //   P0 bit-perfect  Intensity settled at 0, the EQ settled at its identity AND crossfeed off
+    //                   (its glide out ended), for ≥ 2 s: the input is returned untouched (the
+    //                   limiter's look-ahead ring is primed).
+    //   P1 EQ-only      Intensity settled at 0 otherwise: EQ → Crossfeed → Limiter (no normaliser,
+    //                   so EQ On ↔ Off stays level-fair against the bit-perfect Off).
+    //   P2 full         Intensity settled at 1: EQ → coloration → Loudness → Crossfeed → Limiter.
     //   P3 blend        otherwise: EQ → dry snapshot → coloration → equal-power blend → Loudness
     //                   (its contribution faded as min(1, r/0.1), amendment 2, gliding at most a
-    //                   full 0 ↔ 1 per 2 s, decision 33) → Limiter. P1 and P2 wait for that glide:
-    //                   until it ends the blend runs at the endpoint.
+    //                   full 0 ↔ 1 per 2 s, decision 33) → Crossfeed → Limiter. P1 and P2 wait for
+    //                   that glide: until it ends the blend runs at the endpoint.
     //
     // P0 ↔ P1/P3 switches cross-fade the undelayed input and the limiter's 3 ms-delayed output over
     // 5 ms at constant power (correlation-compensated, amendment 17), so a switch neither skips nor
@@ -91,14 +94,18 @@ namespace AdaptiveSound
         }
 
       private:
-        // Run the wet-region coloration chain (Clarity → BRIR → Crossfeed) in place.
+        // Run the wet-region coloration chain (Clarity → BRIR) in place.
         void runColorationChain(const TargetState& state, const MultichannelView& block) noexcept;
+        // The output stages, in place: Crossfeed → Limiter (at `limiter`'s ceiling).
+        void renderOutput(const TargetState& state,
+                          const MultichannelView& block,
+                          const LimiterParams& limiter) noexcept;
         // The processed paths P1–P3 (everything but the bit-perfect return), in place.
         void runProcessedPath(const TargetState& state,
                               const MultichannelView& block,
                               bool intensityAtZero,
                               bool intensityAtOne) noexcept;
-        // P3: EQ'd dry tap → coloration → equal-power blend → weighted Loudness → Limiter.
+        // P3: EQ'd dry tap → coloration → equal-power blend → weighted Loudness → output stages.
         void runBlendPath(const TargetState& state, const MultichannelView& block) noexcept;
         // Copy the block into a planar scratch (channel ch at scratch + ch·maxFrames_).
         void copyBlock(const MultichannelView& block, std::vector<float>& scratch) const noexcept;
@@ -123,7 +130,7 @@ namespace AdaptiveSound
         std::unique_ptr<CausalLoudnessTap> causalTap_; // the input, for the causal estimate
 
         // Lock-free parameter transport (wait-free SPSC triple-buffer snapshot).
-        DoubleBufferSnapshot<TargetState> targetStateSnapshot_;
+        TripleBufferSnapshot<TargetState> targetStateSnapshot_;
 
         // RT-thread-owned snapshot state (S6 RACE-1): the stable per-block copy of the snapshot.
         TargetState currentState_{};

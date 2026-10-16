@@ -31,7 +31,7 @@ extension AudioEngineBridge {
     /// (AudioEngineBridge+OutputDeviceMonitor) on a configuration change or a followed device.
     func reestablishEnhancedAfterConfigChange(engine: AVAudioEngine) {
         // Re-entrancy guard: a nested re-establish must early-return rather than run a second
-        // seekEnhancedResampler that abandons the first re-prime → audible dropout. The flag and
+        // restart that abandons the first re-prime → audible dropout. The flag and
         // all callers are confined to configChangeQueue — no atomics needed.
         guard !isReestablishing else {
             logUX("reestablish: skipping re-entrant call (already in progress)")
@@ -72,7 +72,7 @@ extension AudioEngineBridge {
 
         // Refresh the device rate: a config change can be a switch to a device running at a
         // different rate, so the stored Enhanced snapshot's achievedSampleRate would otherwise
-        // go stale. One field only (mutate, not store) so fellBackToEnhanced/interrupted stand.
+        // go stale. One field only (mutate, not store) so pureReason/interrupted stand.
         // On configChangeQueue here — the engine is settled, so this outputNode read is safe.
         // Read the rate BEFORE taking the lock: the main thread takes `stateLock` every tick, and this
         // AVFAudio read waits on the engine's lock (the leaf-lock rule, AudioEngineBridge+SharedState).
@@ -94,28 +94,18 @@ extension AudioEngineBridge {
     }
 
     /// The resume tail of `reestablishEnhancedAfterConfigChange` (split for the complexity
-    /// limit when the intent re-check joined): re-prime/re-schedule from the playhead per
-    /// sub-path. Runs on `configChangeQueue` with the engine already restarted.
+    /// limit when the intent re-check joined): play the current file again from the playhead, through
+    /// the one Enhanced restart (`restartEnhanced`) — the same playback at the same place, its
+    /// on-deck track still armed. Runs on `configChangeQueue` with the engine already restarted.
     private func resumeEnhancedAfterReestablish(player: AVAudioPlayerNode, resumePos: Double) {
-        // Read resampleSession under the queue's lock so the branch decision is consistent with
-        // any in-flight mutation on resampleQueue (avoids a TOCTOU race with seekEnhancedResampler
-        // or primeEnhancedResamplerLocked running concurrently).
-        let hasResampler = resampleQueue.sync { resampleSession != nil }
-
-        if hasResampler {
-            // Rate-mismatched file: re-prime the streaming resampler from the playhead. (engine.start()
-            // + play() alone leave the flushed buffer queue empty → silence.)
-            if !seekEnhancedResampler(to: resumePos, player: player), !player.isPlaying {
-                player.play()
-            }
-        } else if let url = lastFileURL {
-            // 48 kHz passthrough: re-schedule the remaining segment from the playhead onto the new
-            // device, guaranteeing fresh buffers regardless of whether the old schedule survived.
-            seekEnhancedBestEffort(url: url, player: player, to: resumePos)
-        } else if !player.isPlaying {
-            player.play() // reference tone / no source file
+        guard lastFileURL != nil else { return } // every start names its file: none, nothing played
+        // The configuration change flushed the player's queue: only a re-schedule makes sound again.
+        let outcome = restartEnhanced(at: resumePos, player: player)
+        if outcome == .unchanged {
+            // The file no longer opens, so nothing can refill the player: end the track rather than
+            // leave a silent player that still says "playing" (the view model advances or stops).
+            endEnhancedTrackNow(player: player, reason: "re-establish: the file would not reopen")
         }
-        setEnhancedPositionBaseSeconds(resumePos)
-        logUX("Enhanced re-established after configuration change at \(secs(resumePos))s")
+        logUX("Enhanced re-established after configuration change at \(secs(resumePos))s → \(outcome)")
     }
 }

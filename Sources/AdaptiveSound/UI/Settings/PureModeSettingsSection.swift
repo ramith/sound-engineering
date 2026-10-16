@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Pure Mode card (bit-perfect HAL output): a switch for user intent plus a live signal-path
 /// readout (polled into `AudioViewModel.signalPath` at the spectrum-timer rate). The switch records
-/// intent only; it takes effect on the next track / play.
+/// intent only; it takes effect the next time a song is started — not at a gapless join (KI-PB-05).
 struct PureModeSettingsSection: View {
     @Bindable var audioViewModel: AudioViewModel
 
@@ -15,12 +15,14 @@ struct PureModeSettingsSection: View {
         SettingsCard(title: "Pure Mode (Bit-Perfect)") {
             SettingsSwitchRow(title: "Play bit-perfect",
                               detail: "Sends each track to your device untouched: no EQ or effects, and the "
-                                  + "device follows the track’s sample rate. Starts with the next track.",
+                                  + "device follows the track’s sample rate. Takes effect the next time you "
+                                  + "start a song.",
                               isOn: $audioViewModel.pureModeEnabled)
             Hairline()
             SignalPathStatus(
                 info: audioViewModel.signalPath,
                 requested: audioViewModel.pureModeEnabled,
+                masterGain: audioViewModel.masterGain,
                 eqPresetName: eqPresetName
             )
         }

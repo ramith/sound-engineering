@@ -13,7 +13,7 @@
         static func seedSettings(_ audio: AudioViewModel, for variant: SheetVariant) {
             audio.pureModeEnabled = [.settingsStates, .settingsFallback, .settingsPure].contains(variant)
             audio.pinPlaybackToSelectedDevice = variant != .settingsStates
-            audio.signalPath.fellBackToEnhanced = variant == .settingsFallback
+            audio.signalPath.pureReason = variant == .settingsFallback ? .rateUnsupported : nil
             switch variant {
             case .settingsNoDevices: // nothing to play on: no rate either
                 audio.availableDevices = []

@@ -110,7 +110,8 @@ songs-perf:
 # Main-thread stall self-test (S10.8 G, the disconnect freeze; debug only): the real engine bridge
 # and view model on an OFFLINE engine (no device opened, nothing heard), with AVFAudio's engine-wide
 # lock held for 2.5 s — in player.stop(), in a slow engine.start(), and through the device-loss pause
-# — while every main-thread entry is timed: each must return within 5 ms. Plus the queue-advance
+# — while every main-thread entry is timed: none may take 25 ms, and at most 1% may take over 5 ms
+# (an NSLog write or a scheduler hiccup can); the main queue may not wait 25 ms. Plus the queue-advance
 # regression (a slow start must not be stopped by the replaced track's end flag). Exits non-zero on a
 # miss. Like `sheets`: no library store, no app setting, no audio device.
 main-thread-stall:
@@ -223,10 +224,12 @@ library-store-verify:
 	swift run VerifyLibraryStore
 
 # Full pre-merge gate (NOT the fast lint-only pre-commit hook): the C++ DSP null
-# test (golden master), the AU-graph offline integration check, and the library
+# test (golden master), the AU-graph offline integration check, the Enhanced SRC
+# check (the production converter's passband / stopband / bit-exactness / speed on
+# every rate pair, with a control that must fail — R1.1-A, C-26), and the library
 # store acceptance check. Any failure stops the chain (&&). Run before merging.
 gate:
-	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run VerifyLibraryStore
+	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run SRCQualityMeasure && swift run VerifyLibraryStore
 
 # Runtime-instrumented C++ DSP null test. sanitize = AddressSanitizer + Undefined
 # Behavior Sanitizer (heap/stack overruns, use-after-free, signed overflow, bad
@@ -301,7 +304,7 @@ help:
 	@echo "  make run    - Build and launch app (debug)"
 	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets/<sha>"
 	@echo "  make songs-perf - Time the Songs list's keys over 20,000 fixture songs against the 100 ms gate (debug)"
-	@echo "  make main-thread-stall - Hold AVFAudio's engine lock 2.5 s; every main-thread entry must stay under 5 ms (debug)"
+	@echo "  make main-thread-stall - Hold AVFAudio's engine lock 2.5 s; no main-thread entry may take 25 ms, ≤1% over 5 ms (debug)"
 	@echo "  make stress-library - Write the ~10k-track stress library (needs ffmpeg) to STRESS_LIBRARY"
 	@echo "  make run-test-library   - Run a debug copy on an ISOLATED library + settings, scanning the stress library"
 	@echo "  make reset-test-library - Forget the test copy's library and settings (never touches your own)"
@@ -314,7 +317,7 @@ help:
 	@echo "  make strict-gate - FULL pre-merge gate (lint + static analysis + build + test + sanitizers + suppressions)"
 	@echo "  make ci     - CI entry point (alias for strict-gate)"
 	@echo "  make library-store-verify - Run the S8.1a library-store acceptance gate"
-	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
+	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + SRCQualityMeasure + VerifyLibraryStore)"
 	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"
 	@echo "  make tsan   - Null test under ThreadSanitizer (data-race check)"
 	@echo "  make sanitize-library-store - VerifyLibraryStore under ASan (M11: FFmpeg-metadata bridge memory safety)"

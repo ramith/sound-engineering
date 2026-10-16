@@ -7,7 +7,8 @@
     /// One round = every way the main thread reaches the engine: the 20 Hz transport and spectrum
     /// ticks (the snapshot), the monitoring reads, the control-plane publishes the UI fires (EQ,
     /// intensity, crossfeed, the output's transport through `selectedDevice`), Master Gain on both
-    /// paths, the pin switch, a scrub. Each is timed; the slowest of each is kept.
+    /// paths, the pin switch and the chosen device (handed back, read back), a scrub. Each is timed;
+    /// the slowest of each is kept.
     @MainActor
     final class EntryProbe {
         private let viewModel: AudioViewModel
@@ -21,9 +22,9 @@
         private var bands = [Float](repeating: 0, count: 64)
         private let devices = [
             AudioDeviceModel(id: 0x7FFF_0001, name: "Stall A", sampleRate: 48000, bufferFrameSize: 512,
-                             uid: "stall-a", modelUID: nil, transportType: 0, type: .wireless),
+                             uid: "stall-a", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true),
             AudioDeviceModel(id: 0x7FFF_0002, name: "Stall B", sampleRate: 48000, bufferFrameSize: 512,
-                             uid: "stall-b", modelUID: nil, transportType: 0, type: .builtin),
+                             uid: "stall-b", modelUID: nil, transportType: 0, type: .builtin, isHeadphones: false),
         ]
 
         init(viewModel: AudioViewModel, bridge: AudioEngineBridge) {
@@ -60,8 +61,10 @@
                 viewModel.selectedDevice = devices[flip ? 0 : 1]
             }
             measure("vm.setMasterGain (Enhanced)") { viewModel.setMasterGain(position: flip ? 0.5 : 0.6) }
-            measure("engine.requestDeviceVolume (Pure)") { bridge.requestDeviceVolume(decibels: -10) }
+            measure("engine.returnPureVolumeLoans") { bridge.returnPureVolumeLoans([]) }
             measure("vm.pinPlaybackToSelectedDevice didSet") { viewModel.pinPlaybackToSelectedDevice = flip }
+            measure("engine.restoreChosenOutput") { bridge.restoreChosenOutput(uid: flip ? devices[0].uid : nil) }
+            measure("engine.chosenOutputUID") { _ = bridge.chosenOutputUID() }
             measure("vm.seek(to:) [main-thread part]") { viewModel.seek(to: 1) }
             measure("engine.publishChannelLayout") { bridge.publishChannelLayout(kAudioChannelLayoutTag_Stereo) }
         }
@@ -70,7 +73,9 @@
         func tickOnly() {
             measure("bridge.snapshot()") { _ = bridge.snapshot() }
             measure("vm.tickTransport()") { viewModel.tickTransport() }
-            measure("vm.tickSpectrum()") { viewModel.tickSpectrum() }
+            measure("vm.spectrum.lens(at:)") {
+                _ = viewModel.spectrum.lens(at: .now, isPlaying: true, isPure: false, reduceMotion: false)
+            }
             measure("bridge.readSpectrumBands") { _ = bridge.readSpectrumBands(into: &bands) }
         }
 

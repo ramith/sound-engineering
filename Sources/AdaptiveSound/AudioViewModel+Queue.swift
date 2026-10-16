@@ -9,10 +9,10 @@ import PlaybackQueueKit
 // Callers convert LibraryTrackDisplay → AudioFile (see AudioFile+LibraryTrackDisplay).
 // `playTrackNextNow` is the Songs-list single-track "insert after current + jump to play NOW".
 //
-// The pure DECISIONS live in PlaybackQueueKit, shared by the tests: whether an append re-arms
-// the on-deck is `QueueAdvance.appendArmIndex`; the single-track jump-play index-remap
-// (remove/insert slots + the current-index shift) is `QueueInsert.playNextNow`. The rest here
-// is mechanical array + engine sequencing.
+// The pure DECISIONS live in PlaybackQueueKit, shared by the tests: what an append (like any queue
+// edit) arms next is `PlaybackOrder.onDeck(afterEditing:)` (through `keepOnDeck`, +Playlist); the
+// single-track jump-play index-remap (remove/insert slots + the current-index shift) is
+// `QueueInsert.playNextNow`. The rest here is mechanical array + engine sequencing.
 //
 // S10.2: a queue slot is a `QueueItem` with a stable UUID identity (NOT its URL), so the SAME
 // track may appear more than once — the S9 dedupe-on-add contract is retired. Reorder identity
@@ -116,13 +116,12 @@ extension AudioViewModel {
         logUX("playNext: \(tracks.count) track(s) after index \(current) (playing=\(isPlaying))")
         queue.insert(contentsOf: tracks.map { QueueItem(file: $0) }, at: insertAt)
         scheduleQueueMirror()
-        // Playing — or starting, once its prime has picked the on-deck (`isPlaying` turns true
-        // only after the engine settled that pick; council F-P4-1) → arm the inserted slot as the
-        // on-deck (single-slot override, honors shuffle); the newest request supersedes the
-        // prime's. Paused or stopped (nothing on deck) → the insert alone plays it next under
-        // LINEAR order (the next start's primeGaplessPipeline derives computeNextIndex(current) =
-        // current+1).
-        if isPlaying || pendingNextIndex != nil {
+        // Playing — or a start priming its on-deck (`onDeckIsLive`; `isPlaying` turns true only after
+        // the engine settled the prime's pick, council F-P4-1) → arm the inserted slot as the on-deck
+        // (single-slot override, honors shuffle); the newest request supersedes the prime's. Paused,
+        // stopped or a start not yet begun (nothing on deck) → the insert alone plays it next under
+        // LINEAR order (the start's primeGaplessPipeline derives computeNextIndex(current) = current+1).
+        if onDeckIsLive {
             armOnDeck(index: insertAt)
         }
         return tracks.count
@@ -133,22 +132,21 @@ extension AudioViewModel {
     /// this routes through `playTrack(at:)`, so the engine restarts on the inserted slot and
     /// `primeGaplessPipeline` re-primes the on-deck; the rest of the EXISTING queue follows after.
     ///
-    /// If `track`'s URL already occurs in the queue, its FIRST occurrence is MOVED (removed then
-    /// re-inserted) rather than a copy added — the pure index-remap (remove/insert slots + the
-    /// current-index shift) is `QueueInsert.playNextNow`, shared by the tests.
+    /// If `track` already occurs in the queue, its FIRST slot is MOVED (removed then re-inserted)
+    /// rather than a copy added — the pure index-remap (remove/insert slots + the current-index shift)
+    /// is `QueueInsert.playNextNow`, shared by the tests.
     ///
     /// Edge cases:
     /// - Nothing playing (`selectedTrackIndex == nil`): front-insert (index 0) so the existing
     ///   queue follows; an empty queue simply becomes `[track]`.
-    /// - Re-clicking the currently-playing track: RESTART it in place.
+    /// - Re-clicking the currently-playing track: RESTART its slot in place — by slot, so an earlier
+    ///   copy of the same track stays where it is (council C-17, N6).
     ///
     /// No play-count increment is routed here: a jump-play is not a natural completion.
     func playTrackNextNow(_ track: AudioFile) {
-        let move = QueueInsert.playNextNow(
-            current: selectedTrackIndex,
-            existing: queue.firstIndex { $0.file.id == track.id },
-            count: queue.count
-        )
+        let move = QueueInsert.playNextNow(current: selectedTrackIndex, count: queue.count) { index in
+            queue[index].file.id == track.id
+        }
         switch move {
         case let .restartCurrent(index):
             logUX("playTrackNextNow: restart current index \(index) '\(track.name)'")
@@ -167,35 +165,29 @@ extension AudioViewModel {
         }
     }
 
-    /// Append `tracks` to the end of the queue. Re-arms the on-deck ONLY in the linear
-    /// end-of-queue case (playing the last track with nothing on-deck, repeat-off) — see
-    /// `QueueAdvance.appendArmIndex`; otherwise the existing primed pick is left untouched
-    /// (append must never re-roll under shuffle or disturb a mid-list on-deck).
-    /// Returns the number of tracks appended.
+    /// Append `tracks` to the end of the queue. While a song plays (or primes), what plays after it
+    /// follows the edit (`keepOnDeck`, council C-17): playing the last song, the first appended song
+    /// is next — under Repeat All too, and in a one-song shuffle; a mid-list next song, a shuffle pick
+    /// and a Play Next stay. Returns the number of tracks appended.
     @discardableResult
     func appendToQueue(_ tracks: [AudioFile]) -> Int {
         guard !tracks.isEmpty else { return 0 }
-        let oldCount = queue.count
-        logUX("appendToQueue: \(tracks.count) track(s) (was \(oldCount))")
+        logUX("appendToQueue: \(tracks.count) track(s) (was \(queue.count))")
+        let armed = onDeckSlotID
         queue.append(contentsOf: tracks.map { QueueItem(file: $0) })
         scheduleQueueMirror()
-        guard isPlaying, let current = selectedTrackIndex else { return tracks.count }
-        if let armIndex = QueueAdvance.appendArmIndex(
-            current: current, oldCount: oldCount, hasPending: pendingNextIndex != nil,
-            shuffle: shuffleEnabled, repeatMode: repeatMode
-        ) {
-            armOnDeck(index: armIndex)
-        }
+        keepOnDeck(armed: armed)
         return tracks.count
     }
 
     /// Arm the gapless on-deck to `index` (or clear it, `nil`) — the ONE producer of on-deck
-    /// requests (council D41): the start's prime, the seam's re-arm, the queue verbs, a shuffle /
-    /// repeat change (`+Playlist`, S10.8 G), removing the on-deck row, a lost device. In one turn it
-    /// sets `pendingNextIndex`, resolves the URL and numbers the request (`nextOnDeckTicket()`), so
-    /// the engine applies exactly the newest pick, whatever order the requests reach it in. It DOES
-    /// NOT call `computeNextIndex` (so it never re-rolls a shuffle pick) and DOES NOT touch
-    /// `lastTransitionCount` (that baseline belongs to `startPlayback`/the transition, design §6).
+    /// requests (council D41): the start's prime, the seam's re-arm, Play Next, a queue edit
+    /// (`keepOnDeck`, council C-17), a shuffle / repeat change (`+Playlist`, S10.8 G), a lost device.
+    /// In one turn it sets `pendingNextIndex`, resolves the URL and numbers the request
+    /// (`nextOnDeckTicket()`), so the engine applies exactly the newest pick, whatever order the
+    /// requests reach it in. It DOES NOT call `computeNextIndex` (so it never re-rolls a shuffle pick)
+    /// and DOES NOT touch `lastTransitionCount` (that baseline belongs to `startPlayback`/the
+    /// transition, design §6).
     /// Returns the request's task, for a caller that waits until the engine settled it.
     @discardableResult
     func armOnDeck(index: Int?) -> Task<Void, Never> {

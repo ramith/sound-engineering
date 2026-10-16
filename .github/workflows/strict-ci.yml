@@ -23,7 +23,7 @@ jobs:
     # bump when the target OS moves. The base image includes swiftlint/swiftformat but NOT
     # semgrep/cppcheck/clang-tidy/ffmpeg — the Install-tools step below covers those. ffmpeg is
     # required for coverage, not just convenience: it ships the libavformat headers under
-    # /opt/homebrew/include that make FileDecodeSource.mm's __has_include(<libavformat/...>)
+    # /opt/homebrew/include that make FileDecodeSource.cpp's __has_include(<libavformat/...>)
     # FFmpeg decode + metadata branch actually parse, so clang-tidy analyzes it here (see
     # strict-gate.sh — CI-with-ffmpeg is the guaranteed coverage for that branch).
     runs-on: macos-26
@@ -47,7 +47,7 @@ jobs:
           # CXX_CLANG_TIDY_MAJOR_PIN, so a brew-latest major bump fails loudly instead of
           # surfacing as a wall of red-herring findings — PR #63 run 1). A deliberate upgrade
           # bumps the pin + fixes the new findings in one commit. ffmpeg supplies the libavformat headers under
-          # /opt/homebrew/include so FileDecodeSource.mm's __has_include(<libavformat/...>)
+          # /opt/homebrew/include so FileDecodeSource.cpp's __has_include(<libavformat/...>)
           # FFmpeg decode + metadata branch parses and clang-tidy actually analyzes it here
           # (that branch is analyzed NOWHERE else in the merge path); the rest are
           # formatters/linters/scanners. SwiftFormat/SwiftLint are NOT brewed: they are PINNED

@@ -1,14 +1,18 @@
 //
-// DeviceListPolicy.cpp — the output-device menu rule (see DeviceListPolicy.h).
+// DeviceListPolicy.cpp — the output-device menu rule and the output classifier (see
+// DeviceListPolicy.h).
 //
 // HAL-FREE: no AudioObject* call lives here, so the C++ test harness compiles and links this file
-// without CoreAudio.framework. CoreAudio's header is included only for the composition key's name
-// (a string macro); CoreFoundation decodes the dictionary. -fno-exceptions / -fno-rtti clean.
+// without CoreAudio.framework. CoreAudio's headers are included only for constants (the
+// composition key's name, the transport FourCCs); CoreFoundation decodes the dictionary.
+// -fno-exceptions / -fno-rtti clean.
 //
 
 #include "DeviceListPolicy.h"
 
-#include <CoreAudio/AudioHardware.h> // kAudioAggregateDeviceIsPrivateKey (a string macro only)
+#include <CoreAudio/AudioHardware.h>     // kAudioAggregateDeviceIsPrivateKey (a string macro only)
+#include <CoreAudio/AudioHardwareBase.h> // kAudioDeviceTransportType* (constants only)
+#include <IOKit/audio/IOAudioTypes.h> // kIOAudioOutputPortSubType* — data-source codes (constants)
 #include <string_view>
 
 namespace AdaptiveSound
@@ -29,6 +33,37 @@ namespace AdaptiveSound
         {
             return facts.uid.starts_with(kProcessDefaultAggregatePrefix) ||
                    facts.name.starts_with(kProcessDefaultAggregatePrefix);
+        }
+
+        // Headphones — where crossfeed plays (council C-42 / P2 D44, KI-DEV-01). First what the
+        // output says is plugged in, where it says: its data source
+        // (kAudioDevicePropertyDataSource, the SDK's IOAudioTypes.h port codes) — 'hdpn' is
+        // headphones, the internal or an external speaker is not (the Mac's headphone jack reads
+        // 'hdpn' on its built-in transport; its speakers 'ispk'). A line or digital out could feed
+        // either, so then the transport decides: Bluetooth (LE) and USB are personal outputs — a
+        // Bluetooth speaker that reports nothing reads as headphones, and crossfeed still plays
+        // only if the listener turned it on — and AirPlay is a receiver (a HomePod, a TV, a
+        // speaker), never headphones. Everything else — the built-in transport without 'hdpn',
+        // HDMI, DisplayPort, Thunderbolt / PCI / FireWire interfaces, virtual and aggregate
+        // devices — is not, unless its data source says so. (VLC's auhal headphone check keys on
+        // the same 'hdpn'.)
+        bool isHeadphoneOutput(const OutputDeviceFacts& facts, OutputDeviceType type)
+        {
+            switch (facts.dataSource)
+            {
+                case kIOAudioOutputPortSubTypeHeadphones:
+                    return true;
+                case kIOAudioOutputPortSubTypeInternalSpeaker:
+                case kIOAudioOutputPortSubTypeExternalSpeaker:
+                    return false;
+                default:
+                    break; // none, a line or digital out, or a code we don't know: the transport
+            }
+            if (facts.transportType == kAudioDeviceTransportTypeAirPlay)
+            {
+                return false;
+            }
+            return type == OutputDeviceType::Wireless || type == OutputDeviceType::USB;
         }
     } // namespace
 
@@ -58,6 +93,45 @@ namespace AdaptiveSound
             return DeviceListVerdict::ProcessDefaultAggregate;
         }
         return DeviceListVerdict::Listed;
+    }
+
+    OutputDeviceClass classifyOutputDevice(const OutputDeviceFacts& facts)
+    {
+        OutputDeviceClass result;
+        // The family: the authoritative transport (kAudioDevicePropertyTransportType); a USB DAC
+        // named "SomeDAC" or a non-Apple Bluetooth headset would be misread by its name. The name
+        // only when the transport is unknown or unrecognised.
+        switch (facts.transportType)
+        {
+            case kAudioDeviceTransportTypeBluetooth:
+            case kAudioDeviceTransportTypeBluetoothLE:
+            case kAudioDeviceTransportTypeAirPlay:
+                result.type = OutputDeviceType::Wireless;
+                break;
+            case kAudioDeviceTransportTypeUSB:
+                result.type = OutputDeviceType::USB;
+                break;
+            case kAudioDeviceTransportTypeBuiltIn:
+                result.type = OutputDeviceType::Builtin;
+                break;
+            default:
+                if (facts.name.contains("AirPods") || facts.name.contains("Bluetooth") ||
+                    facts.name.contains("wireless"))
+                {
+                    result.type = OutputDeviceType::Wireless;
+                }
+                else if (facts.name.contains("USB"))
+                {
+                    result.type = OutputDeviceType::USB;
+                }
+                else if (facts.name.contains("Built-in"))
+                {
+                    result.type = OutputDeviceType::Builtin;
+                }
+                break;
+        }
+        result.headphones = isHeadphoneOutput(facts, result.type);
+        return result;
     }
 
     AggregatePrivacy aggregatePrivacyFromComposition(CFDictionaryRef composition)

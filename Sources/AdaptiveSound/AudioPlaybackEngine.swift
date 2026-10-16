@@ -1,6 +1,8 @@
 import AVFoundation
+import EQEditKit
 import Foundation
 import PlaybackQueueKit
+import SettingsKit
 
 // MARK: - AudioPlaybackEngine Protocol + Default Implementations
 
@@ -20,7 +22,7 @@ import PlaybackQueueKit
 /// makes one. State comes back as ONE copy (`snapshot()`); the rest hand values to non-blocking
 /// sinks, or read a value under a lock held only for the read. Anything that must touch the hardware
 /// is `async`, or hands its work to an engine queue and answers through the snapshot
-/// (`requestDeviceVolume`).
+/// (`publishMasterGain` on Pure, `returnPureVolumeLoans`).
 extension AudioPlaybackEngine {
     // MARK: Gapless defaults (overridden by the live engine + the mock)
 
@@ -40,6 +42,14 @@ extension AudioPlaybackEngine {
     /// Default: no-op. The live engine stores the preference and consults it on device changes.
     func setPinPlaybackToSelectedDevice(_: Bool) {}
 
+    /// Default: no-op — no output rule to hand the choice to.
+    func restoreChosenOutput(uid _: String?) {}
+
+    /// Default: nothing chosen.
+    func chosenOutputUID() -> String? {
+        nil
+    }
+
     /// Default: no-op. Conformers that host the DSP AU override this.
     func publishIntensity(_: Float) {}
 
@@ -52,8 +62,11 @@ extension AudioPlaybackEngine {
     /// Default: no-op. Conformers with a player override this.
     func publishMasterGain(decibels _: Float) {}
 
-    /// Default: no-op — nothing plays on Pure, so there is no device volume to set.
-    func requestDeviceVolume(decibels _: Float) {}
+    /// Default: no-op — no device volume was ever lowered.
+    func returnPureVolumeLoans(_: [PureVolumeLoan]) {}
+
+    /// Default: no-op — a conformer without per-channel analysers has nothing to run or rest.
+    func setMonitorAnalysis(_: Bool) {}
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -68,15 +81,24 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     // MARK: Playback
 
-    /// Start playback of the audio file at `fileURL`, or a reference tone if nil, `startAt` seconds
+    /// Start playback of the audio file at `fileURL`, `startAt` seconds
     /// into it (0 = the top; a resume or a device move starts there, never from 0 then a seek).
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
     /// HAL path is used; otherwise the Enhanced (AVFAudio engine) path is used. `epoch` numbers the
     /// request: the snapshot's transport carries it from the start of the request on.
-    func startAudio(fileURL: URL?, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
+    ///
+    /// Newest stands (council C-15). The view model numbers its starts, stops and seeks in the order
+    /// the user asks; they can reach the engine in another order. One older than a request the engine
+    /// has already begun was overtaken: it returns at once and has no effect — never an error.
+    func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
 
-    /// Stop all playback immediately. `epoch` numbers the request, as for `startAudio`.
-    func stopAudio(epoch: UInt64) async throws
+    /// Stop all playback immediately; the on-deck pick goes with it (a stop begins a new playback, so
+    /// every on-deck request made before it is stale — invariant 5 below). `epoch` numbers the request,
+    /// as for `startAudio`, and an overtaken stop is dropped the same way. `pausing`: playback is meant
+    /// to resume from here, so on Pure the output device keeps the volume Pure set (founder decision
+    /// 2026-10-16, `PureVolumeEvent.paused`); otherwise playback ended (Stop, the end of the queue, the
+    /// queue cleared, quit), Pure is left, and the device gets its own level back.
+    func stopAudio(epoch: UInt64, pausing: Bool) async throws
 
     // MARK: Gapless / continuous playback (poll-based — the view model reads a snapshot at 20 Hz)
 
@@ -148,27 +170,29 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// clock tick stale; after `startAudio`, `stopAudio` and `seek` return, it reflects them.
     func snapshot() -> EngineSnapshot
 
-    /// Seek to `seconds` from the start of the current file.
-    /// In the Pure path this is handled natively by the HAL engine. In the
-    /// Enhanced path this is a best-effort re-schedule (see `AudioEngineBridge+PureMode.swift`).
-    /// `epoch` numbers the request, as for `startAudio`. Throws `AudioBridgeError.seekFailed` when
-    /// the Pure path could not move (playback carries on where it was).
+    /// Seek to `seconds` from the start of the current file, on either path (the one rule:
+    /// `SeekTarget`). A place at or past the end ends the track — the transport's `ended` — as if it
+    /// had played out. Throws `AudioBridgeError.seekFailed` when the seek did not happen — a target
+    /// that is not a number, a file that no longer opens, a Pure decoder that could not move — and
+    /// playback carries on exactly where it was. `epoch` numbers the request, as for `startAudio`, and
+    /// an overtaken seek is dropped the same way (not a failure).
     func seek(to seconds: Double, epoch: UInt64) async throws
 
     // MARK: Master Gain
 
-    /// Publish Master Gain — the app's own level in dB, ≤ 0 (−∞ = silent; `MasterGainLaw`). The
-    /// player plays it at its linear gain from then on, on every Enhanced start and after a rebuild
-    /// too. Never reaches Pure: the bit-perfect stream is not scaled (see `requestDeviceVolume`).
-    /// Synchronous and off-RT; calls apply in the order made. Default impl: no-op.
+    /// Publish Master Gain — the app's own level in dB, ≤ 0 (−∞ = silent; `MasterGainLaw`). On
+    /// Enhanced the player plays it at its linear gain from then on, on every Enhanced start and after
+    /// a rebuild too. On Pure the bit-perfect stream is not scaled: the output device's own volume is
+    /// turned down by it instead (`MasterGainOnPure` — at Pure's start, and as it moves), off the main
+    /// thread. Synchronous; calls apply in the order made. Default impl: no-op.
     func publishMasterGain(decibels: Float)
 
-    /// While Pure plays, set the output device's own volume to `decibels` (clamped to the device's
-    /// range and to 0 dB at most; −∞ is its minimum). Returns at once: the engine sets the device off
-    /// the main thread and puts what it reads back into the signal-path snapshot
-    /// (`deviceVolume`, and `deviceVolumeSet` for this request). Calls apply in the order made. A
-    /// no-op when Pure is not playing. Default impl: no-op.
-    func requestDeviceVolume(decibels: Float)
+    /// Hand back the device-volume loans an earlier run left (`EngineSnapshot.pureVolumeLoans`, kept
+    /// with the listener's settings): the engine puts back the level of each device that is here and
+    /// still reads what Pure set — a crash, or a device that went away mid-Pure, leaves no device
+    /// turned down. Returns at once (the HAL work runs on an engine queue); the snapshot's loans say
+    /// what is still out. Call at engine-ready. Default impl: no-op.
+    func returnPureVolumeLoans(_ loans: [PureVolumeLoan])
 
     // MARK: DSP Parameters
 
@@ -216,6 +240,18 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Default: no-op.
     func setPinPlaybackToSelectedDevice(_ pin: Bool)
 
+    /// Hand back the device the user chose before the last quit (DEV-1), by UID (`nil`: none): "Keep
+    /// playback on this device" holds it again. Not a pick — the device the engine launched on stays
+    /// its device until the output rule moves to the chosen one, which it does as soon as that device
+    /// is here (never changing the system default while nothing plays). At engine-ready. Returns at
+    /// once: the rule runs off the main thread. Default: no-op.
+    func restoreChosenOutput(uid: String?)
+
+    /// The UID of the device the user chose — by a pick, or by turning "Keep playback on this device"
+    /// on — `nil` if none: what the listener's settings keep. A read under a lock held only for the
+    /// read. Default: `nil`.
+    func chosenOutputUID() -> String?
+
     /// Invoked on the main thread when the output changed: a device was added or removed, the
     /// engine adopted a device (the system default, or the chosen device back), or it paused for a
     /// lost device. The view model re-reads the devices and the engine's device
@@ -238,4 +274,9 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Returns `false` if unavailable (not ready, channel out of range, or no data yet).
     @discardableResult
     func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool
+
+    /// Run the per-channel analysers while Monitoring shows (`true`), rest them otherwise (council
+    /// C-52): the main thread says so as the tab appears and goes. Non-blocking (one atomic store).
+    /// Default: no-op.
+    func setMonitorAnalysis(_ isOn: Bool)
 }

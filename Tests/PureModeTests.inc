@@ -1,7 +1,7 @@
 // PureModeTests.inc
 //
 // Pure-Mode policy tests (Phase B — B1) and format conversion tests (B2a),
-// plus ToneSource and inline file-decode bootstrap tests (B2b).
+// plus the Pure-Mode C-ABI bridge tests.
 // #included into Tests/DSPKernelNullTest.cpp after TestSupport.h.
 //
 // Tests: PureMode_HdmiBitPerfect, PureMode_HdmiRateUnsupported,
@@ -13,7 +13,7 @@
 //        PureFormat_PickerOnlyWritableFormats, Convert_Packed24_ExactBytesRoundTrip,
 //        Convert_WriteBoundedByBufferBytes, Convert_NonFiniteIsSilence_FiniteUntouched,
 //        Convert_BitExact_Exhaustive16And24,
-//        ToneSource_FillsBuffer, PureModeBridge_TranslatesAllDecisionBranches,
+//        PureModeBridge_TranslatesAllDecisionBranches,
 //        PureModeBridge_NullArgsAreNoOp, PureModeBridge_RateArrayCopiedFaithfully.
 // Helpers (area-local): makeHdmiCapability, makeBluetoothCapability,
 //   makeBuiltInCapability, makeVirtualCapability, makeInterfaceCapability, makeFile, checkEval,
@@ -1280,48 +1280,6 @@ static auto testConvertBitExactExhaustive16And24() -> void
     logPass(kName);
 }
 
-// ToneSource fills the requested frames on every channel, in [-amp, amp], identical across
-// channels, and returns the full frame count.
-static auto testToneSourceFillsBuffer() -> void
-{
-    static const char* const kName = "ToneSource_FillsBuffer";
-    constexpr double kFreq = 1000.0;
-    constexpr float kAmp = 0.5F;
-    constexpr uint32_t kFrames = 256U;
-    constexpr uint32_t kChannels = 2U;
-
-    ToneSource tone(kFreq, kAmp, static_cast<double>(TestConstants::kSampleRate48k));
-    std::vector<float> out(static_cast<size_t>(kFrames) * kChannels, -999.0F);
-    const uint32_t produced = tone.pullFloat(out.data(), kFrames, kChannels);
-
-    if (produced != kFrames)
-    {
-        logFail(kName,
-                "pullFloat returned " + std::to_string(produced) + ", expected " +
-                    std::to_string(kFrames));
-        return;
-    }
-    for (uint32_t f = 0U; f < kFrames; ++f)
-    {
-        const float left = out[(static_cast<size_t>(f) * kChannels)];
-        const float right = out[(static_cast<size_t>(f) * kChannels) + 1U];
-        if (left != right)
-        {
-            logFail(kName, "channels differ at frame " + std::to_string(f));
-            return;
-        }
-        if (left > kAmp + 1e-6F || left < -kAmp - 1e-6F)
-        {
-            std::ostringstream oss;
-            oss << "frame " << f << " sample " << left << " outside [-" << kAmp << ", " << kAmp
-                << "]";
-            logFail(kName, oss.str());
-            return;
-        }
-    }
-    logPass(kName);
-}
-
 // ===========================================================================
 // Pure-Mode C-ABI bridge (pureModeEvaluate). These tests pin the flat-ABI marshalling + the
 // enum→uint8 ordering contract between the C++ policy and the Swift-facing C struct. They do NOT
@@ -1606,5 +1564,94 @@ static auto testPureModeBridgeRateArrayCopiedFaithfully() -> void
         }
     }
 
+    logPass(kName);
+}
+
+// ============================================================================
+// Pure honesty (R1.1-A, council C-33, C-34): whether Pure's output carries every bit of the source,
+// and every reason having a name.
+// ============================================================================
+
+// Pure decodes to float32 (24 significant bits) and writes the device's own format. A source deeper
+// than what reaches the device is NOT bit-perfect — a 24-bit file on a 16-bit-only DAC used to be
+// labelled BitPerfectInteger and truncated (C-33). Red on cf861d4: there was no depth check, so every
+// row came back as the engaged reason.
+static auto testPureModeBitExactnessDepthRule() -> void
+{
+    static const char* const kName = "PureMode_BitExactness_DepthRule";
+    struct Case
+    {
+        const char* what;
+        uint32_t fileBits;
+        bool fileFloat;
+        uint32_t outputBits;
+        bool outputFloat;
+        bool bitPerfect;
+    };
+    constexpr auto kCases = std::to_array<Case>({
+        {"16-bit file, 16-bit DAC", 16U, false, 16U, false, true},
+        {"24-bit file, 24-bit DAC", 24U, false, 24U, false, true},
+        {"24-bit file, 16-bit-only DAC", 24U, false, 16U, false, false},
+        {"24-bit file, 32-bit DAC", 24U, false, 32U, false, true},
+        {"32-bit integer file, 32-bit DAC (decoded through float32)", 32U, false, 32U, false, false},
+        {"24-bit file, float output", 24U, false, 32U, true, true},
+        {"32-bit integer file, float output", 32U, false, 32U, true, false},
+        {"float32 file, float output", 32U, true, 32U, true, true},
+        {"float32 file, 24-bit DAC", 32U, true, 24U, false, false},
+        {"float64 file, float output", 64U, true, 32U, true, false},
+        {"a compressed file (no source depth), 16-bit DAC", 0U, false, 16U, false, true},
+    });
+    for (const Case& testCase : kCases)
+    {
+        FileFormat file = makeFile(TestConstants::kRate44k);
+        file.bitsPerChannel = testCase.fileBits;
+        file.isFloat = testCase.fileFloat;
+        const PureModeReason engaged =
+            testCase.outputFloat ? PureModeReason::RateMatchedFloatNoSRC : PureModeReason::BitPerfectInteger;
+        const PureModeReason got = bitExactness(file, testCase.outputBits, testCase.outputFloat, engaged);
+        const PureModeReason expected = testCase.bitPerfect ? engaged : PureModeReason::DeviceShallowerThanSource;
+        if (got != expected)
+        {
+            logFail(kName,
+                    std::format("{}: {}, expected {}", testCase.what, pureModeReasonString(got),
+                                pureModeReasonString(expected)));
+            return;
+        }
+    }
+    logPass(kName);
+}
+
+// Every reason crosses the C boundary as its code, in PureModeBridge.h's documented order (the Swift
+// mirror decodes the same numbers), and has a name for the log.
+static auto testPureModeReasonCodesAreTheBridgeOrder() -> void
+{
+    static const char* const kName = "PureMode_ReasonCodes_BridgeOrder";
+    struct Code
+    {
+        PureModeReason reason;
+        uint8_t code;
+        const char* name;
+    };
+    constexpr auto kCodes = std::to_array<Code>({
+        {PureModeReason::BitPerfectInteger, 0U, "BitPerfectInteger"},
+        {PureModeReason::RateMatchedFloatNoSRC, 1U, "RateMatchedFloatNoSRC"},
+        {PureModeReason::LossyWirelessCodec, 2U, "LossyWirelessCodec"},
+        {PureModeReason::VirtualDevice, 3U, "VirtualDevice"},
+        {PureModeReason::RateUnsupportedResample, 4U, "RateUnsupportedResample"},
+        {PureModeReason::ChannelCountMismatch, 5U, "ChannelCountMismatch"},
+        {PureModeReason::DeviceShallowerThanSource, 6U, "DeviceShallowerThanSource"},
+        {PureModeReason::DeviceWouldNotStart, 7U, "DeviceWouldNotStart"},
+        {PureModeReason::FileUnreadable, 8U, "FileUnreadable"},
+        {PureModeReason::FileNeedsFFmpeg, 9U, "FileNeedsFFmpeg"},
+    });
+    for (const Code& entry : kCodes)
+    {
+        if (static_cast<uint8_t>(entry.reason) != entry.code ||
+            std::string_view(pureModeReasonString(entry.reason)) != entry.name)
+        {
+            logFail(kName, std::format("{} is not code {}", entry.name, entry.code));
+            return;
+        }
+    }
     logPass(kName);
 }

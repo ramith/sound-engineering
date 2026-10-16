@@ -71,6 +71,13 @@ extension AudioEngineBridge {
         configChangeQueue.async { [weak self] in
             self?.bindTargetAliveListener()
         }
+        // Pure is left on a device the output moved away from (a pause on a DAC, then a pick of the
+        // speakers): its own level comes back. While Pure renders, its restart on the new device does
+        // that, after the old render stopped (`enterPureVolume`).
+        engineQueue.async { [weak self] in
+            guard let self, activePathKind != .pure else { return }
+            pureVolumeEvent(.outputMoved(toUID: Self.deviceUID(currentDeviceID)))
+        }
         return result
     }
 
@@ -225,6 +232,7 @@ extension AudioEngineBridge {
     /// leaves is cleared at the next Enhanced start, before the engine runs (`startEnhancedPlayback`).
     private func stopPlaybackAfterDeviceLoss() {
         tearDownPure()
+        pureVolumeEvent(.deviceLost) // nothing asked of a dying device: its loan stays held
         // Abandon in-flight resampler buffers and pending passthrough completions and clear the seam
         // hooks, so nothing the left-over schedule does later can roll a seam (review MINOR-3).
         stopEnhancedResampler()
@@ -266,7 +274,16 @@ extension AudioEngineBridge {
     /// output stream yet). 0 if not, or no UID. Its id may differ from the one it had when chosen: a
     /// reconnect can give a device a new id, never a new UID.
     private static func liveDevice(uid: String) -> UInt32 {
-        guard !uid.isEmpty else { return 0 }
+        guard let deviceID = deviceID(forUID: uid) else { return 0 }
+        return OutputDevicePolicy.chosenDevice(deviceID, alive: isDeviceAlive(deviceID),
+                                               listed: isListedOutputDeviceC(deviceID) != 0)
+    }
+
+    /// The device with this UID as it is connected now (`kAudioHardwarePropertyTranslateUIDToDevice`),
+    /// or nil when none is — a reconnect can give a device a new id, never a new UID. A HAL read: off
+    /// the main thread.
+    static func deviceID(forUID uid: String) -> AudioObjectID? {
+        guard !uid.isEmpty else { return nil }
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -281,9 +298,8 @@ extension AudioEngineBridge {
                 UInt32(MemoryLayout<CFString>.size), uidPointer, &size, &deviceID
             )
         }
-        guard status == noErr else { return 0 }
-        return OutputDevicePolicy.chosenDevice(deviceID, alive: isDeviceAlive(deviceID),
-                                               listed: isListedOutputDeviceC(deviceID) != 0)
+        guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
+        return deviceID
     }
 
     private static func describe(_ facts: OutputDeviceFacts) -> String {

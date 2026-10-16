@@ -261,11 +261,26 @@ namespace
     auto clearBackend() -> void { unsetenv("ADAPTIVESOUND_DECODER"); }
 
     // BackendGuard: RAII wrapper that forces a backend on construction and clears it on
-    // destruction. Copy and move are deleted so an early return cannot leave the env set.
+    // destruction. Copy and move are deleted so an early return cannot leave the env set. Forcing
+    // FFmpeg also turns it on (the listener's opt-in, off by default — R1.1-A, FD-3) unless
+    // `enableFFmpeg` is false, and the switch is put back as it was.
     struct BackendGuard
     {
-        explicit BackendGuard(Backend backend) { forceBackend(backend); }
-        ~BackendGuard() { clearBackend(); }
+        explicit BackendGuard(Backend backend, bool enableFFmpeg = true)
+            : ffmpegWasOn(AdaptiveSound::ffmpeg::isEnabled())
+        {
+            forceBackend(backend);
+            if (backend == Backend::FFmpeg)
+            {
+                AdaptiveSound::ffmpeg::setEnabled(enableFFmpeg);
+            }
+        }
+        ~BackendGuard()
+        {
+            clearBackend();
+            AdaptiveSound::ffmpeg::setEnabled(ffmpegWasOn);
+        }
+        bool ffmpegWasOn;
         BackendGuard(const BackendGuard&) = delete;
         BackendGuard(BackendGuard&&) = delete;
         auto operator=(const BackendGuard&) -> BackendGuard& = delete;
@@ -2259,6 +2274,176 @@ static auto testFileDecodeSeekMidStreamDistinctChannels() -> void
     {
         logInfo("  [info] FileDecode_Seek_MidStreamDistinctChannels: FFmpeg not present (Apple leg "
                 "only)\n");
+    }
+    logPass(kName);
+}
+
+// ============================================================================
+// C-35 (R1.1-A, live again since FD-3 keeps FFmpeg): the FFmpeg seek honours the stream's start time,
+// and a seek the decoder refuses keeps the audio already buffered. The fixture's stream starts at
+// 1.5 s in a 1/44100 time base (Tests/Fixtures/ffmpeg-seek/README.md); both legs need FFmpeg and
+// skip with an [info] line where it isn't installed.
+// ============================================================================
+
+namespace
+{
+    constexpr const char* kPathStartOffset =
+        ADAPTIVESOUND_TEST_DATA_DIR "/../Tests/Fixtures/ffmpeg-seek/start-offset.nut";
+    constexpr uint32_t kStartOffsetFrames = 22050U; // 0.5 s, mono, 44.1 kHz
+    constexpr double kStartOffsetRate = 44100.0;
+
+    // The whole fixture, decoded by FFmpeg from its start (the reference). Empty on failure.
+    auto decodeWholeStartOffset() -> std::vector<float>
+    {
+        std::vector<float> whole(kStartOffsetFrames, 0.0F);
+        FileDecodeSource src;
+        if (!src.open(kPathStartOffset) || src.channels() != 1U ||
+            drainFrames(src, whole, kStartOffsetFrames, 1U) != kStartOffsetFrames)
+        {
+            return {};
+        }
+        return whole;
+    }
+
+    // The first index where `got` differs from `want` from `offset` on, or -1.
+    auto firstMismatch(const std::vector<float>& got, const std::vector<float>& want, std::size_t offset)
+        -> long
+    {
+        for (std::size_t idx = 0U; idx < got.size(); ++idx)
+        {
+            if (offset + idx >= want.size() || got[idx] != want[offset + idx])
+            {
+                return static_cast<long>(idx);
+            }
+        }
+        return -1;
+    }
+} // namespace
+
+// A seek to a frame lands on that frame: FFmpeg's timestamps count from the stream's start time
+// (1.5 s here), the app's frames from 0. Red on cf861d4: the target ignored the start, so the seek
+// landed at the file's top and the head was never trimmed.
+static auto testFileDecodeSeekFFmpegHonoursStreamStart() -> void
+{
+    static const char* const kName = "FileDecode_Seek_FFmpegHonoursStreamStart";
+    constexpr uint32_t kSeekFrame = 9000U;
+    constexpr uint32_t kCompare = 2048U;
+    if (ffmpegLegUnavailable(kPathStartOffset))
+    {
+        logInfo("  [info] FileDecode_Seek_FFmpegHonoursStreamStart: FFmpeg not present\n");
+        logPass(kName);
+        return;
+    }
+    BackendGuard ffmpegGuard(Backend::FFmpeg);
+    const std::vector<float> whole = decodeWholeStartOffset();
+    if (whole.empty())
+    {
+        logFail(kName, "the fixture did not decode whole");
+        return;
+    }
+    std::vector<float> after(kCompare, 0.0F);
+    FileDecodeSource src;
+    if (!src.open(kPathStartOffset) || !src.seek(static_cast<double>(kSeekFrame) / kStartOffsetRate) ||
+        drainFrames(src, after, kCompare, 1U) != kCompare)
+    {
+        logFail(kName, "open / seek / drain failed");
+        return;
+    }
+    const long mismatch = firstMismatch(after, whole, kSeekFrame);
+    if (mismatch >= 0)
+    {
+        logFail(kName, std::format("after a seek to frame {}, sample {} differs from the file's", kSeekFrame, mismatch));
+        return;
+    }
+    logPass(kName);
+}
+
+// A seek the decoder refuses moves nothing: the audio already buffered still plays next, from exactly
+// where it was. A pipe can't seek, so FFmpeg reading the fixture through a FIFO refuses every seek.
+// Red on cf861d4: the refused seek threw the buffered audio away, and playback jumped ahead.
+static auto testFileDecodeSeekRefusedKeepsBufferedAudio() -> void
+{
+    static const char* const kName = "FileDecode_Seek_RefusedKeepsBufferedAudio";
+    constexpr uint32_t kBefore = 1000U;
+    const std::string fifo = ADAPTIVESOUND_TEST_DATA_DIR "/ffmpeg-seek-refused.fifo";
+    if (ffmpegLegUnavailable(kPathStartOffset))
+    {
+        logInfo("  [info] FileDecode_Seek_RefusedKeepsBufferedAudio: FFmpeg not present\n");
+        logPass(kName);
+        return;
+    }
+    BackendGuard ffmpegGuard(Backend::FFmpeg);
+    const std::vector<float> whole = decodeWholeStartOffset();
+    std::vector<char> bytes;
+    if (std::FILE* in = std::fopen(kPathStartOffset, "rb"); in != nullptr)
+    {
+        std::array<char, 4096> chunk{};
+        for (std::size_t got = 0U; (got = std::fread(chunk.data(), 1U, chunk.size(), in)) > 0U;)
+        {
+            bytes.insert(bytes.end(), chunk.begin(), chunk.begin() + static_cast<long>(got));
+        }
+        std::fclose(in);
+    }
+    ::unlink(fifo.c_str());
+    if (whole.empty() || bytes.empty() || ::mkfifo(fifo.c_str(), 0600) != 0)
+    {
+        logFail(kName, "could not set up the reference, the bytes or the FIFO");
+        return;
+    }
+    // The writer feeds the pipe; a reader that goes away early must not kill the process.
+    std::signal(SIGPIPE, SIG_IGN);
+    std::thread writer(
+        [&fifo, &bytes]
+        {
+            if (std::FILE* out = std::fopen(fifo.c_str(), "wb"); out != nullptr)
+            {
+                (void)std::fwrite(bytes.data(), 1U, bytes.size(), out);
+                std::fclose(out);
+            }
+        });
+    std::string failure;
+    {
+        FileDecodeSource src;
+        std::vector<float> head(kBefore, 0.0F);
+        std::vector<float> rest(kStartOffsetFrames - kBefore, 0.0F);
+        if (!src.open(fifo.c_str()))
+        {
+            failure = "FFmpeg did not open the fixture through a pipe";
+            // Unblock the writer if FFmpeg never opened the pipe.
+            const int fd = ::open(fifo.c_str(), O_RDONLY | O_NONBLOCK);
+            if (fd >= 0)
+            {
+                ::close(fd);
+            }
+        }
+        else if (drainFrames(src, head, kBefore, 1U) != kBefore || !pollFinished(src))
+        {
+            failure = "the head did not decode";
+        }
+        else if (src.seek(0.1))
+        {
+            logInfo("  [info] FileDecode_Seek_RefusedKeepsBufferedAudio: the pipe seek was not refused\n");
+        }
+        else
+        {
+            const uint32_t drained = drainFrames(src, rest, kStartOffsetFrames - kBefore, 1U);
+            const long mismatch = firstMismatch(rest, whole, kBefore);
+            if (drained != kStartOffsetFrames - kBefore || mismatch >= 0)
+            {
+                failure = std::format("after a refused seek {} of {} frames played on, the first differing at {}",
+                                      drained,
+                                      kStartOffsetFrames - kBefore,
+                                      mismatch);
+            }
+        }
+        src.close();
+    }
+    writer.join();
+    ::unlink(fifo.c_str());
+    if (!failure.empty())
+    {
+        logFail(kName, failure);
+        return;
     }
     logPass(kName);
 }

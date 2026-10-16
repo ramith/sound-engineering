@@ -4,7 +4,8 @@ import Foundation
 
 /// Type-to-select, the Finder / `NSTableView` way: letters typed in quick succession build one
 /// prefix ("j", "ja", "jaz"), and the first item in display order whose title starts with it —
-/// ignoring case, accents and width — becomes the cursor. A pause longer than `timeout` starts a
+/// read by the Library's word rule (`SearchFold`: case, width and a Latin letter's accents ignored; any
+/// other script's marks kept) — becomes the cursor. A pause longer than `timeout` starts a
 /// new prefix. Only prefixes: no "closest match" guess, so an unsorted (filtered) list never jumps
 /// somewhere the user didn't type.
 public struct TypeSelectBuffer: Sendable {
@@ -34,13 +35,13 @@ public struct TypeSelectBuffer: Sendable {
         lastKey = nil
     }
 
-    /// The first element in display order whose title starts with `prefix` (case-, diacritic- and
-    /// width-insensitive: "beyo" finds "Beyoncé"), or nil — also for an empty prefix.
+    /// The first element in display order whose title starts with `prefix`, read by the word rule
+    /// (`SearchFold`: "beyo" finds "Beyoncé"; "මා" finds "මාල", never "මිල" — council N81), or nil —
+    /// also for an empty prefix.
     public static func firstMatch<Items: Sequence>(
         for prefix: String, in items: Items, title: (Items.Element) -> String
     ) -> Items.Element? {
         guard !prefix.isEmpty else { return nil }
-        let options: String.CompareOptions = [.anchored, .caseInsensitive, .diacriticInsensitive, .widthInsensitive]
-        return items.first { title($0).range(of: prefix, options: options) != nil }
+        return items.first { SearchFold.text(title($0), startsWith: prefix) }
     }
 }

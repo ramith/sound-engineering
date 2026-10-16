@@ -45,8 +45,8 @@ extension EQViewModel {
     /// then this build again) left its EQ in `eqLiveStateV1`: the shared slot catches up with it and
     /// is written at once (`EQMigration.catchUp`). Unreadable v2 data is copied aside
     /// (`eqStateV2.unreadable`) before anything overwrites it, and the v1 EQ — if a v1 blob is on disk
-    /// — plays meanwhile, else Flat. A slot on a My Preset that no longer exists keeps its curve as an
-    /// edited Flat.
+    /// — plays meanwhile, else Flat and Off, as on a new install. A slot on a My Preset that no longer
+    /// exists keeps its curve as an edited Flat.
     static func loadStore(from defaults: UserDefaults, myPresets: [String: [Float]]) -> EQStore {
         var store: EQStore
         if let data = defaults.data(forKey: Key.store) {

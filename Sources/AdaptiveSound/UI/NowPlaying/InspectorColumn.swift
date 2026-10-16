@@ -1,12 +1,14 @@
 import DesignTokenKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - Inspector Column (S10.7 PR 5 — founder decision D2: the 8a trailing glass column)
 
-/// The fixed-260pt trailing inspector: master gain, Reimagine intensity, the signal detail
-/// line (decoder/bit-depth — relocated from the hero badges per §5), loudness meters, and
-/// crossfeed. Content scrolls INSIDE the panel chrome (§5 mandated architecture: the panel's
-/// rim/hairline must never scroll away with the content), padded BEFORE the fixed frame (the
+/// The fixed-260pt trailing inspector: master gain, Reimagine intensity (hidden until S17 —
+/// `AudioViewModel.offersIntensity`), the signal detail line (decoder/bit-depth — relocated from the
+/// hero badges per §5), loudness meters, and crossfeed. Content scrolls INSIDE the panel chrome (§5
+/// mandated architecture: the panel's rim/hairline must never scroll away with the content), padded
+/// BEFORE the fixed frame (the
 /// S9 lesson's PR-5 form: pad-after-frame silently widens the column and steals queue width).
 /// Tertiary text is allowed here by the §3.3 placement rule (right side — never the teal core).
 struct InspectorColumn: View {
@@ -21,7 +23,9 @@ struct InspectorColumn: View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
                 MasterGainSliderView()
-                ReimagineSectionView()
+                if AudioViewModel.offersIntensity {
+                    ReimagineSectionView()
+                }
                 signalDetail
                 Hairline()
                 LoudnessMetersView()
@@ -75,7 +79,8 @@ struct InspectorColumn: View {
 
 // MARK: - Reimagine Intensity Section (QW-A)
 
-/// Horizontal carved slider for the global Reimagine intensity knob.
+/// Horizontal carved slider for the global Reimagine intensity knob. Not shown until Intensity's
+/// effects are real (FD-2: `AudioViewModel.offersIntensity`); kept whole for S17.
 struct ReimagineSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -131,9 +136,10 @@ struct ReimagineSectionView: View {
 
 // MARK: - Headphones Section (QW-C)
 
-/// Crossfeed toggle + strength picker; disabled on non-headphone devices. The "Connect headphones"
-/// hint is instruction text, so it must stay AA: only the control row dims (`disabledDim`), never
-/// the hint or the heading.
+/// Crossfeed toggle + strength picker; disabled on non-headphone devices. The switch shows whether
+/// crossfeed plays (`crossfeedPlays`), and sets the listener's choice, which a non-headphone output
+/// holds off without switching off. The "Connect headphones" hint is instruction text, so it must
+/// stay AA: only the control row dims (`disabledDim`), never the hint or the heading.
 struct HeadphonesSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -163,10 +169,13 @@ struct HeadphonesSectionView: View {
             // ONE row (founder, PR-5 screenshot round): toggle leading, strength picker
             // trailing — the picker joins the row only while crossfeed is on.
             HStack(spacing: DesignSystem.Spacing.small) {
-                CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
-                    .fixedSize()
+                CrossfeedToggleRow(
+                    crossfeedEnabled: Binding(get: { bvm.crossfeedPlays }, set: { bvm.crossfeedEnabled = $0 }),
+                    deviceEnabled: isEnabled
+                )
+                .fixedSize()
                 Spacer(minLength: 0)
-                if bvm.crossfeedEnabled && isEnabled {
+                if bvm.crossfeedPlays {
                     CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
                         .fixedSize()
                 }

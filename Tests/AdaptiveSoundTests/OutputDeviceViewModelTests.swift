@@ -9,28 +9,31 @@ import Foundation
 import Testing
 
 @MainActor
-@Suite("AudioViewModel — the output the engine moved to")
+@Suite("AudioViewModel — the output the engine moved to", .serialized)
 struct OutputDeviceViewModelTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless
+        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true
     )
     private static let speakers = AudioDeviceModel(
         id: 42, name: "Speakers", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "BuiltInSpeakerDevice", modelUID: nil, transportType: 0, type: .builtin
+        uid: "BuiltInSpeakerDevice", modelUID: nil, transportType: 0, type: .builtin, isHeadphones: false
     )
     /// The headphones back from a reconnect: a new id, the same UID.
     private static let headphonesBack = AudioDeviceModel(
         id: 57, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless
+        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true
     )
 
     private let engine = DeviceTestEngine()
     private let viewModel: AudioViewModel
 
     init() throws {
-        // A private, empty defaults suite: nothing here touches the app's own.
-        let defaults = try #require(UserDefaults(suiteName: "OutputDeviceViewModelTests.\(UUID().uuidString)"))
+        // This suite's own defaults, never the app's, emptied before each test: the view model keeps
+        // the listener's settings there (a pick is remembered), and one fixed name leaves one file.
+        let suiteName = "AdaptiveSoundTests.OutputDevice"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
         viewModel = AudioViewModel(defaults: defaults, engine: engine)
         viewModel.isEngineReady = true
         viewModel.selectedDevice = Self.headphones
@@ -110,7 +113,7 @@ struct OutputDeviceViewModelTests {
         viewModel.selectedDevice = nil
         viewModel.initializeEngine()
         await settle()
-        viewModel.stopSpectrumTimer()
+        viewModel.disarmTransportTick()
         #expect(viewModel.isEngineReady)
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
         #expect(engine.state.withLock { $0.picks }.isEmpty, "a launch pick would pin the speakers")
@@ -124,7 +127,7 @@ struct OutputDeviceViewModelTests {
         await engineMoves(to: Self.speakers.id, listing: [Self.speakers]) // lost; the rule fell back
         viewModel.retryInitialization() // the Retry banner, or the engine-not-initialized self-heal
         await settle()
-        viewModel.stopSpectrumTimer()
+        viewModel.disarmTransportTick()
         #expect(viewModel.isEngineReady)
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
         #expect(engine.state.withLock { $0.picks } == [Self.headphones.id], "only the user's own pick")

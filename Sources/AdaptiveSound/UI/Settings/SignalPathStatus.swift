@@ -5,13 +5,17 @@ import SwiftUI
 
 /// Compact live readout of the achieved signal path, at the foot of the Pure Mode card: Playing
 /// through, Format, Decoder and EQ Preset — omits Exclusive (always false) and Decision — then why
-/// Pure isn't playing yet, when it was asked for.
+/// Pure isn't playing bit-perfect, when it was asked for: the one named reason (`PureModeReason`, the
+/// sentence the Now Playing note's tooltip shows — Master Gain on a device with no volume among them),
+/// or that it starts the next time a song is started (KI-PB-05: not at a gapless join).
 ///
 /// The labels sit in a fixed column and the values take the rest of the card's width, wrapping rather
 /// than truncating (a My Preset's name is the user's own); SLOT-07 holds both at the 880 pt window.
 struct SignalPathStatus: View {
     let info: SignalPathInfo
     let requested: Bool
+    /// Master Gain, for the sentence when Pure waits for it.
+    let masterGain: Float
     /// Current EQ preset display name ("Flat", "Custom", etc.). Passed in as a
     /// value snapshot so the readout remains a pure function of its inputs.
     let eqPresetName: String
@@ -23,19 +27,19 @@ struct SignalPathStatus: View {
             statusRow(label: "Decoder", value: decoderText)
             statusRow(label: "EQ Preset", value: eqPresetDisplay)
 
-            if info.fellBackToEnhanced {
-                HStack(spacing: 6) {
+            if let reason = info.pureReason {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(DesignSystem.Color.statusWarningText)
                         .accessibilityHidden(true) // the line says it
-                    Text("Pure Mode can’t play this track on this device, so it’s playing Enhanced.")
+                    Text(reason.detail(in: info, masterGain: masterGain))
                         .font(DesignSystem.Font.caption)
                         .foregroundStyle(DesignSystem.Color.labelSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
             } else if requested && info.path != .pure {
-                Text("Pure Mode starts with the next track.")
+                Text("Pure Mode starts the next time you start a song.")
                     .font(DesignSystem.Font.caption)
                     .foregroundStyle(DesignSystem.Color.labelTertiary)
                     .fixedSize(horizontal: false, vertical: true)

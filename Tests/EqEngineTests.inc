@@ -25,10 +25,10 @@
 //                                    another rate are ignored; the last good target keeps playing
 //   EQ_NaNInput_Recovers           — a NaN input recovers in one block (module); the kernel
 //                                    never lets it in (amendment 14: it plays as silence)
-//   EQ_FZ_Set_OnRenderThread       — the kernel sets FPCR.FZ on whatever thread renders
+//   EQ_FZ_OnWhileRendering         — the EQ renders with FPCR.FZ on, on whatever thread calls the
+//                                    kernel, and the thread gets its own mode back (council C-50)
 //   EQ_NoSubnormalStates           — seeded states decaying in silence: subnormal without FZ (the
 //                                    test CAN fail), none with it
-//   RtSwappableResource_Lifecycle  — the swap template's publish/adopt/reclaim contract (F17)
 //   Soak_DSPKernel_ZeroRtAlloc_EqPaths — 8 ch, a new EQ target every ~10 ms across all 4 paths:
 //                                    zero RT allocations
 //   EQ_Reallocate_KeepsCurve / EQ_Reallocate_NewRate / Crossfeed_RederivedOnRateChange /
@@ -681,30 +681,71 @@ static auto testEqNaNInputRecovers() -> void
 }
 
 // ---------------------------------------------------------------------------
-// EQ_FZ_Set_OnRenderThread — engine-plan §7: FPCR.FZ is on wherever the kernel renders.
+// EQ_FZ_OnWhileRendering — engine-plan §7, scoped by council C-50: the EQ renders with FPCR.FZ on,
+// on whatever thread calls the kernel, and that thread gets its own floating-point mode back. The
+// probe is the arithmetic itself: a subnormal input through the EQ plays as exact silence only
+// while FZ flushes it — the module run bare on the same kind of thread (the control) passes a
+// subnormal through, so the probe can fail. Before C-50 the kernel set FZ and left it set.
 // ---------------------------------------------------------------------------
-static auto testEqFzSetOnRenderThread() -> void
+static auto testEqFzOnWhileRendering() -> void
 {
-    static const char* const kName = "EQ_FZ_Set_OnRenderThread";
+    static const char* const kName = "EQ_FZ_OnWhileRendering";
 #ifdef __aarch64__
     constexpr uint64_t kFz = 1ULL << 24U;
-    DSPKernel kernel;
-    kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
+    constexpr float kSubnormal = 1e-40F; // < FLT_MIN (1.18e-38)
+    const EQParams params = makeEqParams(eqFlatCurveWith(17U, 6.0F), static_cast<uint32_t>(kEngineFs));
+    const auto anyNonZero = [](const TestABL& abl)
+    {
+        return std::ranges::any_of(abl.left, [](float v) { return v != 0.0F; });
+    };
+
+    // Each probe on a fresh thread: FZ off until something on it turns it on.
+    bool controlPassesSubnormals = false;
+    std::thread control(
+        [&]
+        {
+            EQModule module;
+            module.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
+            module.update(params);
+            TestABL abl(kEngineBlock);
+            std::ranges::fill(abl.left, kSubnormal);
+            std::ranges::fill(abl.right, kSubnormal);
+            module.process(MultichannelView::fromABL(abl.abl(), kEngineBlock));
+            controlPassesSubnormals = anyNonZero(abl);
+        });
+    control.join();
+
     uint64_t before = 0U;
     uint64_t after = 0U;
+    bool kernelPassesSubnormals = true;
     std::thread render(
         [&]
         {
-            // A fresh thread: FZ off until something on it turns it on.
+            DSPKernel kernel;
+            TargetState state = makeIdentityState(); // limiter bypassed, normaliser off
+            state.intensityLinear = 0.0F;            // P1: EQ → crossfeed (off) → limiter (bypassed)
+            state.eq = params;
+            kernel.publishTargetState(state);
+            kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
             before = __builtin_arm_rsr64("fpcr") & kFz;
             TestABL abl(kEngineBlock);
+            std::ranges::fill(abl.left, kSubnormal);
+            std::ranges::fill(abl.right, kSubnormal);
             kernel.process(abl.abl(), kEngineBlock);
             after = __builtin_arm_rsr64("fpcr") & kFz;
+            kernelPassesSubnormals = anyNonZero(abl);
         });
     render.join();
-    if (before != 0U || after == 0U)
+
+    if (!controlPassesSubnormals || kernelPassesSubnormals || before != 0U || after != 0U)
     {
-        logFail(kName, std::format("FPCR.FZ before {} after {} (want 0 then set)", before, after));
+        logFail(kName,
+                std::format("control passes subnormals {} (want true); the kernel's EQ passes them {} "
+                            "(want false: FZ on while rendering); FPCR.FZ before {} after {} (want 0, 0)",
+                            controlPassesSubnormals,
+                            kernelPassesSubnormals,
+                            before,
+                            after));
         return;
     }
     logPass(kName);
@@ -733,9 +774,10 @@ static auto testEqNoSubnormalStates() -> void
         std::thread worker(
             [&]
             {
+                std::optional<ScopedFlushToZero> flushing;
                 if (flushToZero)
                 {
-                    enableFlushToZero();
+                    flushing.emplace();
                 }
                 EQModule module;
                 module.initialize(kFs, kFrames);
@@ -773,112 +815,6 @@ static auto testEqNoSubnormalStates() -> void
 #else
     logPending(kName, "AArch64 only (FPCR.FZ)");
 #endif
-}
-
-// ---------------------------------------------------------------------------
-// RtSwappableResource_Lifecycle — F17: the swap template (kept for BRIR's IR swaps) keeps its
-// contract: adopt sees the newest publish, a never-adopted publish is freed by the next, retired
-// resources are freed by reclaim, and the destructor frees the rest — every construction balanced.
-// ---------------------------------------------------------------------------
-namespace
-{
-    std::atomic<int> gSwapLive{0};
-
-    struct SwapProbe
-    {
-        explicit SwapProbe(int tag) noexcept : value(tag)
-        {
-            gSwapLive.fetch_add(1);
-        }
-        ~SwapProbe()
-        {
-            gSwapLive.fetch_sub(1);
-        }
-        SwapProbe(const SwapProbe&) = delete;
-        SwapProbe& operator=(const SwapProbe&) = delete;
-        SwapProbe(SwapProbe&&) = delete;
-        SwapProbe& operator=(SwapProbe&&) = delete;
-        int value;
-    };
-} // namespace
-
-static auto testRtSwappableResourceLifecycle() -> void
-{
-    static const char* const kName = "RtSwappableResource_Lifecycle";
-    std::string failure;
-    {
-        RtSwappableResource<SwapProbe> resource;
-        if (resource.adopt() != nullptr)
-        {
-            failure = "an empty swap adopted something";
-        }
-        resource.publish(std::make_unique<SwapProbe>(1));
-        const SwapProbe* first = resource.adopt();
-        if (failure.empty() &&
-            (first == nullptr || first->value != 1 || resource.active() != first))
-        {
-            failure = "adopt did not return the published resource";
-        }
-        resource.publish(std::make_unique<SwapProbe>(2)); // never adopted…
-        resource.publish(std::make_unique<SwapProbe>(3)); // …so this frees it
-        if (failure.empty() && gSwapLive.load() != 2)
-        {
-            failure = std::format("a displaced, never-adopted resource was not freed ({} live)",
-                                  gSwapLive.load());
-        }
-        const SwapProbe* third = resource.adopt(); // retires 1 into toRelease
-        if (failure.empty() && (third == nullptr || third->value != 3))
-        {
-            failure = "adopt did not return the newest publish";
-        }
-        resource.reclaim(); // frees 1
-        if (failure.empty() && gSwapLive.load() != 1)
-        {
-            failure = std::format("reclaim did not free the retired resource ({} live)",
-                                  gSwapLive.load());
-        }
-        // Two threads: the producer publishes only after the consumer adopted the last one (the
-        // single-pending contract), so nothing is orphaned; the race checks run under tsan.
-        std::atomic<int> adopted{3};
-        std::thread consumer(
-            [&]
-            {
-                while (adopted.load(std::memory_order_acquire) < 200)
-                {
-                    const SwapProbe* probe = resource.adopt();
-                    if (probe != nullptr && probe->value > adopted.load(std::memory_order_relaxed))
-                    {
-                        adopted.store(probe->value, std::memory_order_release);
-                    }
-                }
-            });
-        for (int tag = 4; tag <= 200; ++tag)
-        {
-            resource.publish(std::make_unique<SwapProbe>(tag));
-            while (adopted.load(std::memory_order_acquire) < tag)
-            {
-                std::this_thread::yield();
-            }
-        }
-        consumer.join();
-        resource.reclaim();
-        if (failure.empty() && gSwapLive.load() != 1)
-        {
-            failure =
-                std::format("{} resources live after the threaded run (want only the active one)",
-                            gSwapLive.load());
-        }
-    } // the destructor frees the active one
-    if (failure.empty() && gSwapLive.load() != 0)
-    {
-        failure = std::format("{} resource(s) leaked past the destructor", gSwapLive.load());
-    }
-    if (!failure.empty())
-    {
-        logFail(kName, failure);
-        return;
-    }
-    logPass(kName);
 }
 
 // ---------------------------------------------------------------------------
@@ -1054,7 +990,6 @@ static auto testCrossfeedRederivedOnRateChange() -> void
     auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
     constexpr AdaptiveSound::Realizer::CrossfeedIntent kStrong{
         .enabled = 1U,
-        .level = 1.0F,
         .preset = 2U,
     };
     realizer->applyCrossfeed(kStrong);
@@ -1067,15 +1002,17 @@ static auto testCrossfeedRederivedOnRateChange() -> void
     const CrossfeedParams fresh96k = reference->canonicalState().crossfeed;
     realizer->shutdown();
     reference->shutdown();
-    if (at96k.delayFrames == at48k.delayFrames || at96k.lpfPole != fresh96k.lpfPole ||
-        at96k.delayFrames != fresh96k.delayFrames || at96k.enabled != 1U)
+    if (at96k.crossPole == at48k.crossPole || at96k.enabled != 1U ||
+        std::memcmp(&at96k, &fresh96k, sizeof(CrossfeedParams)) != 0)
     {
         logFail(kName,
-                std::format("crossfeed after 48 → 96 kHz: delay {} (fresh {}), pole {} (fresh {})",
-                            at96k.delayFrames,
-                            fresh96k.delayFrames,
-                            at96k.lpfPole,
-                            fresh96k.lpfPole));
+                std::format("crossfeed after 48 → 96 kHz: cross pole {} (48 kHz {}, fresh 96 kHz {}), "
+                            "shelf pole {} (fresh {})",
+                            at96k.crossPole,
+                            at48k.crossPole,
+                            fresh96k.crossPole,
+                            at96k.directPole,
+                            fresh96k.directPole));
         return;
     }
     logPass(kName);
@@ -1122,7 +1059,7 @@ static auto testRealizerReinitDuringDrain() -> void
                 curve[i % 31U] = static_cast<float>((i % 25U)) - 12.0F;
                 (void)realizer->setPendingEq(curve.data(), 31U, true);
                 realizer->setPendingIntensity(static_cast<float>(i % 10U) / 10.0F);
-                realizer->setPendingCrossfeed(i % 2U, 0.5F, i % 3U);
+                realizer->setPendingCrossfeed(i % 2U, i % 3U);
                 ++i;
                 std::this_thread::sleep_for(std::chrono::microseconds(50)); // a fast UI, not a spin
             }

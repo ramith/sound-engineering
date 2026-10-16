@@ -1626,8 +1626,7 @@ namespace
         const int r = pick(rng);
         if (r >= 85)
         {
-            realizer.setPendingCrossfeed(
-                static_cast<uint32_t>(r % 2), 0.7F, static_cast<uint32_t>(r % 3));
+            realizer.setPendingCrossfeed(static_cast<uint32_t>(r % 2), static_cast<uint32_t>(r % 3));
             return;
         }
         if (r >= 60)

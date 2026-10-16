@@ -3,13 +3,15 @@
 //
 // AudioUnitRegistrationBridge.h — Pure-C bridging surface for Swift.
 //
-// Declares ONLY the two C-ABI functions Swift needs to register and describe the custom
-// v3 AUAudioUnit (AdaptiveSoundAU) so it can be instantiated via AVAudioUnit.instantiate().
+// The C-ABI Swift reaches the two in-process v3 AUs through: their registration and component
+// descriptions (so AVAudioUnit.instantiate() can make them), and the control-plane intents posted
+// to the live AdaptiveSoundAU (EQ, intensity, crossfeed, track loudness, output transport, channel
+// layout). Every function here has a caller in the app; the AUs' former direct-create, parameter
+// and second-publish-plane entry points had none and were deleted (R1.1-A, council C-86).
 //
-// Must stay valid ISO C: no C++ namespaces, no <cstdint>, no Obj-C. That is why these
-// declarations live here and not in the C++ AudioUnitBridge.h (which cannot be a Swift
-// bridging header). This header is #included from DeviceBridge.h (the single Swift bridging
-// header) and from AUAudioUnit.mm (so the C++ definitions are checked against these prototypes).
+// Must stay valid ISO C: no C++ namespaces, no <cstdint>, no Obj-C. This header is #included from
+// DeviceBridge.h (the single Swift bridging header) and from both AU .mm files (so their
+// definitions are checked against these prototypes).
 //
 // <AudioToolbox/AudioComponent.h> is the C (not Obj-C) home of AudioComponentDescription, so
 // including it here is safe for every translation unit that pulls in DeviceBridge.h.
@@ -48,18 +50,6 @@ extern "C"
     /// 'aspz', same manufacturer as AdaptiveSoundAU). Stable for the process lifetime. Pass to
     /// AVAudioUnit.instantiate(with:options:).
     AudioComponentDescription spatialRendererComponentDescription(void) AUDIODSP_C_NOEXCEPT;
-
-    /// Override the SpatialRendererAU's N->M channel routing explicitly (off-RT control plane).
-    /// Normally UNNECESSARY: allocateRenderResources derives N (input) and M (output) from the
-    /// connect-negotiated bus formats, so Swift just connects at the desired formats. Exposed for
-    /// callers that do not drive width via the bus formats.
-    ///
-    /// @param auHandle    Borrowed (passUnretained) AUAudioUnit*; no-op if null.
-    /// @param inChannels  Source channel count N (clamped to the DSP ceiling by the kernel).
-    /// @param outChannels Device channel count M (clamped to the DSP ceiling by the kernel).
-    void configureSpatialChannels(void* auHandle,
-                                  uint32_t inChannels,
-                                  uint32_t outChannels) AUDIODSP_C_NOEXCEPT;
 
     /// Publish the EQ to the live AdaptiveSoundAU (Sprint EQ, engine-plan §8): the 31 points the
     /// UI draws (dB) and On/Off. Off-RT control plane: the trust boundary validates, then the
@@ -126,7 +116,7 @@ extern "C"
 
     /// Publish a new intensity value (the spatial/clarity coloration wet/dry mix) to the live
     /// AdaptiveSoundAU (S6 Tier-3 3a). This is the SINGLE intensity control surface (design
-    /// §1.5): setAUParameter(Intensity, ...) is a dead stub. Off-RT control plane: sets the
+    /// §1.5). Off-RT control plane: sets the
     /// Realizer's pending-intensity slot (clamped to [0,1]) and posts a drain block when none is
     /// pending; the canonical read-modify-write and the atomic publish happen
     /// off-main in the Realizer's serial queue. Must be called from a single control thread
@@ -136,22 +126,21 @@ extern "C"
     /// @param intensity Intensity in [0,1]; values outside the range are clamped.
     void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT;
 
-    /// Publish a new crossfeed state (the wet-region headphone-soundstage stage) to the live
-    /// AdaptiveSoundAU (QW1 §3). Off-RT control plane: sets the Realizer's pending-crossfeed slot
-    /// (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain block
-    /// when none is pending; the off-RT coefficient derivation (from {preset, level, fs}),
-    /// the canonical read-modify-write, and the atomic publish all happen in the Realizer's serial
-    /// queue. Crossfeed is a WET-region stage, so its audible depth is `crossfeed × intensity`
-    /// (QW1 §4) — the Reimagine knob scales it. Must be called from a single control thread (the
+    /// Publish a new crossfeed state (the headphone crossfeed, bs2b) to the live AdaptiveSoundAU
+    /// (QW1 §3; R1.1-A). Off-RT control plane: sets the Realizer's pending-crossfeed slot (preset
+    /// clamped to the valid enum range) and posts a drain block when none is pending; the off-RT
+    /// coefficient derivation (bs2b's, from {preset, fs}), the canonical read-modify-write and the
+    /// atomic publish all happen in the Realizer's serial queue. Crossfeed is an output stage of
+    /// its own, ahead of the limiter: it plays at the preset's full strength whatever Intensity is
+    /// (founder decision 2026-10-14). Must be called from a single control thread (the
     /// @MainActor). No-op if auUnit is null.
     ///
     /// @param auUnit   Borrowed (passUnretained) AUAudioUnit*; no-op if null.
-    /// @param enabled  0 = bypass (bit-exact pass-through); non-zero = active.
-    /// @param level    Crossfeed level in [0,1]; values outside the range are clamped.
-    /// @param preset   CrossfeedPreset value (0 = Relaxed, 1 = Bauer/"Default", 2 = Strong);
-    ///                 out-of-range values are clamped to the nearest valid preset.
-    void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset)
-        AUDIODSP_C_NOEXCEPT;
+    /// @param enabled  0 = off (glides out, then a bit-exact pass-through); non-zero = on.
+    /// @param preset   CrossfeedPreset value — bs2b's levels: 0 = Jmeier ("Relaxed"), 1 = Cmoy
+    ///                 ("Default"), 2 = bs2b default ("Strong"); out of range clamps to the
+    ///                 nearest.
+    void publishCrossfeed(void* auUnit, uint32_t enabled, uint32_t preset) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

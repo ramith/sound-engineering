@@ -1,10 +1,9 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
-#include "../include/AudioConstants.h"
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
-#include "../include/FlushToZero.h"                 // shared FPCR.FZ helper (AR-1)
 #include "../include/MultichannelView.h"
 #include "../Spatial/SpatialRenderKernel.h"
+#include "InProcessEffectAU.h" // the scaffold both in-process AUs share (C-87)
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -13,17 +12,14 @@ using namespace AdaptiveSound;
 
 namespace
 {
-    // AudioComponent identity the in-process spatial-renderer AU is registered under.
-    // Same type + manufacturer as AdaptiveSoundAU; a DISTINCT subtype ('aspz') so the
+    // The subtype the in-process spatial-renderer AU is registered under: the same effect type and
+    // manufacturer as AdaptiveSoundAU (InProcessEffectScaffold adds them), a DISTINCT subtype so the
     // two custom v3 units have separate registry entries and component descriptions.
-    constexpr OSType kComponentType = kAudioUnitType_Effect;  // 'aufx'
-    constexpr OSType kComponentSubType = 0x6173707AU;         // 'aspz' (Adaptive SPatialiZer)
-    constexpr OSType kComponentManufacturer = 0x41647364U;    // 'Adsd' (matches AdaptiveSoundAU)
-    constexpr uint32_t kComponentVersion = 0x00010000U;       // 1.0.0 (major.minor.patch)
+    constexpr OSType kComponentSubType = 0x6173707AU; // 'aspz' (Adaptive SPatialiZer)
 
-    // Default published bus width before the engine's connect-driven format negotiation
-    // re-widths the busses. Stereo is the safe baseline both AUAudioUnitBus inits accept.
-    constexpr AVAudioChannelCount kDefaultChannelCount = 2U;
+    // The kernel's routing until the first allocate derives it from the negotiated busses: the
+    // scaffold's stereo default.
+    constexpr uint32_t kDefaultChannelCount = 2U;
 
     // channelCapabilities sentinel: -1 means "any number of channels". A {-1, -1} pair
     // (any in, any out) lets AVAudioEngine.connect(...:format:) drive BOTH the source and
@@ -130,16 +126,76 @@ namespace
     };
 } // namespace
 
+namespace
+{
+    // The device-boundary stage's render: NON-IN-PLACE. Pull the N-channel source into the
+    // PREALLOCATED input scratch (sized N x maxFrames off-RT), then render N -> M into the
+    // host-provided output. The kernel and the scratch are this object's own: the scaffold's render
+    // block co-owns it for the AU's whole lifetime, and only allocate (off-RT, not rendering)
+    // re-prepares them.
+    class SpatialRender final : public InProcessEffectRender
+    {
+      public:
+        SpatialRender() noexcept
+        {
+            kernel_.configure(kDefaultChannelCount, kDefaultChannelCount);
+            kernel_.initialize(kDefaultSampleRate, kDefaultMaxFrames);
+        }
+
+        // Off-RT (allocate). Route N source channels to M device channels at the host's rate and
+        // frame ceiling, and size the input scratch: N x maxFrames — its SOLE allocation site. False
+        // on a degenerate request.
+        [[nodiscard]] bool prepare(uint32_t inChannels,
+                                   uint32_t outChannels,
+                                   uint32_t sampleRate,
+                                   uint32_t maxFrames) noexcept
+        {
+            kernel_.configure(inChannels, outChannels);
+            kernel_.initialize(sampleRate, maxFrames);
+            return scratch_.allocate(inChannels, maxFrames);
+        }
+
+        // Off-RT (deallocate). Free the scratch's storage; the next allocate sizes it again.
+        void releaseScratch() noexcept
+        {
+            scratch_.clear();
+        }
+
+        AUAudioUnitStatus render(AudioUnitRenderActionFlags* flags,
+                                 const AudioTimeStamp* timestamp,
+                                 AUAudioFrameCount frames,
+                                 AudioBufferList* output,
+                                 __unsafe_unretained AURenderPullInputBlock pull) noexcept override
+        {
+            // Flush-to-zero is the kernel's, scoped to its process() (council C-50), never set over
+            // the pull() below, which runs the upstream nodes on this thread.
+
+            // Scratch not yet allocated: nothing valid to render.
+            AudioBufferList* inputAbl = scratch_.abl();
+            if (inputAbl == nullptr) { return kAudioUnitErr_Uninitialized; }
+
+            // Reset the scratch byte sizes to this call's frame count first, so the pull writes
+            // `frames` samples.
+            scratch_.prepareForPull(frames);
+            const OSStatus pullStatus = pull(flags, timestamp, frames, 0, inputAbl);
+            if (pullStatus != noErr) { return pullStatus; }
+
+            const MultichannelView inputView = MultichannelView::fromABL(inputAbl, frames);
+            const MultichannelView outputView = MultichannelView::fromABL(output, frames);
+            kernel_.process(inputView, outputView);
+            return noErr;
+        }
+
+      private:
+        SpatialRenderKernel kernel_;
+        InputScratch scratch_; // the pulled input; read and written on the render thread only
+    };
+} // namespace
+
 @interface SpatialRendererAU : AUAudioUnit {
-    std::shared_ptr<SpatialRenderKernel> _kernel; // created ONCE in -init; never reset until -dealloc
-    std::shared_ptr<InputScratch> _inputScratch;  // sole input-ABL owner; co-owned by render block
-    AUInternalRenderBlock _renderBlock;           // created ONCE in -init; co-owns kernel + scratch
-    AUAudioUnitBus* _inputBus;
-    AUAudioUnitBus* _outputBus;
-    AUAudioUnitBusArray* _inputBusArray;
-    AUAudioUnitBusArray* _outputBusArray;
-    uint32_t _sampleRate;   // single source of truth; re-synced in allocateRenderResources
-    uint32_t _bufferFrames; // host max frames; applied in allocateRenderResources
+    std::shared_ptr<SpatialRender> _render; // created ONCE in -init; co-owned by the render block
+    // Busses, render block, rate and frame ceiling.
+    InProcessEffectScaffold _scaffold;
 }
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 @end
@@ -152,95 +208,25 @@ namespace
     self = [super initWithComponentDescription:componentDescription options:options error:outError];
     if (self == nil) { return nil; }
 
-    _sampleRate = kDefaultSampleRate;
-    _bufferFrames = kDefaultMaxFrames;
-
-    // Kernel + input scratch: created exactly ONCE, here. allocate/deallocate only
-    // re-initialize()/re-allocate() them; they never reconstruct. The render block (below)
-    // co-owns both by value (shared_ptr copies) for the AU's whole lifetime, so neither can be
-    // freed out from under a live render block nor freed on the RT thread. (Apple v3 contract:
-    // internalRenderBlock must be non-nil at attach — that is why this is in -init.)
-    _kernel = std::make_shared<SpatialRenderKernel>();
-    _kernel->configure(kDefaultChannelCount, kDefaultChannelCount);
-    _kernel->initialize(_sampleRate, _bufferFrames);
-    _inputScratch = std::make_shared<InputScratch>();
-
-    // Capture the kernel + scratch by value (shared_ptr copies) so the render block never touches
-    // `self` nor promotes a __weak reference on the audio thread — no Obj-C runtime calls on the
-    // RT path. These copies are the block's strong co-owners; copy/destroy happen off-RT (block
-    // creation here / teardown in -dealloc), never during render. Both non-null for the block's
-    // lifetime; the SCRATCH'S underlying ABL is non-null only after allocateRenderResources, which
-    // the v3 contract guarantees runs before any render.
-    std::shared_ptr<SpatialRenderKernel> kernel = _kernel;
-    std::shared_ptr<InputScratch> inputScratch = _inputScratch;
-    _renderBlock = ^AUAudioUnitStatus(AudioUnitRenderActionFlags* flags,
-                                      const AudioTimeStamp* timestamp,
-                                      AUAudioFrameCount frames,
-                                      NSInteger busNum,
-                                      AudioBufferList* outputData,
-                                      const AURenderEvent* events,
-                                      AURenderPullInputBlock pull) {
-        (void)busNum; // single output bus; index unused by this in-process AU
-        (void)events; // MIDI not used by this AU
-
-        // Set FPCR.FZ on this render thread so subnormals are flushed to zero (~1 cycle on M1).
-        enableFlushToZero();
-
-        // No upstream to pull, or scratch not yet allocated — nothing valid to render.
-        if (pull == nullptr) { return kAudioUnitErr_NoConnection; }
-        AudioBufferList* inputAbl = inputScratch->abl();
-        if (inputAbl == nullptr) { return kAudioUnitErr_Uninitialized; }
-
-        // NON-IN-PLACE: pull the N-channel source into the PREALLOCATED input scratch (sized
-        // N x maxFrames off-RT), then render N -> M into the engine-provided output ABL. Reset the
-        // scratch byte sizes to this call's frame count first so the pull writes `frames` samples.
-        inputScratch->prepareForPull(frames);
-        const OSStatus pullStatus = pull(flags, timestamp, frames, 0, inputAbl);
-        if (pullStatus != noErr) { return pullStatus; }
-
-        const MultichannelView inputView = MultichannelView::fromABL(inputAbl, frames);
-        const MultichannelView outputView = MultichannelView::fromABL(outputData, frames);
-        kernel->process(inputView, outputView);
-        return noErr;
-    };
-
-    // Busses: one input + one output, each non-interleaved float32. The engine's
-    // connect(...:format:) drives the actual N (input) and M (output) widths (which may DIFFER);
-    // a v3 effect AU with no bus arrays fails engine.connect().
-    if (![self setupBussesWithSampleRate:_sampleRate error:outError]) { return nil; }
-
+    // The render (kernel + input scratch): created exactly ONCE, here; allocate re-prepares it and
+    // deallocate frees its scratch, neither reconstructs it. (Apple v3 contract: internalRenderBlock
+    // must be non-nil at attach — that is why this is in -init.) The connect-negotiated bus formats
+    // drive the actual N (input) and M (output) widths, which may DIFFER.
+    _render = std::make_shared<SpatialRender>();
+    if (!_scaffold.setUp(self, _render)) { return nil; }
     return self;
 }
 
-// Build the published input/output busses from a canonical non-interleaved float32 stereo format
-// at `sampleRate`. The connect-driven negotiation re-widths them later; channelCapabilities
-// advertises "any in / any out" so {2,6,8} on either side is accepted.
-- (BOOL)setupBussesWithSampleRate:(uint32_t)sampleRate error:(NSError**)outError {
-    AVAudioFormat* format =
-        [[AVAudioFormat alloc] initStandardFormatWithSampleRate:static_cast<double>(sampleRate)
-                                                       channels:kDefaultChannelCount];
-    if (format == nil) { return NO; }
-
-    _inputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
-    if (_inputBus == nil) { return NO; }
-    _outputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
-    if (_outputBus == nil) { return NO; }
-
-    _inputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
-                                                            busType:AUAudioUnitBusTypeInput
-                                                             busses:@[ _inputBus ]];
-    _outputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
-                                                             busType:AUAudioUnitBusTypeOutput
-                                                              busses:@[ _outputBus ]];
-    return (_inputBusArray != nil && _outputBusArray != nil) ? YES : NO;
-}
-
 - (AUAudioUnitBusArray*)inputBusses {
-    return _inputBusArray;
+    return _scaffold.inputBusses();
 }
 
 - (AUAudioUnitBusArray*)outputBusses {
-    return _outputBusArray;
+    return _scaffold.outputBusses();
+}
+
+- (AUInternalRenderBlock)internalRenderBlock {
+    return _scaffold.renderBlock();
 }
 
 // {-1, -1}: any input channel count, any output channel count. This lets AVAudioEngine's
@@ -254,30 +240,16 @@ namespace
 - (BOOL)allocateRenderResourcesAndReturnError:(NSError**)outError {
     if (![super allocateRenderResourcesAndReturnError:outError]) { return NO; }
 
-    // Adopt the host-negotiated sample rate + per-call frame ceiling as the single source of
-    // truth. DERIVE the routing from the negotiated bus formats: input bus width = N source
-    // channels, output bus width = M device channels (they may differ — that is the whole point of
-    // this device-boundary stage). The v3 contract guarantees allocate runs while not rendering,
-    // so reconfiguring the kernel + reallocating the scratch here never races process().
-    const double negotiatedSampleRate = self.outputBusses[0].format.sampleRate;
-    if (negotiatedSampleRate > 0.0) {
-        _sampleRate = static_cast<uint32_t>(negotiatedSampleRate);
-    }
-    const AUAudioFrameCount hostMaxFrames = self.maximumFramesToRender;
-    if (hostMaxFrames > 0U) {
-        _bufferFrames = static_cast<uint32_t>(hostMaxFrames);
-    }
-
+    // Adopt the host-negotiated rate + per-call frame ceiling, and DERIVE the routing from the
+    // negotiated bus formats: input bus width = N source channels, output bus width = M device
+    // channels (they may differ — that is the whole point of this device-boundary stage). The v3
+    // contract guarantees allocate runs while not rendering, so re-preparing the render here never
+    // races its render().
+    _scaffold.adoptHostFormat(self);
     const AVAudioChannelCount inChannels = self.inputBusses[0].format.channelCount;
     const AVAudioChannelCount outChannels = self.outputBusses[0].format.channelCount;
-
-    _kernel->configure(static_cast<uint32_t>(inChannels), static_cast<uint32_t>(outChannels));
-    _kernel->initialize(_sampleRate, _bufferFrames);
-
-    // SOLE allocation site for the input scratch: N source channels x maxFrames. The render block
-    // co-owns this same InputScratch instance, so reallocating its contents here is safe — the
-    // block reads abl() fresh each call and never caches the pointer.
-    if (!_inputScratch->allocate(static_cast<uint32_t>(inChannels), _bufferFrames)) {
+    if (!_render->prepare(static_cast<uint32_t>(inChannels), static_cast<uint32_t>(outChannels),
+                          _scaffold.sampleRate(), _scaffold.maxFrames())) {
         if (outError != nullptr) {
             *outError = [NSError errorWithDomain:NSOSStatusErrorDomain
                                             code:kAudioUnitErr_FailedInitialization
@@ -289,74 +261,28 @@ namespace
 }
 
 - (void)deallocateRenderResources {
-    // Free the input scratch's heap (off-RT; deallocate runs while not rendering). Does NOT reset
-    // _kernel / _inputScratch / _renderBlock object ownership: those live for the AU's whole
-    // lifetime and are co-owned by the render block; re-allocation re-prepares the SAME instances.
-    if (_inputScratch != nullptr) {
-        _inputScratch->clear(); // frees the backing storage; leaves the shared object alive
-    }
+    // Free the input scratch's heap (off-RT; deallocate runs while not rendering). The render
+    // itself lives for the AU's whole lifetime, co-owned by the render block; re-allocation
+    // re-prepares the SAME instance.
+    _render->releaseScratch();
     [super deallocateRenderResources];
-}
-
-- (void)dealloc {
-    // The single, off-RT teardown point (last reference drop via __bridge_transfer / ARC). Drop the
-    // block first (releasing its captured shared_ptr copies), then the members — the
-    // SpatialRenderKernel + InputScratch destructors run here, off-RT.
-    _renderBlock = nil;
-    _inputScratch.reset();
-    _kernel.reset();
-}
-
-- (AUInternalRenderBlock)internalRenderBlock {
-    return _renderBlock;
-}
-
-// Off-RT control plane. Stores the desired sample rate / buffer size applied on the next
-// allocateRenderResources.
-- (void)setRequestedSampleRate:(uint32_t)sampleRate bufferFrames:(uint32_t)bufferFrames {
-    if (sampleRate != 0U) { _sampleRate = sampleRate; }
-    if (bufferFrames != 0U) { _bufferFrames = bufferFrames; }
-}
-
-// Off-RT control plane. Explicit routing override for callers that do NOT drive width via the
-// negotiated bus formats. Normally unnecessary — allocateRenderResources derives N/M from the
-// connect-negotiated bus formats — but exposed for the C-ABI configureSpatialChannels().
-- (void)configureInputChannels:(uint32_t)inChannels outputChannels:(uint32_t)outChannels {
-    if (_kernel != nullptr) { _kernel->configure(inChannels, outChannels); }
 }
 
 @end
 
-// MARK: - C ABI (off-RT control plane). Pure-C signatures mirror the AdaptiveSoundAU C-ABI.
+// MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitRegistrationBridge.h.
 
 extern "C" {
 
 AudioComponentDescription spatialRendererComponentDescription(void) AUDIODSP_C_NOEXCEPT {
-    AudioComponentDescription desc = {};
-    desc.componentType = kComponentType;
-    desc.componentSubType = kComponentSubType;
-    desc.componentManufacturer = kComponentManufacturer;
-    desc.componentFlags = 0;
-    desc.componentFlagsMask = 0;
-    return desc;
+    return InProcessEffectScaffold::description(kComponentSubType);
 }
 
 void registerSpatialRendererAUSubclass(void) AUDIODSP_C_NOEXCEPT {
-    // registerSubclass: must run exactly once per process; dispatch_once guards against double
-    // registration when engine setup repeats (e.g. device re-init).
     static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        [AUAudioUnit registerSubclass:[SpatialRendererAU class]
-               asComponentDescription:spatialRendererComponentDescription()
-                                 name:@"AdaptiveSound: SpatialRendererAU"
-                              version:kComponentVersion];
-    });
-}
-
-void configureSpatialChannels(void* auHandle, uint32_t inChannels, uint32_t outChannels) AUDIODSP_C_NOEXCEPT {
-    if (auHandle == nullptr) { return; }
-    SpatialRendererAU* audioUnit = (__bridge SpatialRendererAU*)auHandle; // non-owning borrow
-    [audioUnit configureInputChannels:inChannels outputChannels:outChannels];
+    InProcessEffectScaffold::registerOnce(onceToken, [SpatialRendererAU class],
+                                          spatialRendererComponentDescription(),
+                                          CFSTR("AdaptiveSound: SpatialRendererAU"));
 }
 
 } // extern "C"

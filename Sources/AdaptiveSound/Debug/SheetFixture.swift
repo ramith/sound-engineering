@@ -70,6 +70,9 @@
                 Self.seedPlaylist(playlists, browse: browse, songs: songs)
             }
             library.isReconciling = variant == .playlistRemoveMissingScan // a scan under way: Remove is off
+            if variant == .folderPaused {
+                Self.seedPausedFolders(browse, library: library)
+            }
             seedDevices()
             seedPlayback(songs)
             Self.seedSettings(audio, for: variant)
@@ -122,6 +125,7 @@
             case .playlistRemoveMissing, .playlistRemoveMissingScan:
                 SheetDialogStandIn {
                     PlaylistRemoveMissingDialog(count: playlists.missingEntryCount,
+                                                kept: playlists.unreachableEntryCount,
                                                 isScanning: playlists.isLibraryPopulating, remove: {}, cancel: {})
                 }
             case .playlistFailure:
@@ -137,11 +141,12 @@
         private func seedDevices() {
             let speakers = AudioDeviceModel(id: 1, name: "MacBook Pro Speakers", sampleRate: 48000,
                                             bufferFrameSize: 512, uid: "BuiltInSpeakerDevice", modelUID: nil,
-                                            transportType: kAudioDeviceTransportTypeBuiltIn, type: .builtin)
+                                            transportType: kAudioDeviceTransportTypeBuiltIn, type: .builtin,
+                                            isHeadphones: false)
             let dac = AudioDeviceModel(id: 2, name: "Modi+ USB DAC", sampleRate: 96000,
                                        bufferFrameSize: 512, uid: "AppleUSBAudioEngine:Schiit:Modi+:1",
                                        modelUID: "Modi+:30BE:0001",
-                                       transportType: kAudioDeviceTransportTypeUSB, type: .usb)
+                                       transportType: kAudioDeviceTransportTypeUSB, type: .usb, isHeadphones: true)
             audio.availableDevices = [speakers, dac]
             audio.selectedDevice = speakers
         }
@@ -164,8 +169,8 @@
             path.intensityLinear = audio.intensity
             audio.signalPath = path
             audio.loudness = LoudnessSnapshot(integratedLufs: -15.9, shortTermLufs: -14.2, truePeakDb: -3.2)
-            audio.spectrumBars = Self.spectrum(count: SpectrumConstants.displayBarCount, phase: 0)
-            audio.peakCaps = audio.spectrumBars.map { min($0 + 0.08, 1) }
+            let bars = Self.spectrum(count: SpectrumConstants.displayBarCount, phase: 0)
+            audio.spectrum.showStill(bars: bars, caps: bars.map { min($0 + 0.08, 1) })
         }
     }
 #endif

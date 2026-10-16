@@ -53,7 +53,7 @@ public enum Palette {
     // MARK: Accent family (appearance-independent — the teal reads on both)
 
     public static let accent = AppearancePair(both: RGBAColor(red: 0.161, green: 0.714, blue: 0.643)) // #29B6A4
-    public static let accentDeep = AppearancePair(both: RGBAColor(red: 0.078, green: 0.537, blue: 0.478)) // #148979
+    public static let accentDeep = AppearancePair(both: RGBAColor(red: 0.078, green: 0.537, blue: 0.478)) // #14897A
     /// Foreground ON the accent (play glyph over teal, active-tab text). S10.8 PR B
     /// (Realigned Target): the near-black teal #0C1413 replaces white — dark-on-teal is the
     /// realigned identity AND retires the long-flagged ≈2.5:1 white-on-teal (now ≥4.5:1 on

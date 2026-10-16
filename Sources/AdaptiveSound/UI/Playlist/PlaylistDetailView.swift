@@ -1,4 +1,5 @@
 import LibraryBrowseKit
+import LibraryScan
 import LibraryStore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -261,8 +262,9 @@ private extension PlaylistDetailView {
         }
     }
 
-    /// A missing-file entry (F): its metadata dimmed, with a trailing warning-badge MENU (Locate /
-    /// Remove) — a visible, click-and-keyboard-reachable affordance, not just right-click (review).
+    /// An unavailable entry (F) — its file missing, or out of reach (KI-LIB-01: its drive unplugged; the
+    /// badge's help and VoiceOver say which): its metadata dimmed, with a trailing warning-badge MENU
+    /// (Locate / Remove) — a visible, click-and-keyboard-reachable affordance, not just right-click (review).
     /// Not tappable-to-play (skipped on play). VoiceOver reads it as one element + the same actions.
     /// On the playable rows' card (E4): the grip's slot, so its number and title line up with theirs,
     /// and one line at their 36pt pitch (decision 5), the artist after the title.
@@ -294,7 +296,7 @@ private extension PlaylistDetailView {
             // the amber token never showed. The explicit chevron keeps the "this opens a menu"
             // cue the borderless indicator used to give.
             .pillMenuStyle()
-            .help("File missing — moved or deleted. Locate… to re-point it, or remove it.")
+            .help(Self.unavailableHelp(row.availability))
         }
         // `PlaylistItemRow`'s card metrics: its padding, its 34pt card and the 2pt seam between cards.
         .padding(.vertical, DesignSystem.Spacing.xSmall)
@@ -304,8 +306,16 @@ private extension PlaylistDetailView {
         .contentShape(Rectangle())
         .contextMenu { missingRowActions(row) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.display?.title ?? "Unknown Track"), unavailable — file missing")
+        .accessibilityLabel("\(row.display?.title ?? "Unknown Track"), unavailable — "
+            + (row.availability == .unreachable ? "can’t be reached" : "file missing"))
         .accessibilityActions { missingRowActions(row) }
+    }
+
+    /// Why an unavailable row can't play, and what to do — its badge's help.
+    static func unavailableHelp(_ availability: FileAvailability) -> String {
+        availability == .unreachable
+            ? "Can’t be reached — its drive may not be connected. Locate… to re-point it, or remove it."
+            : "File missing — moved or deleted. Locate… to re-point it, or remove it."
     }
 
     /// "Title · Artist", dimmed: the title secondary, the artist (when tagged) tertiary and smaller.

@@ -91,7 +91,7 @@ struct AutoAdvanceReconfigureGapTests {
         // before the engine armed the next track for a SEAMLESS seam, so the engine reports
         // playbackEnded with no transition. The VM must CONTINUE to the queued next track via a
         // fresh start — a brief, honest reconfigure gap — NOT stop mid-playlist. This continue
-        // behavior is provided by tickSpectrum()'s `playbackEnded → advance to pendingNextIndex`
+        // behavior is provided by tickTransport()'s `playbackEnded → advance to pendingNextIndex`
         // branch (pendingNextIndex is always set mid-playlist; it is nil only at end-of-playlist,
         // which is the one case that legitimately stops). Seamless (gapless) advance for
         // arbitrarily-short tracks is a separate enhancement: it needs an engine-side 2-deep
@@ -110,7 +110,7 @@ struct AutoAdvanceReconfigureGapTests {
 
         // The VM's tick sees endedFlag == true with a track still queued (pendingNextIndex set)
         // and ADVANCES to it via a fresh start rather than stopping. (Modelled via
-        // MockAdvanceController, which mirrors tickSpectrum()'s auto-advance logic exactly.)
+        // MockAdvanceController, which mirrors tickTransport()'s auto-advance logic exactly.)
         let ctrl = MockAdvanceController()
         ctrl.playlist = makeTracks(count: 3)
         ctrl.playTrack(at: 0) // arms pendingNextIndex = 1

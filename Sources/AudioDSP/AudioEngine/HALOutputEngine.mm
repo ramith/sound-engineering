@@ -499,6 +499,11 @@ class HALOutputEngine::Impl
         return achieved_;
     }
 
+    void setDither(bool reducesBits)
+    {
+        dithers_.store(reducesBits, std::memory_order_release);
+    }
+
   private:
     // ---- format selection ----------------------------------------------------------------
 
@@ -795,10 +800,19 @@ class HALOutputEngine::Impl
         {
             return noErr;
         }
-        convertFloatToNative(std::span<const float>(scratch_.data(), needed),
-                             std::span<std::byte>(static_cast<std::byte*>(buf.mData),
-                                                  buf.mDataByteSize),
-                             renderFormat_);
+        // Where the device's word holds fewer bits than the source, the step adds TPDF dither (no
+        // allocation, no lock: the generator is this engine's own state, touched only here);
+        // otherwise it is the bit-exact plain conversion.
+        const std::span<const float> samples(scratch_.data(), needed);
+        const std::span<std::byte> bytes(static_cast<std::byte*>(buf.mData), buf.mDataByteSize);
+        if (dithers_.load(std::memory_order_acquire))
+        {
+            convertFloatToNativeDithered(samples, bytes, renderFormat_, dither_);
+        }
+        else
+        {
+            convertFloatToNative(samples, bytes, renderFormat_);
+        }
         return noErr;
     }
 
@@ -935,7 +949,7 @@ class HALOutputEngine::Impl
     // entire lifetime of a started session — start()/stop() bracket every mutation, so there is no
     // concurrent reader during a write and no torn read on the RT thread. If the format ever needed
     // to change mid-session it would have to be published atomically (e.g. behind
-    // DoubleBufferSnapshot<T>); today that path does not exist.
+    // TripleBufferSnapshot<T>); today that path does not exist.
     std::atomic<PureModeSource*> source_{nullptr};
     // Render ⇄ control-plane handshake around every source access (RenderGate.h).
     RenderGate gate_;
@@ -944,6 +958,11 @@ class HALOutputEngine::Impl
     // The last teardown could not see the render go quiet (control plane only; see teardown()).
     bool renderMayStillRun_ = false;
     NativePcmFormat renderFormat_;
+
+    // TPDF dither where the device's word holds fewer bits than the source (setDither, before start).
+    // The flag is read by the render; the generator is the render thread's alone.
+    std::atomic<bool> dithers_{false};
+    TpdfDither dither_;
 
     // Pre-allocated interleaved-float scratch (sized in configure(); never resized on the RT path).
     std::vector<float> scratch_;
@@ -990,4 +1009,9 @@ bool HALOutputEngine::renderMayStillRun() const
 AchievedOutputState HALOutputEngine::achievedState() const
 {
     return impl_->achievedState();
+}
+
+void HALOutputEngine::setDither(bool reducesBits)
+{
+    impl_->setDither(reducesBits);
 }

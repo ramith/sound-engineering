@@ -40,9 +40,11 @@ namespace
     using AdaptiveSound::DeviceCapability;
     using AdaptiveSound::FileDecodeSource;
     using AdaptiveSound::FileFormat;
+    using AdaptiveSound::FileProbe;
     using AdaptiveSound::GaplessSource;
     using AdaptiveSound::HALOutputEngine;
     using AdaptiveSound::PureModeEvaluation;
+    using AdaptiveSound::PureModeReason;
 
     // Decoder backend codes mirrored into CAchievedOutputState::decoderBackend.
     constexpr uint8_t kDecoderBackendApple = 0U;
@@ -65,6 +67,9 @@ namespace
         // (Stage-2 review OWN-3). Members destruct in reverse declaration order.
         std::unique_ptr<GaplessSource> gapless;
         std::unique_ptr<HALOutputEngine> engine;
+        // The reason the running session plays as (BitPerfectInteger / RateMatchedFloatNoSRC), set
+        // by a start; the achieved state refines it with the depth rule (bitExactness, C-33).
+        std::atomic<PureModeReason> engaged{PureModeReason::BitPerfectInteger};
 
         PureModeSession()
             : gapless(std::make_unique<GaplessSource>()),
@@ -107,6 +112,33 @@ namespace
         {
             *outRateCount = written;
         }
+    }
+
+    // Hand a reason to the C caller, when it asked for one.
+    void tellReason(uint8_t* outReason, PureModeReason reason) noexcept
+    {
+        if (outReason != nullptr)
+        {
+            *outReason = static_cast<uint8_t>(reason);
+        }
+    }
+
+    // Why no decoder opened `filePath`: Apple can't and FFmpeg is off, or nothing can read it.
+    PureModeReason unreadableReason(const char* filePath) noexcept
+    {
+        return FileDecodeSource::probe(filePath).outcome == FileProbe::Outcome::NeedsFFmpeg
+                   ? PureModeReason::FileNeedsFFmpeg
+                   : PureModeReason::FileUnreadable;
+    }
+
+    // Copy an evaluation out across the C boundary.
+    void copyEvaluationOut(const PureModeEvaluation& eval, CPureModeEvaluation* out) noexcept
+    {
+        out->decision = static_cast<uint8_t>(eval.decision);
+        out->targetDeviceRate = eval.targetDeviceRate;
+        out->requiresRateChange = eval.requiresRateChange ? 1U : 0U;
+        out->requiresHog = eval.requiresHog ? 1U : 0U;
+        out->reason = static_cast<uint8_t>(eval.reason);
     }
 
     // Keep an engine and the source a render pass outlived (HALOutputEngine::renderMayStillRun)
@@ -158,6 +190,32 @@ extern "C"
         return 1;
     }
 
+    int pureModeEvaluateFile(uint32_t deviceID,
+                             const char* filePath,
+                             CPureModeEvaluation* out) AUDIODSP_C_NOEXCEPT
+    {
+        if (filePath == nullptr || out == nullptr)
+        {
+            return 0;
+        }
+        *out = CPureModeEvaluation{};
+        const FileProbe probe = FileDecodeSource::probe(filePath);
+        if (probe.outcome != FileProbe::Outcome::Opened)
+        {
+            PureModeEvaluation declined;
+            declined.decision = AdaptiveSound::PureModeDecision::FallbackEnhanced;
+            declined.reason = probe.outcome == FileProbe::Outcome::NeedsFFmpeg
+                                  ? PureModeReason::FileNeedsFFmpeg
+                                  : PureModeReason::FileUnreadable;
+            copyEvaluationOut(declined, out);
+            return 1;
+        }
+        const DeviceCapability cap =
+            CoreAudioDevice::queryCapability(static_cast<AudioDeviceID>(deviceID));
+        copyEvaluationOut(AdaptiveSound::evaluatePureMode(cap, probe.format), out);
+        return 1;
+    }
+
     void* pureModeEngineCreate(void) AUDIODSP_C_NOEXCEPT
     {
         // ownership transfers to the C caller
@@ -167,11 +225,13 @@ extern "C"
     int pureModeEngineStart(void* engine,
                             uint32_t deviceID,
                             const char* filePath,
-                            double startSeconds) AUDIODSP_C_NOEXCEPT
+                            double startSeconds,
+                            uint8_t* outReason) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr || filePath == nullptr)
         {
+            tellReason(outReason, PureModeReason::FileUnreadable);
             return 0;
         }
 
@@ -183,6 +243,7 @@ extern "C"
         auto source = std::make_unique<FileDecodeSource>();
         if (!source->open(filePath))
         {
+            tellReason(outReason, unreadableReason(filePath));
             return 0;
         }
         // Start at the requested place (a resume from Pause, a move to another device): position
@@ -191,6 +252,7 @@ extern "C"
         const bool startsInside = startSeconds > 0.0 && std::isfinite(startSeconds);
         if (startsInside && !source->seek(startSeconds))
         {
+            tellReason(outReason, PureModeReason::FileUnreadable);
             return 0;
         }
 
@@ -211,6 +273,7 @@ extern "C"
             AdaptiveSound::log::line("[PureMode] declined for this file on device {}: {}",
                                      deviceID,
                                      AdaptiveSound::pureModeReasonString(eval.reason));
+            tellReason(outReason, eval.reason);
             return 0;
         }
 
@@ -242,13 +305,23 @@ extern "C"
 
         if (!session->engine->configure(cap, eval, session->gapless.get()))
         {
+            tellReason(outReason, PureModeReason::DeviceWouldNotStart);
             return 0;
         }
+        // The word the device was set to may hold fewer bits than the file (a 24-bit file on a 16-bit
+        // DAC): then the float → integer step is TPDF-dithered, not truncated. Still "not bit-perfect"
+        // (bitExactness): the achieved state says so.
+        const AchievedOutputState configured = session->engine->achievedState();
+        session->engine->setDither(AdaptiveSound::ditherWhenConverting(
+            fileFormat, configured.achievedBitsPerChannel, configured.achievedIsFloat));
         if (!session->engine->start())
         {
             session->engine->stop();
+            tellReason(outReason, PureModeReason::DeviceWouldNotStart);
             return 0;
         }
+        session->engaged.store(eval.reason, std::memory_order_release);
+        tellReason(outReason, eval.reason);
         return 1;
     }
 
@@ -339,6 +412,21 @@ extern "C"
             (active != nullptr && active->decoderKind() == AdaptiveSound::DecoderKind::FFmpeg)
                 ? kDecoderBackendFFmpeg
                 : kDecoderBackendApple;
+
+        // Bit-perfect, or not (C-33): the active track's source depth against what the device
+        // was set to. A gapless seam joins only tracks of one depth, so this holds across it.
+        FileFormat source;
+        if (active != nullptr)
+        {
+            source.bitsPerChannel = active->sourceBitsPerChannel();
+            source.isFloat = active->sourceIsFloat();
+        }
+        out.sourceBitsPerChannel = source.bitsPerChannel;
+        out.reason = static_cast<uint8_t>(
+            AdaptiveSound::bitExactness(source,
+                                        state.achievedBitsPerChannel,
+                                        state.achievedIsFloat,
+                                        session->engaged.load(std::memory_order_acquire)));
         return out;
     }
 

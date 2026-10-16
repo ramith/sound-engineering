@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
+import SettingsKit
 
 // MARK: - AudioEngineBridge Crossfeed control plane
 
@@ -8,7 +9,7 @@ import Foundation
 /// preferring the Swift instance method of the same name. A caseless enum is a `Sendable`
 /// static namespace (no shared mutable state); the stored value is an immutable C-function
 /// pointer that is never mutated.
-private typealias CPublishCrossfeed = @Sendable (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
+private typealias CPublishCrossfeed = @Sendable (UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
 private enum CCrossfeedABI {
     static let publish: CPublishCrossfeed = publishCrossfeed
 }
@@ -21,16 +22,16 @@ extension AudioEngineBridge {
     /// Must be called from a single control thread (the `@MainActor`).
     ///
     /// - Parameters:
-    ///   - enabled: `true` activates the crossfeed stage; `false` passes audio through bit-exactly.
-    ///   - strength: The `CrossfeedStrength` preset, which resolves to a (level, presetIndex) pair.
+    ///   - enabled: `true` turns crossfeed on; `false` glides it out, then passes audio through
+    ///     bit-exactly.
+    ///   - strength: The `CrossfeedStrength` — its bs2b level, played at full strength.
     func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) {
         let enabledFlag: UInt32 = enabled ? 1 : 0
         let published = withEffectsAU {
-            CCrossfeedABI.publish($0, enabledFlag, strength.dspLevel, strength.presetIndex)
+            CCrossfeedABI.publish($0, enabledFlag, strength.presetIndex)
         } != nil
         logUX(!published
             ? "[QW1] bridge.publishCrossfeed SKIP — no DSP AU handle (enabled=\(enabled) strength=\(strength))"
-            : "[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
-            + "level=\(strength.dspLevel) preset=\(strength.presetIndex)")
+            : "[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) preset=\(strength.presetIndex)")
     }
 }

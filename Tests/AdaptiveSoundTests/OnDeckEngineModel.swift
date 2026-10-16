@@ -29,7 +29,8 @@ import Synchronization
 // then (council F-P4-1 hid behind a model that returned at record).
 //
 // `semantics` selects the arm behaviour: the design, or one of the behaviours it replaced — the
-// ablations that show each piece of the design is necessary.
+// ablations that show each piece of the design is necessary. `commands` does the same for the
+// transport commands (council C-15): the design drops one older than a command already begun.
 
 final class OnDeckEngineModel: AudioPlaybackEngine {
     typealias Heard = OnDeckEngineState.Heard
@@ -37,8 +38,10 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
 
     private let state: Mutex<OnDeckEngineState>
 
-    init(semantics: ArmSemantics = .design, incompatible: Set<URL> = [], unreadable: Set<URL> = []) {
-        state = Mutex(OnDeckEngineState(semantics: semantics, incompatible: incompatible, unreadable: unreadable))
+    init(semantics: ArmSemantics = .design, commands: CommandSemantics = .dropsOvertaken,
+         incompatible: Set<URL> = [], unreadable: Set<URL> = []) {
+        state = Mutex(OnDeckEngineState(semantics: semantics, commands: commands, incompatible: incompatible,
+                                        unreadable: unreadable))
     }
 
     // MARK: AudioPlaybackEngine — the transport
@@ -49,13 +52,13 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
 
     func shutdown() async throws {}
 
-    func startAudio(fileURL: URL?, pureMode: Bool, startAt _: Double, epoch: UInt64) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool, startAt _: Double, epoch: UInt64) async throws {
         if await transport(.start(fileURL, pure: pureMode, epoch: epoch)) {
             throw AudioBridgeError.unsupportedFormat("flac")
         }
     }
 
-    func stopAudio(epoch: UInt64) async throws {
+    func stopAudio(epoch: UInt64, pausing _: Bool) async throws {
         _ = await transport(.stop(epoch: epoch))
     }
 
@@ -67,7 +70,7 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
     private func transport(_ op: OnDeckEngineState.TransportOp) async -> Bool {
         await withCheckedContinuation { (resume: CheckedContinuation<Bool, Never>) in
             let failed = state.withLock { model -> Bool? in
-                model.receivedEpoch = max(model.receivedEpoch, op.epoch)
+                model.receive(op)
                 guard !model.holdsTransport else {
                     model.held.append(OnDeckEngineState.HeldOp(op: op, resume: resume))
                     return nil
@@ -139,6 +142,14 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
             return (held.resume, model.perform(held.op))
         }
         resume?.resume(returning: failed)
+    }
+
+    /// Run every held op in the order they reached the engine (`engineQueue` is FIFO), and let their
+    /// callers go on.
+    func runAllHeld() {
+        while let epoch = state.withLock({ $0.held.first?.op.epoch }) {
+            runHeld(epoch: epoch)
+        }
     }
 
     /// Deliver an inbound request to `engineQueue`: the `rank`-th oldest by the view model's order.
@@ -228,6 +239,26 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         state.withLock { $0.held.map(\.op.epoch) }
     }
 
+    /// The commands the engine dropped as overtaken.
+    var droppedEpochs: [UInt64] {
+        state.withLock { $0.droppedEpochs }
+    }
+
+    /// The transport commands that have reached the engine so far.
+    var receivedCount: Int {
+        state.withLock { $0.receivedEpochs.count }
+    }
+
+    /// Every transport command and on-deck request that has reached the engine so far.
+    var callCount: Int {
+        state.withLock { $0.receivedEpochs.count + $0.arrivals.count }
+    }
+
+    /// Whether every request, open and held command has landed.
+    var isIdle: Bool {
+        state.withLock(\.isIdle)
+    }
+
     var hasUnprocessedSeam: Bool {
         state.withLock { !$0.unprocessedSeams.isEmpty }
     }
@@ -236,20 +267,11 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         state.withLock { $0.ended && $0.pure && $0.armed != nil }
     }
 
-    /// Whether the start numbered `epoch` failed (its file is unreadable).
-    func startFailed(epoch: UInt64) -> Bool {
-        state.withLock { $0.failedEpochs.contains(epoch) }
-    }
-
-    /// Whether every request and transport op the view model made has reached the engine, and the
-    /// newest start primed its on-deck (or failed, or waits held): the view model's tasks have
-    /// nothing left to send.
-    func hasReceivedEverything(sequence: UInt64, epoch: UInt64, session: UInt64) -> Bool {
+    /// Whether every request and transport op the view model made has reached the engine (it numbers
+    /// each op, from 1, and sends every one it numbers).
+    func hasReceivedEverything(sequence: UInt64, epoch: UInt64) -> Bool {
         state.withLock { model in
-            model.arrivals.count == Int(sequence) && model.receivedEpoch == epoch
-                && (session == 0 || model.failedEpochs.contains(session)
-                    || model.held.contains { $0.op.epoch == session }
-                    || model.arrivals.contains { $0.session == session })
+            model.arrivals.count == Int(sequence) && model.receivedEpochs.count == Int(epoch)
         }
     }
 }

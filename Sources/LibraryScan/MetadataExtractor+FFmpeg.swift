@@ -1,26 +1,27 @@
-// MetadataExtractor+FFmpeg — the FFmpeg fallback path (design §3).
+// MetadataExtractor+FFmpeg — the FFmpeg fallback path (design §3), opt-in (R1.1-A, FD-3).
 //
-// For FLAC/Ogg (and any file AVFoundation returns empty for), read tags + art + audio
-// properties via the AudioDSP C bridge, which reuses the existing dlopen'd libav* backend
-// — no new dlopen machinery, no link-time FFmpeg. The bridge is an OPAQUE OWNED handle
-// (ffmpegOpenMetadata → accessors → ffmpegCloseMetadata, mirroring PureModeBridge): the
-// C++ side owns the storage, Swift borrows const pointers valid until close (defer'd).
-// FFmpeg absent / file unreadable → ffmpegOpenMetadata returns nil → this returns nil (the
-// caller then keeps/falls back to AVFoundation). Vorbis-comment keys are lowercased by the bridge.
+// For a file AVFoundation can't read (or reads no core tags from), and only while the listener has
+// FFmpeg on: tags + art + audio properties via the AudioDSP C bridge, which reuses the dlopen'd
+// libav* backend — no new dlopen machinery, no link-time FFmpeg. The bridge is an OPAQUE OWNED handle
+// (ffmpegOpenMetadata → accessors → ffmpegCloseMetadata, mirroring PureModeBridge): the C++ side owns
+// the storage, Swift borrows const pointers valid until close (defer'd). FFmpeg off / absent / file
+// unreadable → ffmpegOpenMetadata returns nil (and while it is off, loads nothing) → this returns nil.
+// Vorbis-comment keys are lowercased by the bridge. `FFmpegOptIn` is the switch.
 
 import AudioDSP
 import Foundation
 import LibraryStore
 
 extension MetadataExtractor {
-    /// Extract via the FFmpeg C bridge, or nil if FFmpeg is unavailable / can't open the file.
-    func ffmpegExtract(_ url: URL) -> ExtractedMetadata? {
+    /// Extract via the FFmpeg C bridge, or nil if FFmpeg is off, unavailable, or can't open the file.
+    /// Public so the library gate (VerifyLibraryStore ALB-02) can check FFmpeg's tag mapping on its own.
+    @Sendable public static func ffmpegExtract(_ url: URL) -> ExtractedMetadata? {
         guard let handle = ffmpegOpenMetadata(url.path) else { return nil }
         defer { ffmpegCloseMetadata(handle) }
 
         var scalars = CFileMetadataScalars()
         ffmpegMetadataScalars(handle, &scalars)
-        let tags = Self.tagDictionary(handle, count: scalars.tagCount)
+        let tags = tagDictionary(handle, count: scalars.tagCount)
         // The bridge lowercases keys. FFmpeg's demuxers NORMALISE most tags to its generic names
         // before we see them — the flac/ogg Vorbis-comment table maps ALBUMARTIST → `album_artist`,
         // TRACKNUMBER → `track`, DISCNUMBER → `disc`; mp4 `aART` and ID3 `TPE2` also land on
@@ -36,17 +37,17 @@ extension MetadataExtractor {
             artistName: tags["artist"],
             albumTitle: tags["album"],
             albumArtistName: tags["album_artist"] ?? tags["albumartist"] ?? tags["album artist"],
-            isCompilation: Self.compilationUserTextNames.contains { Self.parseFlag(tags[$0]) },
-            year: Self.parseYear(tags["date"] ?? tags["year"] ?? tags["originaldate"]),
-            trackNo: Self.parseLeadingInt(tags["track"] ?? tags["tracknumber"]),
-            discNo: Self.parseLeadingInt(tags["disc"] ?? tags["discnumber"]),
-            genres: Self.parseGenres(tags["genre"]),
+            isCompilation: compilationUserTextNames.contains { parseFlag(tags[$0]) },
+            year: parseYear(tags["date"] ?? tags["year"] ?? tags["originaldate"]),
+            trackNo: parseLeadingInt(tags["track"] ?? tags["tracknumber"]),
+            discNo: parseLeadingInt(tags["disc"] ?? tags["discnumber"]),
+            genres: parseGenres(tags["genre"]),
             durationMs: scalars.durationSeconds > 0 ? Int64((scalars.durationSeconds * 1000).rounded()) : 0,
             sampleRate: scalars.sampleRate > 0 ? Int(scalars.sampleRate) : nil,
             bitDepth: scalars.bitsPerRawSample > 0 ? Int(scalars.bitsPerRawSample) : nil,
             channels: scalars.channels > 0 ? Int(scalars.channels) : nil
         )
-        return ExtractedMetadata(metadata: meta, artwork: Self.ffmpegArtwork(handle, scalars: scalars))
+        return ExtractedMetadata(metadata: meta, artwork: ffmpegArtwork(handle, scalars: scalars))
     }
 
     /// Build a `[lowercased-key: value]` map from the handle's borrowed tag strings.

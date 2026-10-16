@@ -1,16 +1,24 @@
 @preconcurrency import AVFoundation
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioEngineBridge playback transport
 
 extension AudioEngineBridge {
-    func startAudio(fileURL: URL?, pureMode: Bool, startAt: Double, epoch: UInt64) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool, startAt requested: Double, epoch: UInt64) async throws {
+        // The one place rule (`SeekTarget`): a start must start somewhere, so a place that is not a
+        // number is the top. Pure and Enhanced both take it from here.
+        let startAt = SeekTarget.place(requested) ?? 0
         return try await withCheckedThrowingContinuation { continuation in
             self.engineQueue.async {
                 // First, before any slow work (a Pure rate change can take seconds): this start's
                 // transitional sample — its place, no end flag — so the view model's next tick
-                // never acts on the end of the playback this start replaces.
-                self.beginTransportOperation(epoch: epoch, position: startAt > 0 ? startAt : nil)
+                // never acts on the end of the playback this start replaces. A start a newer command
+                // overtook is dropped: it never plays over what the user asked since.
+                guard self.beginTransportOperation(epoch: epoch, position: startAt > 0 ? startAt : nil) else {
+                    continuation.resume(returning: ())
+                    return
+                }
                 // A new playback: an on-deck request made for an earlier one is stale from here on.
                 self.onDeckGate.beginSession(epoch)
                 do {
@@ -49,44 +57,52 @@ extension AudioEngineBridge {
 
     /// Attempt the Pure (bit-perfect HAL) path. Returns `true` when Pure fully started (the caller
     /// resumes its continuation and returns); `false` when the caller must continue to the Enhanced
-    /// path. In all non-started cases it records the `fellBackToEnhanced` flag exactly as before.
-    /// Runs on `engineQueue` (called directly from the `startAudio` body — no new dispatch, and the
-    /// `resampleQueue.sync` sequencing inside `startPure`/`stopEnhancedPlayback` is unchanged).
-    private func attemptPureStart(fileURL: URL?, pureMode: Bool, startAt: Double) -> Bool {
-        // Attempt Pure path when requested, a file is provided, and capability allows.
-        if pureMode, let url = fileURL {
-            let viable = evaluatePureViable(fileURL: url, deviceID: currentDeviceID)
-            if viable {
-                // Tear down any live Enhanced playback before entering Pure
-                // (keep the graph intact for fast fallback — just stop the player).
-                stopEnhancedPlayback()
-                let started = startPure(fileURL: url, deviceID: currentDeviceID, startAt: startAt)
-                if started {
-                    return true
-                }
-                // Pure engine started but achievedState.running == 0 → fall through
-                // to Enhanced. Record that we fell back.
-                NSLog("[AudioEngineBridge] Pure Mode start failed — falling back to Enhanced")
-                mutateSignalPath { $0.fellBackToEnhanced = true }
-            } else {
-                mutateSignalPath { $0.fellBackToEnhanced = true }
-            }
-        } else {
-            mutateSignalPath { $0.fellBackToEnhanced = false }
+    /// path. Whenever Pure was asked for and Enhanced plays, it records why (`pureReason`, C-34); with
+    /// Pure not asked for, no reason. Runs on `engineQueue` (called directly from the `startAudio`
+    /// body — no new dispatch, and the `resampleQueue.sync` sequencing inside
+    /// `startPure`/`stopEnhancedPlayback` is unchanged).
+    private func attemptPureStart(fileURL url: URL, pureMode: Bool, startAt: Double) -> Bool {
+        guard pureMode else {
+            mutateSignalPath { $0.pureReason = nil }
+            return false
         }
+        if let declined = pureDeclineReason(fileURL: url, deviceID: currentDeviceID) {
+            mutateSignalPath { $0.pureReason = declined }
+            return false
+        }
+        // Tear down any live Enhanced playback before entering Pure (keep the graph intact for fast
+        // fallback — just stop the player). Nothing plays from here until the new start, so the device
+        // volume below changes in silence.
+        stopEnhancedPlayback()
+        // Master Gain on Pure is the device's own volume: lowered by the cut before Pure renders — or,
+        // on a device with no volume the app can set, Pure waits and Enhanced plays at the app's level.
+        // (Enhanced starting gives the device's own level back: `startEnhancedPlayback`.)
+        guard enterPureVolume(deviceID: currentDeviceID) == .engaged else {
+            NSLog("[AudioEngineBridge] Pure waits: Master Gain is turned down, the device has no volume to set")
+            mutateSignalPath { $0.pureReason = .waitsForMasterGain }
+            return false
+        }
+        guard let failed = startPure(fileURL: url, deviceID: currentDeviceID, startAt: startAt) else {
+            return true
+        }
+        NSLog("[AudioEngineBridge] Pure Mode start failed (\(failed)) — falling back to Enhanced")
+        mutateSignalPath { $0.pureReason = failed }
         return false
     }
 
     /// Start (or re-establish) the Enhanced path: tear down any live Pure engine, start the AV
-    /// engine + tap, schedule the file (or reference tone), and publish the Enhanced signal-path
+    /// engine + tap, schedule the file, and publish the Enhanced signal-path
     /// snapshot + play-intent. Runs on `engineQueue` (called directly from the `startAudio` body);
     /// `enhancedPlayIntent` is an atomic, set last.
-    private func startEnhancedPlayback(fileURL: URL?, startAt: Double) throws {
+    private func startEnhancedPlayback(fileURL url: URL, startAt: Double) throws {
         // If Pure was active, stop+destroy it before entering Enhanced
         // (releases hog mode + restores device rate).
         if activePathKind == .pure {
             tearDownPure()
         }
+        // Pure is left — also from a pause in Pure, whose hold on the device's volume outlived its
+        // session: the device gets its own level back, and Master Gain plays in the app.
+        pureVolumeEvent(.enhancedStarted)
 
         // Enhanced path (original startAudio body).
         guard let engine = avEngine, let playerNode else {
@@ -109,21 +125,18 @@ extension AudioEngineBridge {
         // keeps its volume across graph reconnects; this makes the start not depend on that.
         applyMasterGain()
 
-        if let url = fileURL {
-            // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
-            // line. Append only the Pure-fallback note here so it isn't double-logged.
-            try playFile(at: url, engine: engine, playerNode: playerNode, startAt: startAt)
-            if loadSignalPath().fellBackToEnhanced {
-                logUX("Enhanced started '\(url.lastPathComponent)' (fell back from Pure)")
-            }
-        } else {
-            playReferenceTone(on: playerNode)
-            logUX("Enhanced started reference tone")
+        // Whether anything plays: a start at or past the end of its file ends the track at once (the
+        // end flag is up, the view model advances), and leaves no play intent for a device change to
+        // resume. playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
+        // line; only the Pure-fallback note is appended here, so it isn't double-logged.
+        let playing = try playFile(at: url, engine: engine, playerNode: playerNode, startAt: startAt) != .ended
+        if let reason = loadSignalPath().pureReason {
+            logUX("Enhanced started '\(url.lastPathComponent)' (Pure declined: \(reason))")
         }
 
         setActivePath(.enhanced)
-        enhancedPlayIntent = true
-        let fellBack = loadSignalPath().fellBackToEnhanced
+        enhancedPlayIntent = playing
+        let pureReason = loadSignalPath().pureReason
         // The device's actual output rate (the honest "device is running at" value, per the
         // field's doc + the D5 device-pill readout). Enhanced processes internally at the graph
         // rate; the outputNode format reflects the hardware, so a 48 kHz device reads "48 kHz".
@@ -133,21 +146,23 @@ extension AudioEngineBridge {
             path: .enhanced,
             decision: .fallbackEnhanced,
             achievedSampleRate: engine.outputNode.outputFormat(forBus: 0).sampleRate,
-            fellBackToEnhanced: fellBack
+            pureReason: pureReason
         ))
     }
 
-    /// Open `fileURL`, drive the multichannel load sequence, then schedule + play it.
+    /// Open `fileURL`, drive the multichannel load sequence, then play it from `startAt` (seconds).
     ///
     /// Sequence: read N + the source channel layout from the opened file,
     /// `configureGraphForSource` (reconfigure the graph to N — a same-count no-op for stereo —
     /// THEN publish the layout tag to the kernel for correct BS.1770-5 weights), and only AFTER
-    /// that stop the player + schedule + play. Reconfiguring before scheduling means the file is
-    /// queued onto the graph already settled at its width. `startAt` (seconds) starts the file
-    /// there — a resume from Pause, a move to another device — rather than playing from 0 and
-    /// seeking.
+    /// that place the start and play through the one Enhanced commit (`commitEnhanced`,
+    /// AudioEngineBridge+EnhancedRestart). Reconfiguring first means the file is queued onto the graph
+    /// already settled at its width, and its resampler converts to that width. `startAt` starts the
+    /// file there — a resume from Pause, a move to another device — rather than playing from 0 and
+    /// seeking; at or past the end, the track ends at once (`.ended`).
+    @discardableResult
     func playFile(at fileURL: URL, engine _: AVAudioEngine, playerNode: AVAudioPlayerNode,
-                  startAt: Double = 0) throws {
+                  startAt: Double = 0) throws -> EnhancedRestart {
         // Establish security-scoped access for sandboxed macOS file access.
         let didAccess = fileURL.startAccessingSecurityScopedResource()
         defer {
@@ -162,90 +177,53 @@ extension AudioEngineBridge {
         } catch {
             throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
         }
-
-        // 1. Read the source width N and (optional) layout tag from the processing format.
         let processingFormat = audioFile.processingFormat
-        let channelCount = processingFormat.channelCount
-        let channelLayout = processingFormat.channelLayout
+        guard let target = SeekTarget(seconds: startAt, length: audioFile.length,
+                                      sampleRate: processingFormat.sampleRate)
+        else {
+            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
+        }
 
-        // 2. Reconfigure the graph to N, THEN publish the layout to the kernel. Stereo
-        //    sources hit the same-count no-op, so the existing stereo path is unchanged.
-        configureGraphForSource(channelCount: channelCount, channelLayout: channelLayout)
+        // 1. Reconfigure the graph to the source width N, THEN publish the layout to the kernel.
+        //    Stereo sources hit the same-count no-op, so the existing stereo path is unchanged.
+        configureGraphForSource(channelCount: processingFormat.channelCount,
+                                channelLayout: processingFormat.channelLayout)
 
         // A fresh start: this file is the audible track now (the loudness-neutral EQ gain).
         trackBecameAudible(fileURL, gaplessSeam: false)
 
-        // 3. Stop + reset the player before scheduling so the new file replaces (not queues after)
-        //    the current one — ALWAYS, playing or not (S10.8 G): a node that is not playing can
-        //    still hold a queued segment (one scheduled while its engine was stopped), and skipping
-        //    the stop played it ahead of the new file. Also stop any prior streaming-resampler
-        //    session first: that bumps both epochs, so its in-flight buffers abandon themselves and
-        //    the `.dataPlayedBack` completions this stop fires don't roll a gapless seam.
+        // 2. A new playback: end the previous one's seam state (its EOF hooks; the caller re-arms
+        //    the on-deck track after the start). The commit then supersedes and stops whatever the
+        //    player holds — ALWAYS, playing or not (S10.8 G): a node that is not playing can still
+        //    hold a queued segment (one scheduled while its engine was stopped), and skipping the
+        //    stop played it ahead of the new file.
         stopEnhancedResampler()
-        playerNode.stop()
-        // The player's sampleTime restarts at 0, so the position base is where the file starts
-        // (0 on a fresh play; a later seek sets it to its target — see liveEnhancedPosition).
-        let startFrame = Self.startFrame(startAt, in: audioFile)
-        setEnhancedPositionBaseSeconds(Double(startFrame) / processingFormat.sampleRate)
 
-        // 4. Branch on rate. When the file is already 48 kHz the existing `scheduleFile` path is an
-        //    exact passthrough (the engine performs no SRC), so keep it BYTE-IDENTICAL. Only when the
-        //    file rate differs from the 48 kHz graph rate do we engage the high-quality streaming
-        //    resampler — bounding the new code's blast radius to rate-mismatched files. If the
-        //    converter can't be created / primes nothing, fall back to `scheduleFile` (default SRC).
-        let fileRate = processingFormat.sampleRate
-        let graphRate = playerNode.outputFormat(forBus: 0).sampleRate
-        if fileRate == graphRate {
-            // 48 kHz passthrough: byte-identical to the pre-gapless path. The completion callback
-            // type `.dataPlayedBack` fires after the hardware has played the last sample, which is
-            // the correct seam point for gapless. When no next track is armed the handler is nil and
-            // the player simply stops at end-of-file (pre-gapless behaviour, unchanged).
-            //
-            // NOTE: AVAudioFile / ExtAudioFile trims AAC priming silence and MP3 LAME
-            // delay/padding via the file's edit list (kExtAudioFileProperty_ClientDataFormat +
-            // kAFInfoDictionary_ApproximateDuration). Apple handles this automatically on this
-            // path; we must NOT disable or override it. Pure/FFmpeg trim is Stage 2.
-            // Capture the passthrough epoch this schedule is installed under (the
-            // `stopEnhancedResampler()` above bumped it, abandoning any completion the
-            // `playerNode.stop()` fired): a later stop/seek/reschedule bumps again, and this
-            // completion must then abandon instead of rolling the gapless seam (wrong-song bug).
-            let passthroughGen: UInt64 = resampleQueue.sync { passthroughGeneration }
-            playerNode.scheduleSegment(
-                audioFile,
-                startingFrame: startFrame,
-                frameCount: AVAudioFrameCount(audioFile.length - startFrame),
-                at: nil,
-                completionCallbackType: .dataPlayedBack
-            ) { [weak self, weak playerNode] _ in
-                guard let self, let livePlayer = playerNode else { return }
-                self.resampleQueue.async {
-                    guard passthroughGen == self.passthroughGeneration else { return } // superseded
-                    self.firePassthroughEOFOrEnd(player: livePlayer)
-                }
-            }
-            playerNode.play()
-            logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(Int(graphRate)) passthrough)")
-            return
-        }
-
-        let started = startEnhancedResampler(audioFile: audioFile, player: playerNode, startFrame: startFrame)
-        if started {
-            logUX("Enhanced started '\(fileURL.lastPathComponent)' "
-                + "(resample \(Int(fileRate))→\(Int(graphRate)) max)")
-        } else {
-            // Converter unavailable / primed nothing → keep playback working via the proven path.
-            playerNode.scheduleSegment(audioFile, startingFrame: startFrame,
-                                       frameCount: AVAudioFrameCount(audioFile.length - startFrame), at: nil)
-            playerNode.play()
-            logUX("Enhanced started '\(fileURL.lastPathComponent)' "
-                + "(resample \(Int(fileRate))→\(Int(graphRate)) FELL BACK to default SRC)")
-        }
+        // 3. Route by rate (after the reconfigure: the player's format is the graph's new width) and
+        //    play. A 48 kHz file plays straight through — the engine performs no SRC. Any other rate
+        //    streams through the Mastering resampler.
+        //
+        //    NOTE: AVAudioFile / ExtAudioFile trims AAC priming silence and MP3 LAME delay/padding
+        //    via the file's edit list. Apple handles this on both sub-paths; we must NOT disable or
+        //    override it. Pure/FFmpeg trim is Stage 2.
+        let route = enhancedRoute(for: audioFile, player: playerNode)
+        let outcome = commitEnhanced(audioFile, route: route, at: target, player: playerNode)
+        let label = route.label(fileRate: processingFormat.sampleRate,
+                                graphRate: playerNode.outputFormat(forBus: 0).sampleRate)
+        logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(label))"
+            + (outcome == .ended ? " — at or past its end: ended" : ""))
+        return outcome
     }
 
-    func stopAudio(epoch: UInt64) async throws {
+    func stopAudio(epoch: UInt64, pausing: Bool) async throws {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                self.beginTransportOperation(epoch: epoch, position: nil)
+                // A stop a newer command overtook (a Play after a Pause, a click after Stop) is dropped:
+                // it never silences what the user asked for since.
+                guard self.beginTransportOperation(epoch: epoch, position: nil) else {
+                    continuation.resume()
+                    return
+                }
                 // Nothing plays after a stop: every on-deck request made before it is stale.
                 self.onDeckGate.beginSession(epoch)
                 if self.activePathKind == .pure {
@@ -253,6 +231,10 @@ extension AudioEngineBridge {
                 } else {
                     self.stopEnhancedPlayback()
                 }
+                // A pause keeps Pure's hold on the device's volume — playback resumes there; a stop
+                // that ends playback leaves Pure, and the device gets its own level back (founder
+                // decision 2026-10-16). After the render stopped.
+                self.pureVolumeEvent(pausing ? .paused : .stopped)
                 // Clear the on-deck slot and play-intent on user stop: a stop is a deliberate
                 // abort, not an end-of-queue, so the armed next track must not silently begin
                 // playing later. Serialized on resampleQueue so it cannot race with an in-flight
@@ -262,7 +244,6 @@ extension AudioEngineBridge {
                     self.enhancedPlayIntent = false
                 }
                 self.removeSpectrumTap()
-                self.referenceToneBuffer = nil
                 self.loudnessAnalyzer.cancel(nil) // a deliberate stop: nothing left to analyse
                 self.setActivePath(.enhanced)
                 self.storeSignalPath(.init())
@@ -270,32 +251,6 @@ extension AudioEngineBridge {
                 self.sampleTransport()
                 continuation.resume()
             }
-        }
-    }
-
-    // MARK: - Private helpers
-
-    /// The frame `seconds` falls on in `file`, kept inside the file (so a segment from it is never
-    /// empty; a place at or past the end starts on the last frame and ends at once).
-    private static func startFrame(_ seconds: Double, in file: AVAudioFile) -> AVAudioFramePosition {
-        let rate = file.processingFormat.sampleRate
-        guard seconds > 0, seconds.isFinite, rate > 0, file.length > 0 else { return 0 }
-        return min(AVAudioFramePosition(seconds * rate), file.length - 1)
-    }
-
-    /// Fallback path when no file is supplied: schedule a 1 kHz reference tone on the player.
-    private func playReferenceTone(on playerNode: AVAudioPlayerNode) {
-        referenceToneBuffer = generateReferenceTone(
-            frequency: 1000.0,
-            duration: 5.0,
-            sampleRate: 48000.0
-        )
-
-        if let buffer = referenceToneBuffer {
-            if !playerNode.isPlaying {
-                playerNode.play()
-            }
-            playerNode.scheduleBuffer(buffer, at: nil)
         }
     }
 }

@@ -1,14 +1,11 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AsLog.h" // AdaptiveSound::log::line — off-RT control-plane logging seam
-#include "../include/AudioConstants.h"
-#include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement for AU functions
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
 #include "../include/CoreAudioDevice.h"
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
-#include "../include/FlushToZero.h" // shared FPCR.FZ helper (AR-1)
-#include "../include/TargetState.h"
+#include "InProcessEffectAU.h"                // the scaffold both in-process AUs share (C-87)
 #include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
 #include "../Loudness/TrackLoudnessHandle.h"  // AsLoudnessProfile: one shared profile reference
@@ -17,30 +14,49 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <utility>
 
 using namespace AdaptiveSound;
 
 namespace
 {
-    // AudioComponent identity the in-process effect AU is registered under.
-    constexpr OSType kComponentType = kAudioUnitType_Effect;  // 'aufx'
-    constexpr OSType kComponentSubType = 0x61647364U;         // 'adsd' (AdaptiveSound)
-    constexpr OSType kComponentManufacturer = 0x41647364U;    // 'Adsd'
-    constexpr uint32_t kComponentVersion = 0x00010000U;       // 1.0.0 (major.minor.patch)
+    // The subtype the in-process effect AU is registered under (InProcessEffectScaffold adds the
+    // app's effect type and manufacturer).
+    constexpr OSType kComponentSubType = 0x61647364U; // 'adsd' (AdaptiveSound)
 
-    constexpr AVAudioChannelCount kStereoChannelCount = 2U;
+    // The effects chain's render: an in-place effect. Pull the input straight into the output
+    // buffers, then process them in place (fix #11 + #4: no stack AudioBufferList with room for one
+    // buffer — corruption for planar input — and no memcpy of input-sized bytes into smaller
+    // output buffers). AVAudioEngine provides non-null output buffer pointers.
+    class EffectsRender final : public InProcessEffectRender
+    {
+      public:
+        explicit EffectsRender(std::shared_ptr<DSPKernel> kernel) noexcept
+            : kernel_(std::move(kernel)) {}
+
+        AUAudioUnitStatus render(AudioUnitRenderActionFlags* flags,
+                                 const AudioTimeStamp* timestamp,
+                                 AUAudioFrameCount frames,
+                                 AudioBufferList* output,
+                                 __unsafe_unretained AURenderPullInputBlock pull) noexcept override
+        {
+            // Flush-to-zero is the kernel's, scoped to its process() (council C-50): set here, before
+            // pull(), it would also run Apple's upstream nodes — which render inside pull() on this
+            // thread — in a floating-point mode that is not theirs.
+            const OSStatus pullStatus = pull(flags, timestamp, frames, 0, output);
+            if (pullStatus != noErr) { return pullStatus; }
+            kernel_->process(output, frames);
+            return noErr;
+        }
+
+      private:
+        std::shared_ptr<DSPKernel> kernel_; // non-null for the render's whole lifetime
+    };
 
 } // namespace
 
 @interface AdaptiveSoundAU : AUAudioUnit {
     std::shared_ptr<DSPKernel> _kernel; // created ONCE in -init; never reset until -dealloc
-    AUInternalRenderBlock _renderBlock; // created ONCE in -init; co-owns _kernel by value
-    AUAudioUnitBus* _inputBus;
-    AUAudioUnitBus* _outputBus;
-    AUAudioUnitBusArray* _inputBusArray;
-    AUAudioUnitBusArray* _outputBusArray;
-    uint32_t _sampleRate;   // single source of truth; re-synced in allocateRenderResources
-    uint32_t _bufferFrames; // host max frames; applied in allocateRenderResources
     // The off-main single-producer control owner (S6 Tier-3 3a). It OWNS the canonical
     // TargetState (formerly the `_currentState` ivar here) and is the sole caller of
     // DSPKernel::publishTargetState. Moving the canonical state into the Realizer makes
@@ -48,6 +64,8 @@ namespace
     // queued drain blocks (capturing shared_from_this) keep it + the kernel alive until the
     // queue is drained in -dealloc. Created ONCE in -init alongside _kernel.
     std::shared_ptr<AdaptiveSound::Realizer> _realizer;
+    // Busses, render block (co-owning the kernel through EffectsRender), rate and frame ceiling.
+    InProcessEffectScaffold _scaffold;
 }
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 // Borrow the off-main control owner (used by the C-ABI to post EQ/intensity intents).
@@ -62,167 +80,71 @@ namespace
     self = [super initWithComponentDescription:componentDescription options:options error:outError];
     if (self == nil) { return nil; }
 
-    _sampleRate = kDefaultSampleRate;
-    _bufferFrames = kDefaultMaxFrames;
-
     // Kernel: created exactly ONCE, here. allocate/deallocate only re-initialize() it; they
-    // never construct or reset it. The render block (below) co-owns this same instance by
-    // value for the AU's whole lifetime, so the kernel can never be freed out from under a
-    // live render block, nor freed on the RT thread. (Apple v3 contract: internalRenderBlock
-    // must be non-nil at attach — that is why this is in -init, not allocateRenderResources.)
+    // never construct or reset it. The render block co-owns this same instance for the AU's whole
+    // lifetime, so the kernel can never be freed out from under a live render block, nor freed on
+    // the RT thread. (Apple v3 contract: internalRenderBlock must be non-nil at attach — that is
+    // why this is in -init, not allocateRenderResources.)
     _kernel = std::make_shared<DSPKernel>();
-    _kernel->initialize(_sampleRate, _bufferFrames);
+    _kernel->initialize(_scaffold.sampleRate(), _scaffold.maxFrames());
 
     // Realizer: created ONCE here, around the same kernel. It owns the canonical TargetState
     // and is the sole producer of feed-forward control through publishTargetState. It holds
     // a shared_ptr<DSPKernel> copy, so the kernel cannot be freed while a drain is in flight;
     // -dealloc drains the Realizer's queue BEFORE releasing the kernel (see below).
-    _realizer = std::make_shared<AdaptiveSound::Realizer>(_kernel, static_cast<double>(_sampleRate));
+    _realizer = std::make_shared<AdaptiveSound::Realizer>(_kernel,
+                                                          static_cast<double>(_scaffold.sampleRate()));
 
-    // Capture the kernel by value (shared_ptr copy) so the render block never touches `self`
-    // nor promotes a __weak reference on the audio thread — i.e. no Obj-C runtime calls
-    // (objc_loadWeakRetained) on the RT path (issue #7). The copy here is the block's strong
-    // co-owner; the copy/destroy happen off-RT (block creation in -init / teardown in
-    // -dealloc), never during render. `kernel` is non-null for the block's entire lifetime.
-    std::shared_ptr<DSPKernel> kernel = _kernel;
-    _renderBlock = ^AUAudioUnitStatus(AudioUnitRenderActionFlags* flags,
-                                      const AudioTimeStamp* timestamp,
-                                      AUAudioFrameCount frames,
-                                      NSInteger busNum,
-                                      AudioBufferList* out,
-                                      const AURenderEvent* events,
-                                      AURenderPullInputBlock pull) {
-        (void)busNum;   // single output bus; index unused by this in-process AU
-        (void)events;   // MIDI not used by this AU
-
-        // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
-        // Called once per render callback; the register write is ~1 cycle on M1.
-        enableFlushToZero();
-
-        // Fix #11 + #4: pull input directly into the output buffers (in-place effect),
-        // then process in place. This removes the stack-declared AudioBufferList (which
-        // had storage for only one AudioBuffer — stack corruption for planar/multi-buffer
-        // input, #11) and the memcpy that wrote input-sized bytes into possibly-smaller
-        // output buffers (#4). AVAudioEngine provides non-null output buffer pointers.
-        OSStatus pullStatus = pull(flags, timestamp, frames, 0, out);
-        if (pullStatus != noErr) { return pullStatus; }
-
-        kernel->process(out, frames);
-        return noErr;
-    };
-
-    // Busses: one stereo input + one stereo output so AVAudioEngine can connect upstream and
-    // downstream nodes. A v3 effect AU with no bus arrays fails engine.connect() (Gap 2).
-    if (![self setupBussesWithSampleRate:_sampleRate error:outError]) { return nil; }
-
+    if (!_scaffold.setUp(self, std::make_shared<EffectsRender>(_kernel))) { return nil; }
     return self;
 }
 
-// Build the published input/output busses from a canonical non-interleaved float32 stereo
-// format at `sampleRate`. The bus sample rate and DSPKernel both read `_sampleRate`, so there
-// is a single source of truth keeping them consistent.
-- (BOOL)setupBussesWithSampleRate:(uint32_t)sampleRate error:(NSError**)outError {
-    AVAudioFormat* format =
-        [[AVAudioFormat alloc] initStandardFormatWithSampleRate:static_cast<double>(sampleRate)
-                                                       channels:kStereoChannelCount];
-    if (format == nil) { return NO; }
-
-    _inputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
-    if (_inputBus == nil) { return NO; }
-    _outputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
-    if (_outputBus == nil) { return NO; }
-
-    _inputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
-                                                            busType:AUAudioUnitBusTypeInput
-                                                             busses:@[ _inputBus ]];
-    _outputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
-                                                             busType:AUAudioUnitBusTypeOutput
-                                                              busses:@[ _outputBus ]];
-    return (_inputBusArray != nil && _outputBusArray != nil) ? YES : NO;
-}
-
 - (AUAudioUnitBusArray*)inputBusses {
-    return _inputBusArray;
+    return _scaffold.inputBusses();
 }
 
 - (AUAudioUnitBusArray*)outputBusses {
-    return _outputBusArray;
+    return _scaffold.outputBusses();
+}
+
+- (AUInternalRenderBlock)internalRenderBlock {
+    return _scaffold.renderBlock();
 }
 
 - (BOOL)allocateRenderResourcesAndReturnError:(NSError**)outError {
     if (![super allocateRenderResourcesAndReturnError:outError]) { return NO; }
 
-    // Adopt the host-negotiated output sample rate (device SR can change since -init) and the
-    // host's per-call frame ceiling as the single source of truth, then re-prepare the SAME
+    // Adopt the host-negotiated output rate and per-call frame ceiling, then re-prepare the SAME
     // kernel THROUGH THE REALIZER (engine-plan §6): reinitializeKernel() runs on the Realizer's
     // queue (dispatch_sync), so the re-initialisation is serialised with every publish, and it
     // re-solves the EQ and re-derives the crossfeed at the new rate before rendering resumes —
     // a rate or channel change never plays flat. The v3 contract guarantees allocate runs while
-    // the AU is not rendering; the render block co-owns this same kernel instance.
-    const double negotiatedSampleRate = self.outputBusses[0].format.sampleRate;
-    if (negotiatedSampleRate > 0.0) {
-        _sampleRate = static_cast<uint32_t>(negotiatedSampleRate);
-    }
-    const AUAudioFrameCount hostMaxFrames = self.maximumFramesToRender;
-    if (hostMaxFrames > 0U) {
-        _bufferFrames = static_cast<uint32_t>(hostMaxFrames);
-    }
-    _realizer->reinitializeKernel(_sampleRate, _bufferFrames);
+    // the AU is not rendering; the render block co-owns this same kernel instance. (Deallocation
+    // resets nothing: the kernel lives as long as the AU, and re-allocation re-initializes it.)
+    _scaffold.adoptHostFormat(self);
+    _realizer->reinitializeKernel(_scaffold.sampleRate(), _scaffold.maxFrames());
     return YES;
 }
 
-- (void)deallocateRenderResources {
-    // Intentionally does NOT reset _kernel or _renderBlock. The kernel is owned for the AU's
-    // whole lifetime (created in -init, released in -dealloc) and is co-owned by the render
-    // block; resetting here would leave the block pointing at a dead kernel on the next
-    // allocate (the block is never re-created) and risk freeing a kernel the engine could
-    // still hold a render-block reference to. Re-allocation re-initialize()s this same kernel.
-    [super deallocateRenderResources];
-}
-
 - (void)dealloc {
-    // The single, off-RT teardown point (runs when the last reference drops via
-    // __bridge_transfer in destroyAdaptiveAudioUnit / ARC).
+    // The single, off-RT teardown point (runs when the engine releases the AU's last reference).
     //
-    // Teardown ORDER is load-bearing (the review's BLOCKER, design §1):
-    //  1. Drain the Realizer's serial queue via a dispatch_sync barrier, so no queued drain
-    //     block runs after we release the kernel. shutdown() returns only once every enqueued
-    //     block has finished; queued blocks capture shared_from_this, so the Realizer + its
-    //     kernel co-owner stay alive through the last publish.
-    //  2. Drop the Realizer (releases its kernel co-owner copy).
-    //  3. Drop the render block (releases its kernel co-owner copy).
-    //  4. Drop our kernel member — the DSPKernel destructor runs here, off-RT, only after the
-    //     last publisher has quiesced (drain before releasing kernel).
+    // Teardown ORDER is load-bearing (the review's BLOCKER, design §1): drain the Realizer's serial
+    // queue via a dispatch_sync barrier BEFORE any kernel owner lets go, so no queued drain block
+    // runs after the kernel is gone. shutdown() returns only once every enqueued block has
+    // finished; queued blocks capture shared_from_this, so the Realizer + its kernel co-owner stay
+    // alive through the last publish. Then the Realizer, our kernel member and (after this body)
+    // the scaffold's render block let go — the DSPKernel destructor runs off-RT, after the last
+    // publisher has quiesced.
     if (_realizer != nullptr) { _realizer->shutdown(); }
     _realizer.reset();
-    _renderBlock = nil;
     _kernel.reset();
-}
-
-- (AUInternalRenderBlock)internalRenderBlock {
-    return _renderBlock;
-}
-
-// Off-RT control plane. Stores the desired sample rate / buffer size that will be
-// applied the next time render resources are allocated.
-- (void)setRequestedSampleRate:(uint32_t)sampleRate bufferFrames:(uint32_t)bufferFrames {
-    if (sampleRate != 0) { _sampleRate = sampleRate; }
-    if (bufferFrames != 0) { _bufferFrames = bufferFrames; }
 }
 
 // Off-RT control plane. Borrow the Realizer (the shared_ptr<Realizer> owner). All
 // feed-forward control now flows through it; the canonical TargetState lives inside it.
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer {
     return _realizer;
-}
-
-// Off-RT control plane. Forwards a fully-formed TargetState directly to the RT kernel via the
-// lock-free double-buffer (SPSC producer side; never called on the render thread). Retained
-// only for the publishTargetState C-ABI (tests). NOTE: this is a SECOND publish plane parallel
-// to the Realizer; the two are unordered w.r.t. each other (design §1.4). Production control
-// flows through the Realizer (publishEQ/publishIntensity/publishCrossfeed), not this.
-- (void)publishState:(const TargetState&)state {
-    if (_kernel != nullptr) { _kernel->publishTargetState(state); }
 }
 
 // Off-RT control plane. Decodes the source layout tag (off-RT, allocation-free) and forwards the
@@ -237,7 +159,8 @@ namespace
 
 @end
 
-// MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitBridge.h exactly.
+// MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitRegistrationBridge.h and
+// DeviceBridge.h exactly (both are included above, so a mismatch fails to compile).
 
 // Helper: map C++ AudioDevice::Type to the uint8_t used in CDeviceInfo
 static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type type) {
@@ -266,25 +189,14 @@ extern "C" {
 // MARK: AU registration (in-process v3 instantiation; off-RT, main-thread during setup)
 
 AudioComponentDescription adaptiveAudioUnitComponentDescription(void) AUDIODSP_C_NOEXCEPT {
-    AudioComponentDescription desc = {};
-    desc.componentType = kComponentType;
-    desc.componentSubType = kComponentSubType;
-    desc.componentManufacturer = kComponentManufacturer;
-    desc.componentFlags = 0;
-    desc.componentFlagsMask = 0;
-    return desc;
+    return InProcessEffectScaffold::description(kComponentSubType);
 }
 
 void registerAdaptiveAudioUnitSubclass(void) AUDIODSP_C_NOEXCEPT {
-    // registerSubclass: must run exactly once per process; dispatch_once guards against
-    // double registration when engine setup repeats (e.g. device re-init).
     static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        [AUAudioUnit registerSubclass:[AdaptiveSoundAU class]
-               asComponentDescription:adaptiveAudioUnitComponentDescription()
-                                 name:@"AdaptiveSound: AdaptiveSoundAU"
-                              version:kComponentVersion];
-    });
+    InProcessEffectScaffold::registerOnce(onceToken, [AdaptiveSoundAU class],
+                                          adaptiveAudioUnitComponentDescription(),
+                                          CFSTR("AdaptiveSound: AdaptiveSoundAU"));
 }
 
 // MARK: Device enumeration
@@ -306,6 +218,7 @@ uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) AUD
         out.bufferFrameSize = dev.bufferFrameSize;
         out.transportType   = dev.transportType;
         out.deviceType      = deviceTypeToByte(dev.type);
+        out.isHeadphones    = dev.isHeadphones ? 1U : 0U;
 
         // Safe copy: ensure null-termination even if name is too long.
         constexpr size_t kNameBufSize = sizeof(out.name);
@@ -364,66 +277,6 @@ int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
             static_cast<int>(status));
     }
     return 1;
-}
-
-void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) AUDIODSP_C_NOEXCEPT {
-    // Attach into the AVAudioEngine graph is driven Swift-side via AVAudioUnit.instantiate()
-    // using adaptiveAudioUnitComponentDescription(); this direct-alloc path remains for callers
-    // that want the subclass instance directly.
-    (void)audioEngine;
-    registerAdaptiveAudioUnitSubclass();
-
-    NSError* error = nil;
-    AdaptiveSoundAU* audioUnit =
-        [[AdaptiveSoundAU alloc] initWithComponentDescription:adaptiveAudioUnitComponentDescription()
-                                                      options:0
-                                                        error:&error];
-    if (audioUnit == nil) { return nullptr; }
-
-    [audioUnit setRequestedSampleRate:sampleRate bufferFrames:bufferFrames];
-
-    // Transfer an owning (+1) reference to the C caller. Balanced by
-    // destroyAdaptiveAudioUnit() via __bridge_transfer.
-    return (__bridge_retained void*)audioUnit;
-}
-
-void destroyAdaptiveAudioUnit(void* auUnit) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr) { return; }
-    // Reclaim the +1 reference handed out by createAdaptiveAudioUnit(); ARC releases
-    // when this transferred reference goes out of scope.
-    AdaptiveSoundAU* audioUnit = (__bridge_transfer AdaptiveSoundAU*)auUnit;
-    [audioUnit deallocateRenderResources];
-    audioUnit = nil;
-}
-
-bool setAUParameter(void* auUnit, uint64_t paramID, float value) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr) { return false; }
-    (void)paramID;
-    (void)value;
-    // Intentionally a dead stub returning false. The intensity surface (AUParameterID::Intensity)
-    // is routed through the dedicated publishIntensity() C-ABI (design §1.5) — the single
-    // intensity surface that posts to the Realizer's pending-intensity slot. We deliberately do
-    // NOT also accept it here, to avoid two contradictory surfaces. EQ likewise drives the kernel
-    // via publishEQ -> the Realizer, not an AU parameter tree. This stub stays part of
-    // the stable exported C-ABI; it returns false rather than caching values that never reach the
-    // kernel. See publishIntensity().
-    return false;
-}
-
-float getAUParameter(void* auUnit, uint64_t paramID) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr) { return 0.0F; }
-    (void)paramID;
-    // No readable parameter store yet — see setAUParameter. Part of the stable
-    // exported C-ABI surface.
-    return 0.0F;
-}
-
-bool publishTargetState(void* auUnit, const void* state) AUDIODSP_C_NOEXCEPT {
-    if (auUnit == nullptr || state == nullptr) { return false; }
-    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
-    const TargetState* targetState = static_cast<const TargetState*>(state);
-    [audioUnit publishState:*targetState];
-    return true;
 }
 
 bool publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT {
@@ -511,15 +364,14 @@ void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     }
 }
 
-void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset) AUDIODSP_C_NOEXCEPT {
+void publishCrossfeed(void* auUnit, uint32_t enabled, uint32_t preset) AUDIODSP_C_NOEXCEPT {
     // QW1 §3: the single crossfeed control surface. Sets the Realizer's pending-crossfeed slot
-    // (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain when
-    // none is pending; the off-RT coefficient derivation, the canonical read-modify-write,
-    // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
-    // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
-    // The Realizer derives the coefficients at the rate it owns. Off-RT; no-op if null.
-    AdaptiveSound::log::debug("[QW1] C-ABI publishCrossfeed enabled={} level={:.4f} preset={}",
-                              enabled, level, preset);
+    // (preset clamped to the valid enum range) and posts a drain when none is pending; the off-RT
+    // coefficient derivation, the canonical read-modify-write, and the atomic publish happen
+    // off-main in the Realizer's serial queue. The crossfeed slot is SEPARATE from the
+    // EQ/intensity slots, so an interleaved crossfeed intent is never dropped. The Realizer
+    // derives the coefficients at the rate it owns. Off-RT; no-op if null.
+    AdaptiveSound::log::debug("[QW1] C-ABI publishCrossfeed enabled={} preset={}", enabled, preset);
     if (auUnit == nullptr) {
         AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — auUnit == nullptr");
         return;
@@ -527,7 +379,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer != nullptr) {
-        realizer->setPendingCrossfeed(enabled, level, preset);
+        realizer->setPendingCrossfeed(enabled, preset);
     } else {
         AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — realizer == nil");
     }

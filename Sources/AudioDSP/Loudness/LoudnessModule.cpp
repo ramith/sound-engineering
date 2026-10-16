@@ -17,8 +17,6 @@ namespace AdaptiveSound
                   "LoudnessModule requires lock-free float atomics for RT safety");
     static_assert(std::atomic<uint8_t>::is_always_lock_free,
                   "LoudnessModule requires lock-free uint8 atomics for RT safety");
-    static_assert(std::atomic<uint64_t>::is_always_lock_free,
-                  "LoudnessModule requires lock-free uint64 atomics for RT safety");
     static_assert(std::atomic<uint32_t>::is_always_lock_free,
                   "LoudnessModule requires lock-free uint32 atomics for RT safety");
 
@@ -145,12 +143,12 @@ namespace AdaptiveSound
                 }
             }
             // All or nothing: a partial push on a full ring would leave a part-frame in it and
-            // shift the worker's channel interleave for good (its reads are frame-aligned).
+            // shift the worker's channel interleave for good (its reads are frame-aligned). A full
+            // ring drops the block whole: the measurement degrades, the audio never waits.
             const std::size_t want = static_cast<std::size_t>(safeCount) * numChannels;
-            if (!sampleRing_.tryPushAll(pushBuf_.data(), want))
-            {
-                droppedFrames_.fetch_add(safeCount, std::memory_order_relaxed);
-            }
+            static_cast<void>(sampleRing_.tryPushAll(pushBuf_.data(), want));
+            // Wakes the worker only if it parked (a resume): no syscall in steady playback.
+            parking_.notify();
 
             makeupGainRamp_.target = makeupGainLinear_.load(std::memory_order_acquire);
         }
@@ -194,9 +192,9 @@ namespace AdaptiveSound
 
     void LoudnessModule::runMeasurementLoop(const std::stop_token& stopToken) noexcept
     {
-        // FPCR is per-thread: the measurement worker runs the K-weighting biquads, so it must
-        // set flush-to-zero itself (shared definition in include/FlushToZero.h — AR-1).
-        enableFlushToZero();
+        // FPCR is per-thread: the measurement worker runs the K-weighting biquads, so it flushes
+        // subnormals itself, for as long as it runs (include/FlushToZero.h).
+        const ScopedFlushToZero flushToZero;
 
         // Track the channel count and layout generation we last configured the meter for.
         // Use UINT32_MAX as the sentinel so the very first loop iteration always reconfigures
@@ -204,13 +202,18 @@ namespace AdaptiveSound
         uint32_t configuredCh = 0U;
         uint32_t configuredGen = std::numeric_limits<uint32_t>::max();
 
+        // Nothing to measure: nap while audio flows, park once none has come for a while; the next
+        // process() push wakes it, and so does a stop.
+        const auto hasSamples = [this] { return !sampleRing_.isEmpty(); };
+        const std::stop_callback wakeToStop(stopToken, [this] noexcept { parking_.notify(); });
+
         while (!stopToken.stop_requested())
         {
             // Read the channel count published by process() (acquire pairs with release store).
             const uint32_t nowCh = channelCount_.load(std::memory_order_acquire);
             if (nowCh == 0U)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(kWorkerIdleSleepMs));
+                parking_.idle(stopToken, hasSamples);
                 continue;
             }
 
@@ -239,9 +242,10 @@ namespace AdaptiveSound
             const std::size_t got = sampleRing_.popBlock(workerChunk_.data(), cap);
             if (got == 0U)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(kWorkerIdleSleepMs));
+                parking_.idle(stopToken, hasSamples);
                 continue;
             }
+            parking_.worked();
 
             // got is always a multiple of configuredCh because:
             //   - process() only ever pushes multiples of numChannels, and
@@ -311,10 +315,6 @@ namespace AdaptiveSound
     float LoudnessModule::currentMakeupGainLinear() const noexcept
     {
         return makeupGainLinear_.load(std::memory_order_acquire);
-    }
-    uint64_t LoudnessModule::droppedFrameCount() const noexcept
-    {
-        return droppedFrames_.load(std::memory_order_relaxed);
     }
 
 } // namespace AdaptiveSound

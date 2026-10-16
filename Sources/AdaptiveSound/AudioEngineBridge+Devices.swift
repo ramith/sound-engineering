@@ -39,7 +39,8 @@ extension AudioEngineBridge {
                         uid: Self.deviceUID(info.deviceID),
                         modelUID: modelUID.isEmpty ? nil : modelUID,
                         transportType: info.transportType,
-                        type: deviceType
+                        type: deviceType,
+                        isHeadphones: info.isHeadphones != 0
                     ))
                 }
 
@@ -115,6 +116,20 @@ extension AudioEngineBridge {
                 continuation.resume(returning: result != 0)
             }
         }
+    }
+
+    /// See `AudioPlaybackEngine.restoreChosenOutput`. The choice goes back under the leaf lock; the
+    /// output rule then runs on `configChangeQueue`, as for any device event, and adopts the chosen
+    /// device if it is here (the pill follows through `onOutputDevicesChanged`). No HAL call here.
+    func restoreChosenOutput(uid: String?) {
+        changeOutputSelection { $0.restoreChoice(uid: uid ?? "") }
+        outputDeviceDidChange(.choiceRestored)
+    }
+
+    /// See `AudioPlaybackEngine.chosenOutputUID`.
+    func chosenOutputUID() -> String? {
+        let uid = outputSelection.chosenUID
+        return uid.isEmpty ? nil : uid
     }
 }
 

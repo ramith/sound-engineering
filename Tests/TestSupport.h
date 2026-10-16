@@ -28,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <optional>
 #include <random>
 #include <span>
 #include <sstream>
@@ -38,12 +39,20 @@
 #include <utility>
 #include <vector>
 
+#include <csignal>
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "DeviceCapability.h"
 #include "DSPKernel.h"
 #include "EQ/EQModule.h"
 #include "EQ/EQTargets.h"
 #include "EQ/GraphicEQDesigner.h"
 #include "EQDesignBridge.h"
+#include "FFmpegBridge.h"
+#include "FFmpegLoader.h"
 #include "FileDecodeSource.h"
 #include "FlushToZero.h"
 #include "GaplessSource.h"
@@ -53,10 +62,10 @@
 #include "Loudness/LufsMeter.h"
 #include "Loudness/TrackLoudnessProfile.h"
 #include "Loudness/TrackLoudnessProfiler.h"
+#include "MetadataBridge.h"
 #include "MultichannelView.h"
 #include "PureModeFormat.h"
 #include "PureModeSource.h"
-#include "RtSwappableResource.h"
 #include "Spatial/SpatialRenderKernel.h"
 #include "TargetState.h"
 #include "TrackLoudnessBridge.h"
@@ -102,6 +111,11 @@ namespace TestConstants
     constexpr float kChirpF1 = 20000.0F; // chirp end frequency (Hz)
     constexpr float kChirpAmpl = 0.5F;   // chirp amplitude
     constexpr float kChirpDuration = 1.0F;
+
+    // The committed bit-exact signature of the stereo chain's output on the chirp above
+    // (GoldenMaster_StereoN2_v1, and Crossfeed_Bypass_BitExact_GoldenMaster with crossfeed present
+    // but off). Re-baseline ONLY on a deliberate DSP change — history in GoldenMaster_StereoN2_v1.
+    constexpr uint64_t kGoldenMasterStereoN2Hash = 0xF0E1D4EF83763709ULL;
 
     // Multichannel per-channel independence test constants (S1-A2 T-C3).
     constexpr uint32_t kNChannels4 = 4U;

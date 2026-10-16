@@ -14,7 +14,8 @@
 /// device the app starts on is not a choice (founder decision): until the user picks, there is none, and
 /// the pin follows the system default exactly as the switch off does. Playing on a fallback is not a
 /// pick either. The choice is held by UID (`kAudioDevicePropertyDeviceUID`): a reconnect can give a
-/// device a new id, never a new UID. It lasts for the session (nothing persists it across launches yet).
+/// device a new id, never a new UID. It outlives the session: the app keeps it with the listener's
+/// settings and hands it back at launch (`restoreChoice`, DEV-1).
 public struct OutputDeviceSelection: Sendable, Equatable {
     /// The device the app plays on (0 = none).
     public private(set) var target: UInt32 = 0
@@ -57,6 +58,13 @@ public struct OutputDeviceSelection: Sendable, Equatable {
         if chosenUID == pick.uid {
             chosenUID = pick.replacedChosenUID
         }
+    }
+
+    /// The device the user chose before the last quit, by UID ("" = none), as the app kept it: the
+    /// choice again, and nothing else — the target stays the device the app launched on until the
+    /// output rule moves to the choice (`OutputDeviceEvent.choiceRestored`).
+    public mutating func restoreChoice(uid: String) {
+        chosenUID = uid
     }
 
     /// The output rule moved the app to this device. The user's choice stays where it was.

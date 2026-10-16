@@ -11,7 +11,7 @@
 // Two implementation files back this surface:
 //   * PureModeBridgePolicy.cpp — CoreAudio-FREE; implements ONLY pureModeEvaluate(). Compiles into
 //     the C++ test harness (which links no CoreAudio).
-//   * PureModeBridge.mm        — CoreAudio (Obj-C++) glue for capability querying + the engine.
+//   * PureModeBridge.cpp       — CoreAudio glue for capability querying + the engine.
 //
 // Opaque-handle convention (mirrors DeviceBridge.h): the engine is owned through a void* handle;
 // the caller creates it with pureModeEngineCreate() and destroys it with pureModeEngineDestroy()
@@ -49,9 +49,20 @@ typedef struct
 
 /// Flat mirror of AdaptiveSound::PureModeEvaluation.
 /// `decision` mirrors PureModeDecision order: 0 FullBitPerfect, 1 RateMatchedFloat,
-/// 2 FallbackEnhanced. `reason` mirrors PureModeReason order: 0 BitPerfectInteger,
-/// 1 RateMatchedFloatNoSRC, 2 LossyWirelessCodec, 3 VirtualDevice, 4 RateUnsupportedResample,
-/// 5 ChannelCountMismatch.
+/// 2 FallbackEnhanced.
+///
+/// THE REASON CODES (AdaptiveSound::PureModeReason, the one named reason — council C-34; Swift's
+/// PureModeReason decodes the same numbers; append, never reorder):
+///   0 BitPerfectInteger        Pure plays, integer PCM at the file's rate
+///   1 RateMatchedFloatNoSRC    Pure plays, float at the file's rate (no SRC)
+///   2 LossyWirelessCodec       declined: Bluetooth / AirPlay re-encode below the HAL
+///   3 VirtualDevice            declined: a virtual or aggregate device
+///   4 RateUnsupportedResample  declined: the device can't run at the file's rate
+///   5 ChannelCountMismatch     declined: the device stream's channel count is not the file's
+///   6 DeviceShallowerThanSource Pure plays, NOT bit-perfect: the output holds fewer bits (C-33)
+///   7 DeviceWouldNotStart      declined: the device would not take Pure's format, or start
+///   8 FileUnreadable           declined: no decoder that may run can read the file
+///   9 FileNeedsFFmpeg          declined: Apple's decoder can't read it, and FFmpeg is off
 typedef struct
 {
     uint8_t decision;           ///< 0 FullBitPerfect, 1 RateMatchedFloat, 2 FallbackEnhanced
@@ -73,6 +84,8 @@ typedef struct
     uint8_t achievedIsFloat;         ///< 1 if the AU output format is float (vs integer PCM)
     uint8_t running;                 ///< 1 if start() succeeded and stop() has not been called
     uint8_t decoderBackend;          ///< 0 apple, 1 ffmpeg
+    uint8_t reason;                  ///< 0, 1 or 6 (the reason codes above): bit-perfect, or not
+    uint32_t sourceBitsPerChannel;   ///< the active track's source depth (0: compressed / unknown)
 } CAchievedOutputState;
 
 // MARK: - C-ABI functions
@@ -114,6 +127,15 @@ extern "C"
                                 uint32_t maxRates,
                                 uint32_t* outRateCount) AUDIODSP_C_NOEXCEPT;
 
+    /// Evaluate the Pure-Mode policy for `filePath` on `deviceID` as a start would: the file read
+    /// by Pure's own decoder (Apple first; FFmpeg only when it is on — FileDecodeSource::probe),
+    /// without starting a decode, and the device's capability queried. A file no decoder may read
+    /// comes back FallbackEnhanced with reason 8 or 9. Returns 1 when `out` is filled, 0 on NULL
+    /// arguments. Control plane (it opens the file and queries the HAL).
+    int pureModeEvaluateFile(uint32_t deviceID,
+                             const char* filePath,
+                             CPureModeEvaluation* out) AUDIODSP_C_NOEXCEPT;
+
     /// Create an opaque Pure-Mode engine session handle. Returns NULL on allocation failure.
     /// Destroy with pureModeEngineDestroy().
     void* pureModeEngineCreate(void) AUDIODSP_C_NOEXCEPT;
@@ -121,11 +143,14 @@ extern "C"
     /// Open `filePath`, query+evaluate `deviceID`, configure and start bit-perfect render from
     /// `startSeconds` into the file (0 = the top): the source is positioned BEFORE render starts, so
     /// a resume is never a play-from-0-then-seek. The position counters report from there. Returns
-    /// 1 on success, 0 on failure.
+    /// 1 on success, 0 on failure. `outReason` (may be NULL) receives the reason code: on failure
+    /// why it declined (2–5, 7–9), on success the reason it plays as (0 or 1; the achieved state
+    /// refines it to 6 when the device holds fewer bits than the file).
     int pureModeEngineStart(void* engine,
                             uint32_t deviceID,
                             const char* filePath,
-                            double startSeconds) AUDIODSP_C_NOEXCEPT;
+                            double startSeconds,
+                            uint8_t* outReason) AUDIODSP_C_NOEXCEPT;
 
     /// Hold render (silence; the device keeps running), seek the active track to `seconds`,
     /// release render. Returns 1 on success; 0 when the decoder could not reposition, or the

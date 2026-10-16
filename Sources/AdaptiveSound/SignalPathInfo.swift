@@ -1,4 +1,5 @@
 import Foundation
+import SettingsKit
 
 // MARK: - OutputPathKind
 
@@ -33,8 +34,8 @@ enum DecoderKindUI {
 // MARK: - DeviceVolume
 
 /// The output device's own (hardware) volume, as Pure Mode reads it. Pure never scales the
-/// bit-perfect stream, so this is the one gain on the Pure path — what Master Gain shows and sets
-/// while Pure plays.
+/// bit-perfect stream, so this is the one gain on the Pure path — what Master Gain turns down while
+/// Pure plays (`MasterGainOnPure`).
 enum DeviceVolume: Equatable {
     /// The device has no volume the app can set (none on its main output, or not settable): its
     /// level is set on the device itself.
@@ -60,15 +61,25 @@ struct SignalPathInfo: Equatable {
     /// Bit depth negotiated at the device boundary. 0 when the path is float or not started.
     var bitDepth: UInt32 = 0
 
+    /// The playing track's own bit depth, as Pure's decoder read it (0: compressed or unknown) — what
+    /// `bitDepth` is held against for "not bit-perfect" (C-33). 0 on Enhanced.
+    var sourceBitDepth: UInt32 = 0
+
     /// `true` when the device AU output format is float (vs integer PCM).
     var isFloat: Bool = false
 
     /// Active decoder backend. `nil` when the Enhanced path is in use.
     var decoder: DecoderKindUI?
 
-    /// `true` when Pure mode was requested by the user but capability evaluation or engine
-    /// startup forced a fallback to Enhanced. Cleared when Pure mode is not requested.
-    var fellBackToEnhanced: Bool = false
+    /// Why Pure isn't playing bit-perfect, or isn't playing (council C-34): set when Pure was asked
+    /// for and declined or waits (Enhanced plays), or plays but not bit-perfect. `nil` when Pure isn't
+    /// asked for, or plays bit-perfect.
+    var pureReason: PureModeReason?
+
+    /// `true` when Pure was asked for but Enhanced plays — it declined, or it waits (`pureReason`).
+    var fellBackToEnhanced: Bool {
+        pureReason.map { !$0.purePlays } ?? false
+    }
 
     /// `true` when playback was paused because the active output device disappeared (e.g. a
     /// Bluetooth device disconnected). The view model surfaces this and clears `isPlaying`; the
@@ -76,23 +87,26 @@ struct SignalPathInfo: Equatable {
     var interrupted: Bool = false
 
     /// The output device's own volume while Pure plays — read when Pure starts (in the same snapshot
-    /// that turns the path Pure) and kept current by a listener on the device. `nil` on Enhanced.
+    /// that turns the path Pure) and kept current by a listener on the device. `.fixed` holds the
+    /// Master Gain slider at 0 dB (the device has no volume to turn down). `nil` on Enhanced.
     var deviceVolume: DeviceVolume?
 
-    /// The last level the user set on the device while Pure plays, and what the device read back
-    /// right after (`AudioPlaybackEngine.requestDeviceVolume`). `nil` until a set lands.
-    var deviceVolumeSet: DeviceVolumeRequest?
-
-    // MARK: - Enhancement overlay (F4 — copied from VM in tickSpectrum)
+    // MARK: - Enhancement overlay (F4 — copied from the VM: `refreshSignalPathIntents`, the tick)
 
     /// Current Reimagine intensity in [0, 1], copied from `AudioViewModel.intensity` each tick.
     /// Used by the signal-path badge to display "… · 23%". Default 0.
     var intensityLinear: Float = 0
 
-    /// Active crossfeed strength, or `nil` when crossfeed is off.
-    /// Gated on `intensityLinear > 0` before being shown in the badge (§9 nice-to-have:
-    /// don't display an inaudible-chain badge at 0 % intensity).
+    /// The crossfeed strength while crossfeed plays (chosen, on headphones), copied from the view
+    /// model each tick; `nil` when it doesn't.
     var crossfeedStrength: CrossfeedStrength?
+
+    /// The crossfeed the listener hears — the hero's "XF" chip: its strength while it plays, on the
+    /// Enhanced path, whatever Intensity is (crossfeed is an output stage of its own, founder
+    /// decision 2026-10-14); `nil` on Pure, which bypasses the DSP.
+    var audibleCrossfeed: CrossfeedStrength? {
+        path == .enhanced ? crossfeedStrength : nil
+    }
 }
 
 // MARK: - Display helpers

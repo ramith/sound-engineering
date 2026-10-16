@@ -4,25 +4,32 @@ import Foundation
 
 /// Monotonic newest-wins guard for the async Songs-filter read. Extracted from `LibraryBrowseModel`
 /// so the H2 "no stale phantom publish" contract is unit-testable. Usage: the model calls
-/// `invalidate()` **synchronously on every `searchQuery` edit** (before the ~120 ms debounce), then a
-/// debounced read `captures` `value` and publishes its result only if `isCurrent(captured)` still
-/// holds — so an in-flight read for an older query can never overwrite a newer edit (review LOW-1).
+/// `invalidate()` **synchronously on every `searchQuery` edit** (before the ~120 ms debounce), and each
+/// read takes its token from `beginRead()` and publishes its result only if `isCurrent(token)` still
+/// holds — so an in-flight read for an older query can never overwrite a newer edit (review LOW-1), and
+/// of two reads of the SAME query the newer always wins (council C-58 / P5B-01: a filtered reload re-runs
+/// the read with no edit, once per library change, and the store reads concurrently, so two reads can
+/// finish in either order — the older snapshot, without the newly scanned song, must not land last).
 public struct SearchEpoch: Sendable, Equatable {
-    public private(set) var value: Int
+    private var value = 0
 
-    public init(value: Int = 0) {
-        self.value = value
-    }
+    public init() {}
 
-    /// Invalidate any in-flight read. Call synchronously on every edit — NOT inside the debounce,
+    /// Invalidate every read begun so far. Call synchronously on every edit — NOT inside the debounce,
     /// or a fast read can resolve and publish before the invalidation lands.
     public mutating func invalidate() {
         value &+= 1
     }
 
-    /// Whether a read that captured `captured` may still publish (no newer edit has landed since).
-    public func isCurrent(_ captured: Int) -> Bool {
-        captured == value
+    /// Begin a read: it supersedes every read begun before it. Returns its token for `isCurrent`.
+    public mutating func beginRead() -> Int {
+        invalidate()
+        return value
+    }
+
+    /// Whether the read holding `token` may still publish: no edit and no newer read since it began.
+    public func isCurrent(_ token: Int) -> Bool {
+        token == value
     }
 }
 

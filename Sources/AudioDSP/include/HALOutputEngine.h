@@ -82,8 +82,17 @@ namespace AdaptiveSound
         // parks them (PureModeBridge.cpp). Control-plane only.
         [[nodiscard]] bool renderMayStillRun() const;
 
-        // The real achieved state (lock-free snapshot for the UI / B3).
+        // The real achieved state, copied. Not a lock-free snapshot: configure() writes it and the
+        // Pure bridge reads it, both on the control plane (the app's engine queue) — never across
+        // threads.
         [[nodiscard]] AchievedOutputState achievedState() const;
+
+        // Whether the float → native step reduces bits the source has, and so adds TPDF dither
+        // (convertFloatToNativeDithered — R1.1-A, founder decision 2026-10-16). Off by default: the
+        // plain conversion is bit-exact. Set after configure() and before start(), from the depth rule
+        // (ditherWhenConverting); a session's format and source depth are fixed (a gapless seam
+        // joins only tracks of one depth). Control-plane only.
+        void setDither(bool reducesBits);
 
       private:
         class Impl; // opaque; owns the AudioUnit + CoreAudio state (defined in the .mm)

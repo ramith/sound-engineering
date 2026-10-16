@@ -2,13 +2,17 @@
 
 // LoudnessModule — ITU-R BS.1770-5 gated loudness measurement + auto makeup gain.
 //
-// Chain position (DSPKernel.h):  EQ → Clarity → BRIR → [Loudness] → Limiter.
+// Chain position (DSPKernel.h):  EQ → Clarity → BRIR → Intensity blend → [Loudness] → Crossfeed
+// → Limiter.
 //
 // Unlike the other modules, Loudness runs a MEASUREMENT FEEDBACK LOOP that must
 // stay off the render thread:
 //
 //   RT process()  ──push samples──▶  SpscRing  ──▶  measurement jthread (LufsMeter)
 //   RT process()  ◀──atomic float──  makeupGainLinear_  ◀──  measurement jthread
+//
+// The worker naps while audio flows and parks once none has come for a while (WorkerParking): while
+// paused, with leveling off and on the bit-perfect path it wakes nobody (KI-UI-03).
 //
 // The RT thread NEVER measures and NEVER blocks: it relays lufsTarget/enabled to
 // the worker via atomics, pushes post-BRIR samples into a lock-free SPSC ring
@@ -32,11 +36,13 @@
 #include "../include/ParameterRamp.h" // ParameterRamp (shared EQ/Loudness infra)
 #include "../include/SpscRing.h"
 #include "../include/TargetState.h"
+#include "../include/WorkerParking.h"
 #include "LufsMeter.h"
 #include <array>
 #include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <thread>
@@ -62,7 +68,10 @@ namespace AdaptiveSound
     inline constexpr std::size_t kWorkerChunkFrames = 1024U;
     inline constexpr std::size_t kWorkerChunkElems = kWorkerChunkFrames * kMaxChannels;
 
-    inline constexpr int kWorkerIdleSleepMs = 5; // off-RT sleep when ring empty
+    // The worker's nap while audio flows (its ring empties between render blocks), and how long it
+    // finds nothing before it parks until the next block (WorkerParking: paused, leveling off, P0).
+    inline constexpr std::chrono::milliseconds kWorkerNap{5};
+    inline constexpr std::chrono::milliseconds kWorkerParkAfter{200};
     inline constexpr float kUnityGainLinear = 1.0F;
     inline constexpr float kLoudnessUnmeasuredLufs = -200.0F; // telemetry sentinel
 
@@ -70,7 +79,7 @@ namespace AdaptiveSound
     {
       public:
         LoudnessModule() = default;
-        ~LoudnessModule(); // joins the measurement jthread (defined in .mm)
+        ~LoudnessModule(); // joins the measurement jthread (defined in the .cpp)
 
         // Owns a jthread + ring: non-copyable, non-movable (C.21, C.67).
         LoudnessModule(const LoudnessModule&) = delete;
@@ -99,12 +108,12 @@ namespace AdaptiveSound
                      const MultichannelView& block,
                      std::span<const float> contribution = {}) noexcept;
 
-        // Lock-free telemetry getters (UI / Milestone 4); callable from any thread.
+        // Lock-free telemetry getters, callable from any thread. The null test's measurements read
+        // them; the app does not (its loudness readout is the mixer tap's meter).
         [[nodiscard]] float measuredLufsIntegrated() const noexcept;
         [[nodiscard]] float measuredLufsShortTerm() const noexcept;
         [[nodiscard]] float measuredLufsMomentary() const noexcept;
         [[nodiscard]] float currentMakeupGainLinear() const noexcept;
-        [[nodiscard]] uint64_t droppedFrameCount() const noexcept;
 
       private:
         // RT: apply the smoothed (and optionally contribution-weighted) makeup gain in place.
@@ -131,8 +140,8 @@ namespace AdaptiveSound
         SpscRing<float, kLoudnessRingElems> sampleRing_;
 
         // --- 8-byte-aligned members ---
-        std::atomic<uint64_t> droppedFrames_{0U}; // RT→diagnostics
-        double currentMakeupDb_ = 0.0;            // worker-owned (measurementThread_ only)
+        double currentMakeupDb_ = 0.0; // worker-owned (measurementThread_ only)
+        WorkerParking parking_{kWorkerNap, kWorkerParkAfter}; // RT/control → worker wake-ups
         // Per-sample gain scratch and interleave scratch: heap-allocated to maxFrames_ (and
         // maxFrames_*kMaxChannels) in initialize() so they scale with the host's
         // maximumFramesToRender. process() asserts frameCount <= maxFrames_ and never

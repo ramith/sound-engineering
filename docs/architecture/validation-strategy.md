@@ -43,7 +43,7 @@ This builds and runs the standalone C++ harness (`Tests/DSPKernelNullTest.cpp` +
 
 **Companion offline checks (`swift run`, headless):**
 - `swift run VerifyAUGraph` — proves the custom v3 AU registers, instantiates, sits in the AVAudioEngine graph, and renders.
-- `swift run SRCQualityMeasure` — characterises the production `AVAudioConverter(.max)` SRC (imaging/aliasing on pure tones).
+- `swift run SRCQualityMeasure` (in `make gate`, R1.1-A) — the Enhanced SRC gate. It drives the production converter (`AudioFormatKit.StreamingResampler`: `AVAudioConverter`, Mastering, max quality) in the app's 8192-frame chunks over every conversion the app makes (44.1 / 88.2 / 96 / 176.4 / 192 / 352.8 / 384 / 32 / 22.05 kHz → 48 kHz, 48 kHz → 44.1 / 88.2 / 96 / 176.4 / 192 kHz) and fails unless the passband is within 0.1 dB to 20 kHz, every image and alias is ≤ −100 dB (a weighted least-squares tone reading, the wanted tone removed first), equal rates are bit-exact, and it streams ≥ 2× real time. A control — the pre-R1.1 Normal algorithm — must fail both the passband and the stopband, or the gate fails itself (council R-6: the old tool printed −7.23 dB at 20 kHz and passed). `AdaptiveSoundTests` (`EnhancedResamplerTests`) checks the same on the real bridge: a 44.1 kHz file plays 20 kHz level with 1 kHz.
 
 ### Gate 2: Bit-Exact Bypass (intensity-0 null test)
 

@@ -13,7 +13,7 @@ struct OutputDeviceRuleSpaceTests {
     private static let deviceB: UInt32 = 42 // another output, often the new default
     private static let deviceC: UInt32 = 43 // the chosen device back under another id
     private static let events: [OutputDeviceEvent] = [
-        .devicesChanged, .defaultChanged, .targetAliveChanged, .engineReconfigured, .enhancedStarting,
+        .devicesChanged, .defaultChanged, .targetAliveChanged, .engineReconfigured, .enhancedStarting, .choiceRestored,
     ]
 
     /// playback × pinned × alive × target ∈ {0, A} × default ∈ {0, A, B} × chosen ∈ {0, A, B, C}.
@@ -77,7 +77,7 @@ struct OutputDeviceRuleSpaceTests {
                         reassert: action.reassertTarget, reestablish: action.reestablishEnhanced)
     }
 
-    @Test("all 1440 (event × facts) cases agree with the rules written from the founder's decisions")
+    @Test("all 1728 (event × facts) cases agree with the rules written from the founder's decisions")
     func fullInputSpace() {
         var count = 0
         for event in Self.events {
@@ -86,7 +86,7 @@ struct OutputDeviceRuleSpaceTests {
                 #expect(Self.actual(event, facts) == Self.expected(event, facts), "\(event) \(facts)")
             }
         }
-        #expect(count == 1440)
+        #expect(count == 1728)
     }
 
     /// The panel's spec for the rule before N92, verbatim: pinned meant "keep the app's device".
@@ -121,7 +121,7 @@ struct OutputDeviceRuleSpaceTests {
                 #expect(Self.actual(event, facts) == Self.beforeN92(event, facts), "\(event) \(facts)")
             }
         }
-        #expect(compared == 5 * (3 * 2 * 3 * 4 + 3 * 2 * 3)) // follow: any chosen; pinned: one
+        #expect(compared == 6 * (3 * 2 * 3 * 4 + 3 * 2 * 3)) // follow: any chosen; pinned: one
     }
 
     @Test("pinned with nothing chosen (the launch state) or the choice away answers exactly as follow")

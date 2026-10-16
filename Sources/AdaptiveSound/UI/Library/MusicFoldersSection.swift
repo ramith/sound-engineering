@@ -1,4 +1,5 @@
 import Foundation
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
@@ -11,8 +12,11 @@ import SwiftUI
 /// scroll). Adding lives on the section header's "+" — NOT here — kept there for the one-click add
 /// UX (§6).
 ///
-/// `.task`/`.onChange` refresh `model.roots` and the per-row "Scanning…" hint while the rail is
-/// mounted (i.e. while the Library tab is open).
+/// Each row's one caption line under its path (`MusicFolderStatus`, LibraryBrowseKit): "Scanning…"
+/// while a scan walks it, or — for a PAUSED folder, whose last walk was refused so its songs are kept —
+/// a short reason, with the folder glyph turned into a question mark and a tooltip (R1.1-A, KI-LIB-02;
+/// founder 2026-10-15). `.task`/`.onChange` refresh `model.roots` and that line while the rail is
+/// mounted (i.e. while the Library tab is open); a pause shows the moment the library records it.
 struct MusicFoldersSection: View {
     @Environment(LibraryBrowseModel.self) private var model
     @Environment(LibraryModel.self) private var library
@@ -64,21 +68,36 @@ struct MusicFoldersSection: View {
     }
 
     private func rootRow(_ root: LibraryFolder) -> some View {
-        HStack(spacing: DesignSystem.Spacing.small) {
-            Image(systemName: "folder")
-                .foregroundStyle(DesignSystem.Color.labelSecondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(abbreviatedPath(root.path))
-                    .font(DesignSystem.Font.body)
-                    .foregroundStyle(DesignSystem.Color.label)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if model.scanningRootID == root.id {
-                    Text("Scanning…")
-                        .font(DesignSystem.Font.caption)
-                        .foregroundStyle(DesignSystem.Color.labelSecondary)
+        let status = MusicFolderStatus(isScanning: model.scanningRootID == root.id,
+                                       pausedBy: library.reconcileState[root.id]?.pauseReason)
+        let isPaused = status?.isPaused == true
+        return HStack(spacing: DesignSystem.Spacing.small) {
+            // The glyph, the path and the status line are ONE VoiceOver element — "~/Music, Not found
+            // — is its drive connected?" — the caption read as part of the row; the glyph is hidden
+            // (the caption says it in words). The Remove button stays its own element (below). The glyph
+            // sits on the path's line, however many lines the reason wraps to.
+            HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.small) {
+                Image(systemName: isPaused ? "folder.badge.questionmark" : "folder")
+                    .foregroundStyle(isPaused ? DesignSystem.Color.statusWarningText
+                        : DesignSystem.Color.labelSecondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(abbreviatedPath(root.path))
+                        .font(DesignSystem.Font.body)
+                        .foregroundStyle(DesignSystem.Color.label)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let status {
+                        // Wraps rather than truncates: a cut-off reason would not say why.
+                        Text(status.caption)
+                            .font(DesignSystem.Font.caption)
+                            .foregroundStyle(DesignSystem.Color.labelSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
+            .accessibilityElement(children: .combine)
+            .help(isPaused ? MusicFolderStatus.pausedHelp : "")
             Spacer(minLength: DesignSystem.Spacing.small)
             Button {
                 removeTarget = root
@@ -90,6 +109,8 @@ struct MusicFoldersSection: View {
             .help("Remove from Library")
             .accessibilityLabel("Remove \(abbreviatedPath(root.path)) from library")
         }
+        // A one-line row stays 34 pt; a row with a status line keeps room at both dividers.
+        .padding(.vertical, DesignSystem.Spacing.xSmall)
         .frame(minHeight: 34)
         // `.contain` (not `.combine`): keep the Remove button a first-class, directly-activatable
         // VoiceOver element rather than demoting it to an Actions-rotor custom action (review S3).

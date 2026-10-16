@@ -16,8 +16,9 @@
 namespace AdaptiveSound
 {
 
-    // Flush-to-zero (FPCR.FZ) is shared: include/FlushToZero.h. The spatial render thread sets
-    // it at render-block entry (SpatialRendererAU.mm); initialize() covers the control thread.
+    // Flush-to-zero (FPCR.FZ, include/FlushToZero.h) is scoped to process(): set for the render
+    // call, the caller's mode restored on return (council C-50). Today's routes only copy, but the
+    // S18 binaural renderer convolves here.
 
     // ---------------------------------------------------------------------------
     // Private RT-safe helpers — file-scope static (no Accelerate in the header,
@@ -113,10 +114,6 @@ namespace AdaptiveSound
     {
         sampleRate_ = sampleRate;
         maxFrames_ = maxFramesToRender;
-
-        // FTZ on the control/init thread.  The AU render block sets it independently
-        // on the render thread (matching DSPKernel's pattern).
-        enableFlushToZero();
     }
 
     // ---------------------------------------------------------------------------
@@ -137,6 +134,7 @@ namespace AdaptiveSound
     auto SpatialRenderKernel::process(const MultichannelView& input,
                                       const MultichannelView& output) const noexcept -> void
     {
+        const ScopedFlushToZero flushToZero;
         // Guard: frame-count mismatch or zero frames — nothing to render.
         const uint32_t inFrames = input.frames();
         const uint32_t outFrames = output.frames();

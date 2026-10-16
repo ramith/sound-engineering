@@ -41,6 +41,7 @@ sound-engineering/
 │   ├── LibraryStore/        # persistent library store (GRDB.swift over the system SQLite)
 │   ├── OutputDeviceKit/     # the output-device rule (pin / follow / device loss)
 │   ├── PlaybackQueueKit/    # queue, order, resume, transport snapshot
+│   ├── SettingsKit/         # the listener's settings and the one store that keeps them
 │   ├── StoreSQLiteShim/     # one C SQLite option Swift can't call
 │   ├── TrackLoudnessKit/    # load-time track loudness analysis (loudness-neutral EQ)
 │   ├── SRCQualityMeasure/   # sample-rate-conversion quality harness

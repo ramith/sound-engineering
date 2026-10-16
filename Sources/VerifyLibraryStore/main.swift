@@ -1,7 +1,6 @@
 // VerifyLibraryStore — headless S8.1 acceptance gate for the persistent library
-// store (design §6). `swift test` is unusable here (swift-testing macro skew), so
-// this is a runnable executable (`swift run VerifyLibraryStore`) that asserts,
-// against the REAL LibraryStore code, the harness plan:
+// store (design §6), in `make gate`: a runnable executable (`swift run VerifyLibraryStore`)
+// that asserts, against the REAL LibraryStore code, the harness plan:
 //
 //   S8.1a (store foundation):
 //     SCHEMA-1  fresh create → user_version == 1, integrity_check ok, WAL +
@@ -217,7 +216,7 @@ func searchCheckCases() -> [CheckCase] {
         CheckCase(label: "fts-noop-rescan-zero-writes", run: checkFtsNoOpRescanZeroWrites),
         CheckCase(label: "fts-read-during-write", run: checkFtsReadDuringWrite),
         CheckCase(label: "fts-matching-ids", run: checkFtsMatchingIDsParity),
-    ]
+    ] + searchTokensCheckCases()
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
@@ -349,7 +348,7 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep; "
         + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail; "
         + "S8.3 Slice 4: X metadata-pass [enrich+idempotency+anti-loop]; "
-        + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [FFmpeg]; "
+        + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [AVFoundation + FLAC PICTURE, FFmpeg off]; "
         + "S8.3 review: AA album-cover-deterministic [C8], AB metadata-pass-cancellation "
         + "[skips sweep], AC real-no-tags [empty-not-crash + marked]; "
         + "S8.4 Slice 1: AD move-reference-survives [Gate-2: play_count/loved/rating keep the id], "

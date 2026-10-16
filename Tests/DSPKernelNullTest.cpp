@@ -21,9 +21,11 @@
 //   MultichannelTests.inc — multichannel epic safety net, BS.1770 multichannel,
 //                           large-buffer fence (tests 20-34)
 //   SpatialTests.inc      — SpatialRenderKernel passthrough tests (test 35)
-//   PureModeTests.inc     — Pure-Mode policy, format conversion, ToneSource,
+//   PureModeTests.inc     — Pure-Mode policy, format conversion,
 //                           + C-ABI bridge (pureModeEvaluate) tests (tests 36-51)
 //   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage + seek (tests 52-72)
+//   FFmpegLoaderTests.inc — FFmpeg opt-in (off loads nothing), the hardened load's vetting rule,
+//                           the fixed paths, and the probe's "needs FFmpeg" (R1.1-A, FD-3)
 //   GaplessTests.inc      — gapless DECODE-LAYER decode->concatenate contract (tests 73-77)
 //   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 78-79)
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
@@ -68,6 +70,7 @@
 #include "SpatialTests.inc"
 #include "PureModeTests.inc"
 #include "FileDecodeTests.inc"
+#include "FFmpegLoaderTests.inc" // after FileDecodeTests.inc (BackendGuard, writeWav16)
 #include "GaplessTests.inc"
 #include "RoundTripTests.inc"
 #include "PureGaplessTests.inc"
@@ -82,6 +85,7 @@
 #include "EqDesignerTests.inc"
 #include "TrackLoudnessTests.inc"
 #include "SoakRtAllocTests.inc"
+#include "PureDitherTests.inc" // after SoakRtAllocTests.inc (RtGuardScope) + PureModeTests.inc (makeFile)
 #include "SnapshotConcurrencyTests.inc"
 #include "EqTransitionTests.inc" // after EqDesignerTests.inc (its curves)
 #include "EqEngineTests.inc"     // after SoakRtAllocTests.inc (its RT-alloc guard)
@@ -115,6 +119,9 @@ namespace
         {"Limiter_GRResponseWithin2ms", testLimiterGRResponseTime, true},
         {"Limiter_NearNyquistCeiling", testLimiterNearNyquistCeiling, true},
         {"Limiter_HotNoiseSoak", testLimiterHotNoiseSoak, true},
+        // R1.1-A (council C-39): the release is program-dependent — a transient is fast.
+        {"Limiter_Release_TransientIsFast", testLimiterReleaseTransientIsFast, true},
+        {"Limiter_Release_SustainedIsSlow", testLimiterReleaseSustainedIsSlow, true},
         // Loudness / BS.1770-5 tests (Sprint 4 — Milestone 2)
         {"Loudness_KWeightingLowCut", testLoudnessKWeightingLowCut, true},
         {"Loudness_IntegratedAccuracy", testLoudnessIntegratedAccuracy, true},
@@ -123,6 +130,9 @@ namespace
         {"Loudness_MakeupRoundTrip", testLoudnessMakeupRoundTrip, true},
         {"Loudness_TruePeakKernel_InterSample", testLoudnessTruePeakKernelInterSample, true},
         {"Loudness_MeterBridge_TruePeak", testLoudnessMeterBridgeTruePeak, true},
+        // R1.1-A (council C-46, KI-UI-03): the analysis workers sleep while no audio reaches them.
+        // SERIAL: it counts the whole process's context switches.
+        {"Loudness_WorkersSleepWhileIdle", testLoudnessWorkersSleepWhileIdle, false},
         // EQ audibility tests (Sprint 5 — Milestone 2)
         {"EQ_FrequencyResponseAccuracy", testEQFrequencyResponseAccuracy, true},
         {"EQ_CoefficientSwapNoClick", testEQCoefficientSwapNoClick, true},
@@ -147,6 +157,8 @@ namespace
         {"Kernel_LargeBuffer_ConsecutiveBuffers", testLargeBufferConsecutiveBuffers, true},
         // SpatialRenderKernel (Sprint 5b, M3-1)
         {"SpatialRender_PassthroughRoute", testSpatialRenderPassthroughRoute, true},
+        // R1.1-A (council C-50): flush-to-zero is scoped to our render calls, then restored.
+        {"Render_FlushToZero_Scoped", testRenderFlushToZeroScoped, true},
         // Pure-Mode policy (Phase B — B1)
         {"PureMode_HdmiBitPerfect", testPureModeHdmiBitPerfect, true},
         {"PureMode_HdmiRateUnsupported", testPureModeHdmiRateUnsupported, true},
@@ -156,6 +168,15 @@ namespace
         {"PureMode_VirtualDevice", testPureModeVirtualDevice, true},
         {"PureMode_RateEpsilonAndMax", testPureModeRateEpsilonAndMax, true},
         {"PureMode_ChannelCountMismatch", testPureModeChannelCountMismatch, true},
+        {"PureMode_BitExactness_DepthRule", testPureModeBitExactnessDepthRule, true},
+        {"PureMode_ReasonCodes_BridgeOrder", testPureModeReasonCodesAreTheBridgeOrder, true},
+        // TPDF dither where Pure reduces bits (R1.1-A, founder 2026-10-16). Serial: RtSafe arms the
+        // thread-local allocation guard.
+        {"PureDither_TpdfShape", testPureDitherTpdfShape, true},
+        {"PureDither_NoDcNoNoiseModulation", testPureDitherNoDcNoNoiseModulation, true},
+        {"PureDither_QuietSineIsToneInNoise", testPureDitherQuietSineIsToneInNoise, true},
+        {"PureDither_OnlyWhenReducing", testPureDitherOnlyWhenReducing, true},
+        {"PureDither_RtSafe", testPureDitherRtSafe, false},
         // Pure-Mode format conversion (Phase B — B2a)
         {"Convert_Int16Saturation", testConvertInt16Saturation, true},
         {"Convert_Int32Saturation", testConvertInt32Saturation, true},
@@ -171,7 +192,6 @@ namespace
             true,
         },
         {"Convert_BitExact_Exhaustive16And24", testConvertBitExactExhaustive16And24, true},
-        {"ToneSource_FillsBuffer", testToneSourceFillsBuffer, true},
         // Pure-Mode C-ABI bridge (pureModeEvaluate) — PARALLEL-SAFE: pure functions, no env/tmp
         {
             "PureModeBridge_TranslatesAllDecisionBranches",
@@ -229,6 +249,29 @@ namespace
             testFileDecodeSeekMidStreamDistinctChannels,
             false,
         },
+        // C-35: the FFmpeg seek honours the stream start; a refused seek keeps the buffered audio.
+        {
+            "FileDecode_Seek_FFmpegHonoursStreamStart",
+            testFileDecodeSeekFFmpegHonoursStreamStart,
+            false,
+        },
+        {
+            "FileDecode_Seek_RefusedKeepsBufferedAudio",
+            testFileDecodeSeekRefusedKeepsBufferedAudio,
+            false,
+        },
+        // FFmpeg as an opt-in, off by default, hardened load (R1.1-A, FD-3, C-99) — SERIAL: the
+        // switch is process-wide.
+        {"FFmpeg_OffByDefault_LoadsNothing", testFFmpegOffByDefaultLoadsNothing, false},
+        {"FFmpeg_VetLibrary_Rules", testFFmpegVetLibraryRules, false},
+        {"FFmpeg_LibraryPaths_FixedAndAbsolute", testFFmpegLibraryPathsFixedAndAbsolute, false},
+        {"FFmpeg_ReadFacts_RealFiles", testFFmpegReadFactsRealFiles, false},
+        {
+            "FFmpeg_OpenLibrary_RefusesWhatOthersCanChange",
+            testFFmpegOpenLibraryRefusesWhatOthersCanChange,
+            false,
+        },
+        {"FFmpeg_ProbeNamesWhyAFileWontOpen", testFFmpegProbeNamesWhyAFileWontOpen, false},
         // Gapless DECODE-LAYER decode->concatenate contract — SERIAL: write fixtures to test-data/.
         {"Gapless_SeamFrameAccuracy", testGaplessSeamFrameAccuracy, false},
         {"Gapless_TotalFrameCount_48kOnly", testGaplessTotalFrameCount48kOnly, false},
@@ -294,25 +337,39 @@ namespace
             true,
         },
         {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
-        // QW1 — crossfeed DSP conformance CF-1..CF-9 (parallel-safe: pure DSP, no env/tmp).
+        // Crossfeed: bs2b conformance CF-1..CF-9 and its own kernel stage CF-13 / CF-14
+        // (parallel-safe: pure DSP, no env/tmp).
         {
             "Crossfeed_Bypass_BitExact_GoldenMaster",
             testCrossfeedBypassBitExactGoldenMaster,
             true,
         },
         {"Crossfeed_NonStereo_PassThrough", testCrossfeedNonStereoPassThrough, true},
-        {"Crossfeed_Mono_LevelNeutral", testCrossfeedMonoLevelNeutral, true},
+        {"Crossfeed_CentreFlat_vs_bs2b", testCrossfeedCentreFlatVsBs2b, true},
         {"Crossfeed_ChannelSeparation", testCrossfeedChannelSeparation, true},
         {"Crossfeed_LpfCharacteristic", testCrossfeedLpfCharacteristic, true},
         {"Crossfeed_NoNaNInf", testCrossfeedNoNaNInf, true},
         {"Crossfeed_ClickFreeEnableDisable", testCrossfeedClickFreeEnableDisable, true},
         {"Crossfeed_CoeffRecomputeAcrossRates", testCrossfeedCoeffRecomputeAcrossRates, true},
-        {"Crossfeed_ReadBothWriteBoth", testCrossfeedReadBothWriteBoth, true},
+        {"Crossfeed_MatchesBs2bReference", testCrossfeedMatchesBs2bReference, true},
+        {"Crossfeed_PlaysAtAnyIntensity", testCrossfeedPlaysAtAnyIntensity, true},
+        {"Crossfeed_Off_BitExact", testCrossfeedOffBitExact, true},
         // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
         {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
         {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
         // QW1 CF-10: crossfeed ebur128 loudness-neutrality (real decorrelated stereo).
         {"Crossfeed_ebur128_LevelNeutral", testCrossfeedLoudnessNeutral, true},
+        // R1.1-A (council C-46): the UI's Integrated is the track's, not the session's.
+        {
+            "Loudness_MeterBridge_IntegratedPerTrack",
+            testLoudnessMeterBridgeIntegratedPerTrack,
+            true,
+        },
+        {
+            "Loudness_MeterBridge_BeginTrack_Concurrent",
+            testLoudnessMeterBridgeBeginTrackConcurrent,
+            true,
+        },
         // S7 / US-QA-02: TEST-ONLY limiter true-peak ceiling guarantee + ISP-detector accuracy
         // (parallel-safe: pure DSP, no env/tmp).
         {
@@ -321,6 +378,7 @@ namespace
             true,
         },
         {"Limiter_IspDetector_Accuracy_vs_ebur128", testLimiterIspDetectorAccuracy, true},
+        {"Limiter_TruePeak_CeilingWithCrossfeed", testLimiterTruePeakCeilingWithCrossfeed, true},
         // S7 / US-QA-03: 31-band EQ frequency-response sweep + bit-transparent bypass.
         // Parallel-safe: pure DSP, no env/tmp, fresh kernel per run.
         {"EQ_Sweep31Bands_48k", testEqSweep31Bands48k, true},
@@ -387,9 +445,8 @@ namespace
         {"EQ_PublishRejectsNonFinite", testEqPublishRejectsNonFinite, true},
         {"EQ_RT_IgnoresBadSnapshot", testEqRtIgnoresBadSnapshot, true},
         {"EQ_NaNInput_Recovers", testEqNaNInputRecovers, true},
-        {"EQ_FZ_Set_OnRenderThread", testEqFzSetOnRenderThread, false},
+        {"EQ_FZ_OnWhileRendering", testEqFzOnWhileRendering, false},
         {"EQ_NoSubnormalStates", testEqNoSubnormalStates, false},
-        {"RtSwappableResource_Lifecycle", testRtSwappableResourceLifecycle, true},
         {"Soak_DSPKernel_ZeroRtAlloc_EqPaths", testSoakDspKernelZeroRtAllocEqPaths, false},
         {"EQ_Reallocate_KeepsCurve", testEqReallocateKeepsCurve, true},
         {"EQ_Reallocate_NewRate", testEqReallocateNewRate, true},
@@ -446,6 +503,9 @@ namespace
         {"DeviceList_RuleOrder", testDeviceListRuleOrder, true},
         {"DeviceList_CompositionDecode", testDeviceListCompositionDecode, true},
         {"DeviceList_VerdictStrings", testDeviceListVerdictStrings, true},
+        // R1.1-A: the one output classifier — family, and headphones (crossfeed's gate).
+        {"OutputDevice_Family", testOutputDeviceFamily, true},
+        {"OutputDevice_Headphones", testOutputDeviceHeadphones, true},
         // Sprint G: the Pure seek's render gate (parallel-safe: own threads, no HAL, no env/tmp).
         {"RenderGate_ClosedGateTurnsRenderAway", testRenderGateClosedGateTurnsRenderAway, true},
         {"RenderGate_CloseWaitsForRenderInside", testRenderGateCloseWaitsForRenderInside, true},

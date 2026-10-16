@@ -1,7 +1,9 @@
 import DesignTokenKit
 import EQEditKit
 import Foundation
+import LibraryScan
 import PlaybackQueueKit
+import SettingsKit
 
 // MARK: - AudioViewModel
 
@@ -46,6 +48,7 @@ final class AudioViewModel {
             if isPlaying != oldValue {
                 onNowPlayingRefresh?()
             }
+            runTransportTickIfLive()
         }
     }
 
@@ -55,23 +58,45 @@ final class AudioViewModel {
         didSet { logUX("tab → \(selectedTab.rawValue)") }
     }
 
-    /// Live playhead position in seconds (polled at the spectrum-timer rate).
-    var playbackPosition: Double = 0
+    /// Live playhead position in seconds (polled at the transport tick's rate).
+    var playbackPosition: Double = 0 {
+        didSet {
+            let whole = playbackPosition.isFinite ? Int(max(0, playbackPosition)) : 0
+            if whole != elapsedSeconds {
+                elapsedSeconds = whole
+            }
+        }
+    }
+
+    /// The playhead in whole seconds — what the scrubber's time and its VoiceOver value show — written
+    /// only when the second changes (council C-53, VM-4): the readouts that show it re-evaluate once a
+    /// second, not with each of the tick's 20 playhead writes.
+    private(set) var elapsedSeconds = 0
     /// Resume point for a position-preserving Pause (D2 / UI-3): set by `pause()` to the playhead
     /// at the moment of pausing, moved by a scrub while paused, consumed + cleared by `play()` to
     /// resume from there via a seek. It belongs to the paused song's queue SLOT, not its row
     /// (S10.8 G): a queue edit that shifts the row keeps it. Any explicit new-track action
-    /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`.
-    var resumePoint: ResumePoint<UUID>?
+    /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`. When it
+    /// moves or goes while nothing plays, the scrubber follows at once (`placePlayhead`): no tick runs
+    /// then to carry it over (council C-52).
+    var resumePoint: ResumePoint<UUID>? {
+        didSet { placePlayhead(nil) }
+    }
+
     /// The number of the latest transport request (start, seek, stop) sent to the engine. The tick
     /// ignores engine samples older than it (`TransportSnapshot.isCurrent(for:)`): until the engine
     /// reaches the request — it can queue behind a slow device start — they describe the playback
     /// the request replaces. Not UI-bound.
     @ObservationIgnored var transportEpoch: UInt64 = 0
-    /// The number of the latest stop or pause request (`nextStopEpoch()`). A start numbered before
-    /// it was abandoned while it ran, so its `Task` neither primes the queue nor marks playing over
-    /// the stop (the UI showed Playing over a stopped engine — S10.8 G review). Not UI-bound.
-    @ObservationIgnored var transportStopEpoch: UInt64 = 0
+    /// The start or the stop (Stop, or Pause) still on its way to the engine: numbered, not finished
+    /// (council C-15, `+TransportCommands`). Set in the turn the user asks, so a press while it runs
+    /// acts on it — Space during a start pauses it, Next starts the next song, a second Play joins it —
+    /// and only the newest one's outcome is applied. `nil`: none; `isPlaying` says what plays. The play
+    /// / pause control reads it (`playIntent`). The transport tick runs while one is on its way.
+    var transportCommand: TransportCommand? {
+        didSet { runTransportTickIfLive() }
+    }
+
     /// The playback the on-deck requests belong to (`OnDeckTicket.session`): the epoch of the newest
     /// start. The engine applies only the newest request of the playback it is in (council D41).
     /// Not UI-bound.
@@ -93,6 +118,7 @@ final class AudioViewModel {
         didSet {
             announceOutputIdentityChange(from: oldValue)
             publishOutputTransport()
+            followHeadphones(from: oldValue)
         }
     }
 
@@ -102,9 +128,27 @@ final class AudioViewModel {
     /// User intent: whether to attempt the bit-perfect Pure HAL path on next playback start.
     /// Pure is mutually exclusive with DSP/EQ by construction (the bit-perfect stream is
     /// untouched). Setting this to `true` does NOT immediately affect running playback —
-    /// it takes effect on the next `startPlayback()` call.
+    /// it takes effect on the next `startPlayback()` call (not at a gapless join, KI-PB-05); there
+    /// Master Gain turns the device's own volume down instead (`+MasterGain`). Kept across launches
+    /// (`ListeningSettings`).
     var pureModeEnabled: Bool = false {
-        didSet { logUX("pureMode → \(pureModeEnabled)") }
+        didSet {
+            logUX("pureMode → \(pureModeEnabled)")
+            rememberListeningSettings()
+        }
+    }
+
+    /// "Use FFmpeg for other formats" (R1.1-A, founder decision FD-3): FFmpeg may read a file Apple's
+    /// decoder can't — its tags, and its sound in Pure Mode. Off by default: FFmpeg is an in-process
+    /// parser for files from anywhere, and while this is off nothing loads it. Sets the process's one
+    /// switch (`FFmpegOptIn`) — at launch from the kept setting, before the library starts any work.
+    /// Kept across launches (`ListeningSettings`).
+    var useFFmpeg: Bool = false {
+        didSet {
+            FFmpegOptIn.isOn = useFFmpeg
+            logUX("useFFmpeg → \(useFFmpeg)")
+            rememberListeningSettings()
+        }
     }
 
     /// "Keep playback on this device". `true` (default): the device the user picks wins over the
@@ -112,16 +156,23 @@ final class AudioViewModel {
     /// and playback goes back to it when it reconnects; until they pick one (in the menu, or by
     /// turning this on), the app follows the default. `false`: the app follows the system default.
     /// Pushed to the engine, whose output rule (`OutputDevicePolicy`) acts on it; a lost device
-    /// pauses either way.
+    /// pauses either way. Kept across launches, with the device it holds (`rememberOutputChoice`).
     var pinPlaybackToSelectedDevice: Bool = true {
         didSet {
             engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
             logUX("pinPlaybackToSelectedDevice → \(pinPlaybackToSelectedDevice)")
+            rememberOutputChoice() // turning it on chooses the device in use
         }
     }
 
+    /// The UID of the output device the user chose, as the engine holds it (`OutputDeviceSelection`):
+    /// read back after a pick or the switch turned on, kept across launches, and handed back to the
+    /// engine at engine-ready (DEV-1). `nil` when nothing is chosen — the device the app launches on is
+    /// never a choice. Not UI-bound.
+    @ObservationIgnored var chosenOutputUID: String?
+
     /// Live signal-path snapshot: which path is active, achieved rate, bit depth, etc.
-    /// Updated at 20 Hz in `tickSpectrum()`.
+    /// Updated by the transport tick (`pollEngineReadouts`) and when an intent it carries changes.
     var signalPath: SignalPathInfo = .init()
 
     /// Convenience derived property: `true` when the Pure HAL path is actually rendering.
@@ -131,15 +182,24 @@ final class AudioViewModel {
 
     // MARK: - Reimagine Intensity (QW-A)
 
-    /// Reimagine's wet/dry blend of the coloration stages (clarity, spatial, crossfeed). The EQ
-    /// sits AHEAD of the blend and plays at every Intensity (Sprint EQ decision 25): 0.0 =
+    /// Whether the Intensity control is offered. Not until its effects are real (founder decision
+    /// FD-2, 2026-10-14): Clarity and BRIR are pass-through stubs, so today the blend changes loudness,
+    /// not sound (council C-41, C-40) — it returns with S17. Until then Intensity is held at 0, its
+    /// default, and never restored; the inspector leaves its control (`ReimagineSectionView`) out.
+    static let offersIntensity = false
+
+    /// Reimagine's wet/dry blend of the coloration stages (clarity, spatial). The EQ sits AHEAD of
+    /// the blend and plays at every Intensity (Sprint EQ decision 25), and crossfeed after it, at its
+    /// own full strength (founder decision 2026-10-14): 0.0 =
     /// Reimagine off — the EQ alone, bit-perfect when the EQ is Off or flat; 1.0 = full blend.
-    /// Default 0.20, published at engine-ready (`publishPlaybackIntents()`).
+    /// Default 0 — a faithful default (FD-2): the kernel's P0 / P1 path, so no leveller, no blend
+    /// and, with the EQ off, no limiter (it was 0.20, which turned all three on). Published at
+    /// engine-ready (`publishPlaybackIntents()`); hidden and held at 0 (`offersIntensity`).
     /// The slider binds this in 0...1, so the stored value is always in range; the engine call
     /// is clamped defensively with a LOCAL — NEVER re-assign `intensity` inside its own `didSet`
     /// (under @Observable a self-assignment re-fires the setter → infinite recursion → crash).
     /// Ops dispatched via `+IntensityControl`.
-    var intensity: Float = 0.20 {
+    var intensity: Float = 0 {
         didSet {
             logUX("intensity → \(Int(max(0, min(1, intensity)) * 100)) %")
             publishIntensity()
@@ -148,36 +208,36 @@ final class AudioViewModel {
 
     // MARK: - Crossfeed (QW-C)
 
-    /// Whether the headphone crossfeed stage is active. Auto-disabled on switch to
-    /// a non-headphone device (see `AudioViewModel+Devices.swift`).
+    /// Crossfeed as the listener chose it — the intent, kept across launches. It plays only on
+    /// headphones (`crossfeedPlays`): an output that isn't holds it off without switching the choice
+    /// off, so it plays again when headphones are back (council C-12: the effective value used to
+    /// overwrite the intent).
     var crossfeedEnabled: Bool = false {
         didSet {
             logUX("crossfeed → \(crossfeedEnabled ? "on" : "off") [\(crossfeedStrength.displayName)]")
             publishCrossfeed()
+            rememberListeningSettings()
         }
     }
 
-    /// Crossfeed strength preset. Changes take effect immediately when crossfeed is on.
+    /// Crossfeed strength preset. Changes take effect immediately while crossfeed plays.
     var crossfeedStrength: CrossfeedStrength = .defaultStrength {
         didSet {
-            guard crossfeedEnabled else { return }
+            rememberListeningSettings()
+            guard crossfeedPlays else { return }
             logUX("crossfeed strength → \(crossfeedStrength.displayName)")
             publishCrossfeed()
         }
     }
 
-    /// `true` when the selected output device is a headphone-class device (wireless or USB).
-    ///
-    /// Note: USB also matches USB audio interfaces connected to monitor speakers — a known
-    /// heuristic false-positive. Precise detection requires `kAudioDevicePropertyTransportType`
-    /// / DataSource queries (tracked for a future story). On a non-headphone device with
-    /// crossfeed accidentally enabled, the only audible consequence is a mild centre-image
-    /// change from the LPF cross path — benign and fully reversible by toggling crossfeed off.
+    /// Whether crossfeed plays: chosen, and the output is headphones. What the engine gets.
+    var crossfeedPlays: Bool {
+        crossfeedEnabled && deviceIsHeadphones
+    }
+
+    /// `true` when the selected output device is a headphone-class device (`isHeadphones`).
     var deviceIsHeadphones: Bool {
-        switch selectedDevice?.type {
-        case .wireless, .usb: true
-        default: false
-        }
+        Self.isHeadphones(selectedDevice)
     }
 
     // MARK: - Master Gain
@@ -187,48 +247,39 @@ final class AudioViewModel {
     var lastMasterGainLogged: String = ""
 
     /// Master Gain: the app's own level in dB (S10.8 G; founder decision 2026-10-12, "Show the real
-    /// level"). Turn-down only — 0 dB, unity, at the top and by default (what plays at launch);
-    /// `MasterGainLaw` maps it to the slider and to the player's linear gain, and the inspector reads
-    /// it back as it plays. Published on every change and at engine-ready. On Pure the bit-perfect
-    /// stream is never scaled: the slider shows and sets the output device's own volume instead
-    /// (`+MasterGain`). Not kept across launches (a post-R1 item).
+    /// level"). Turn-down only — 0 dB, unity, at the top and on a new install; `MasterGainLaw` maps
+    /// it to the slider and to the player's linear gain, and the inspector reads it back as it plays.
+    /// Published on every change and at engine-ready. On Pure the bit-perfect stream is never scaled:
+    /// the engine turns the output device's own volume down by it instead (`+MasterGain`). Kept across
+    /// launches and never restored louder than it was left (council C-102; `ListeningSettings`).
     var masterGain: Float = MasterGainLaw.unity {
         didSet {
             logMasterGain("master gain → \(MasterGainLaw.text(masterGain))")
             publishMasterGain()
+            rememberListeningSettings()
         }
     }
 
-    /// The last level the user asked of the output device while Pure plays — so the knob holds it
-    /// until the device answers, and while the device still reads that answer (`masterGainControl`).
-    var deviceVolumeAsked: Float?
+    /// The output devices whose own volume Pure turned down and has not yet put back, as the engine
+    /// last reported them (`EngineSnapshot.pureVolumeLoans`) — kept with the listener's settings and
+    /// handed back to the engine at the next engine-ready, so a crash leaves no device turned down.
+    @ObservationIgnored var pureVolumeLoans: [PureVolumeLoan] = []
 
-    // MARK: - Spectrum Analyzer State
+    // MARK: - Live spectrum and the transport tick
 
-    /// 88 normalised bar heights in [0, 1] for the spectrum display.
-    /// Updated on the main thread at ~20 Hz by `spectrumTimer`.
-    /// Index 0 = lowest frequency band; index 87 = highest.
-    var spectrumBars: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
-    /// Peak-hold caps above the bars (S10.7 PR 3): published beside `spectrumBars` from the
-    /// same 20 Hz tick so `@Observable` coalesces both into ONE view invalidation. Values
-    /// resolve in `DesignTokenKit.PeakHoldTracker` (pure, time-fed — freeze-on-pause is
-    /// structural: no feed, no decay).
-    var peakCaps: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
-    var peakTracker = PeakHoldTracker(bandCount: SpectrumConstants.displayBarCount)
+    /// The one reader of the analysers for every live view — the lens, the EQ's silhouette,
+    /// Monitoring (council C-52). Not observable: the live views draw it on their own clock
+    /// (`LiveTimeline`), so the analyser's stream never passes through Observation.
+    @ObservationIgnored let spectrum: SpectrumSampler
 
-    /// Retained so we can invalidate on shutdown.
-    /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can read and invalidate it.
-    var spectrumTimer: Timer?
+    /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss, the readouts) at 20 Hz
+    /// while a song plays or a start, pause or stop is on its way (`transportTickIsLive`); it stops
+    /// itself once nothing is (council C-52). Internal (not private) for `+TransportTick`.
+    @ObservationIgnored var transportTimer: Timer?
 
-    /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss) at ~20 Hz — a
-    /// SEPARATE timer from `spectrumTimer` so auto-advance never shares fate with the spectrum
-    /// visualizer (VM-3). The visualizer timer may one day be gated on view visibility; transport
-    /// must keep polling whenever the engine is alive, so it has its own always-on timer.
-    var transportTimer: Timer?
-
-    /// Scratch array — reused each tick, never reallocated.
-    /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can write into it.
-    var spectrumScratch: [Float] = .init(repeating: 0, count: SpectrumConstants.bandCount)
+    /// Whether the transport tick may run: from engine-ready (`armTransportTick`) to shutdown. Off in
+    /// a view model whose engine was never started (tests that tick by hand, the picture sheets).
+    @ObservationIgnored var transportTickArmed = false
 
     // MARK: - Playlist State
 
@@ -307,26 +358,8 @@ final class AudioViewModel {
         }
     }
 
-    /// Number the next transport request (see `transportEpoch`). Call it synchronously, before the
-    /// request's `Task`, so no tick in between reads the replaced playback as current.
-    func nextTransportEpoch() -> UInt64 {
-        transportEpoch &+= 1
-        return transportEpoch
-    }
-
-    /// Number the next STOP or PAUSE request: a transport request (`nextTransportEpoch()`) that
-    /// also ends any start still in flight (`transportStopEpoch`).
-    func nextStopEpoch() -> UInt64 {
-        transportStopEpoch = nextTransportEpoch()
-        return transportStopEpoch
-    }
-
-    /// Number the next on-deck request: the newest start's playback, and the next place in the
-    /// order requests are made. Call it synchronously, in the turn that decides the request.
-    func nextOnDeckTicket() -> OnDeckTicket {
-        onDeckSequence &+= 1
-        return OnDeckTicket(session: onDeckSession, sequence: onDeckSequence)
-    }
+    // Numbering what the view model asks of the engine (transport requests, on-deck requests) lives
+    // in AudioViewModel+TransportCommands.swift.
 
     /// The queue slot of the selected song (`nil` = none, or an index out of range).
     var selectedSlotID: UUID? {
@@ -366,7 +399,7 @@ final class AudioViewModel {
 
     // MARK: - Playback Modes (WinAmp Style)
 
-    /// Shuffle mode: when enabled, plays tracks in random order.
+    /// Shuffle mode: when enabled, plays tracks in random order. Kept across launches.
     /// didSet: shuffle/repeat flip `canGoNext`/`canGoPrevious`, so refresh the remote-command
     /// enable state (S10.4 QA #1) — else Control Center's Next/Prev stay stale until the next play.
     var shuffleEnabled = false {
@@ -374,15 +407,17 @@ final class AudioViewModel {
             if shuffleEnabled != oldValue {
                 onNowPlayingRefresh?()
             }
+            rememberListeningSettings()
         }
     }
 
-    /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
+    /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one. Kept across launches.
     var repeatMode: Int = 0 {
         didSet {
             if repeatMode != oldValue {
                 onNowPlayingRefresh?()
             }
+            rememberListeningSettings()
         }
     }
 
@@ -390,30 +425,37 @@ final class AudioViewModel {
 
     /// Last observed seam count (the snapshot's `transitionCount`). An increase means the on-deck
     /// track has become the current track (a gapless seam just completed).
-    /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
+    /// Internal (not private) so the transport-tick and auto-advance extensions can read/write it.
     var lastTransitionCount: UInt64 = 0
 
     /// Playlist index of the track currently on deck (set with the engine's request by `armOnDeck`).
     /// `nil` means no track is queued (end of playlist, repeat-one handled inline,
     /// or playback has not started yet).
-    /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
+    /// Internal (not private) so the transport-tick and auto-advance extensions can read/write it.
     var pendingNextIndex: Int?
 
     let engine: any AudioPlaybackEngine
     /// Where the now-playing cursor persists (`+QueueHydration`): the launch's
     /// `AppDataLocation.defaults`. The picture-sheet renderer injects its own suite.
     let defaults: UserDefaults
+    /// The listener's settings, kept in `defaults` (`+ListeningSettings`).
+    let settingsStore: SettingsStore
 
+    /// A view model over `defaults` that starts with the settings the listener left there — on a new
+    /// install, the faithful default (FD-2).
     init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
         self.defaults = defaults
         self.engine = engine
+        settingsStore = SettingsStore(defaults: defaults)
+        spectrum = SpectrumSampler(engine: engine)
         eqDesignRate = engine.snapshot().eqDesignRate
+        restoreListeningSettings()
     }
 
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
     // AudioViewModel+Lifecycle.swift.
 
-    // Spectrum timer + tickSpectrum live in AudioViewModel+SpectrumTimer.swift.
+    // The transport tick (tickTransport) lives in AudioViewModel+TransportTick.swift.
 
     // Device management (selectDevice, refreshDevices, retryInitialization) lives in AudioViewModel+Devices.swift.
 

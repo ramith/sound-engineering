@@ -3,9 +3,9 @@
 //
 // PureModeSource.h — RT-safe pull-source interface for the HAL output engine.
 //
-// CoreAudio-FREE: a plain virtual interface the engine pulls float PCM from. B2b will add a
-// file-decode source; B2a ships a ToneSource for smoke-testing without a file. -fno-exceptions /
-// -fno-rtti clean (no throw / dynamic_cast / typeid).
+// CoreAudio-FREE: a plain virtual interface the engine pulls float PCM from — implemented by the
+// file decoder (FileDecodeSource) and the gapless concatenator over it (GaplessSource).
+// -fno-exceptions / -fno-rtti clean (no throw / dynamic_cast / typeid).
 //
 
 #include <cstdint>
@@ -39,22 +39,6 @@ namespace AdaptiveSound
         PureModeSource& operator=(const PureModeSource&) = default;
         PureModeSource(PureModeSource&&) = default;
         PureModeSource& operator=(PureModeSource&&) = default;
-    };
-
-    // A simple sine-tone source for smoke-testing the engine without a decoded file.
-    // Generates the same tone on every channel. Allocation-free and lock-free in pullFloat.
-    class ToneSource final : public PureModeSource
-    {
-      public:
-        // freqHz: tone frequency; amplitude: peak in [0, 1]; sampleRate: the device render rate.
-        ToneSource(double freqHz, float amplitude, double sampleRate) noexcept;
-
-        uint32_t pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept override;
-
-      private:
-        double phase_ = 0.0;    // current phase in radians
-        double phaseInc_ = 0.0; // 2*pi*freq / sampleRate
-        float amplitude_ = 0.0F;
     };
 
 } // namespace AdaptiveSound

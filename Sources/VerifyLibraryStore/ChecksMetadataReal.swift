@@ -2,8 +2,8 @@
 // one thing stubs/synthetic data can't prove. Drives the full pipeline (LibraryScanner
 // scan → MetadataScanner pass → MetadataExtractor) over checked-in self-made fixtures
 // (see Tests/Fixtures/artwork-audio/README.md) and asserts the store row carries the
-// fixtures' KNOWN embedded tags + cached cover — for the AVFoundation (m4a) and FFmpeg
-// (flac) paths. Same VerifyAUGraph idiom.
+// fixtures' KNOWN embedded tags + cached cover — for m4a and flac, both read by AVFoundation (a
+// FLAC's cover by FLACPicture; FFmpeg is an opt-in, off here — R1.1-A, FD-3). Same VerifyAUGraph idiom.
 
 import Foundation
 import LibraryScan
@@ -22,14 +22,14 @@ private func fixtureURL(_ name: String) -> URL {
 /// `make regenerate-metadata-fixtures` ever changes the cover, update this + the README table.
 private let knownCoverSHA256 = "4c8ff0b8b24e8f75341bf3dae1e8370621da5eed3e2d756fbef54672a5fedcb2"
 
-// MARK: - y / z — real extraction (AVFoundation m4a, FFmpeg flac)
+// MARK: - y / z — real extraction (m4a, and flac without FFmpeg)
 
 func checkRealMetadataM4A(number: Int, url: URL) async -> Bool {
     await runRealFixture("fixture.m4a", path: "AVFoundation", number: number, url: url)
 }
 
 func checkRealMetadataFLAC(number: Int, url: URL) async -> Bool {
-    await runRealFixture("fixture.flac", path: "FFmpeg", number: number, url: url)
+    await runRealFixture("fixture.flac", path: "AVFoundation + FLAC PICTURE", number: number, url: url)
 }
 
 /// Stage `name` into a fresh scan root, run scan + the metadata pass, and assert the store

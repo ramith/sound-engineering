@@ -24,19 +24,23 @@ import TrackLoudnessKit
 /// leaf `os_unfair_lock` (`stateLock`, see `AudioEngineBridge+SharedState.swift`) for the small
 /// set of fields the main thread's `snapshot()` and borrows read while a queue writes. The main
 /// thread never waits on a queue or on AVFAudio: docs/architecture/architecture.md, "Threading
-/// rules (app ↔ engine)". No field is mutated from two domains without that
-/// discipline; the lock is a leaf (no other lock/queue taken while held) so no deadlock
+/// rules (app ↔ engine)". That is the model, held by convention, not by a type: the council found
+/// it broken in three places (BR-1) that the one transport owner (W2) is to close — the
+/// configuration-change re-establish drives the engine and player from `configChangeQueue` while
+/// `engineQueue` runs the transport (a play-intent re-check narrows that race, it does not close
+/// it); a failed gapless roll restarts through `playFile` on a global queue
+/// (`openNextFileOrRestart`); and the two AU instantiate completions finish the graph build on
+/// whatever queue AVFAudio calls them on (`instantiateAndBuildGraph`). The lock is a leaf (no
+/// other lock/queue taken while held) so no deadlock
 /// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
 /// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /
-/// SpectrumDoubleBuffer / the C loudness-meter handle). The public API is therefore safe
+/// SpectrumTripleBuffer / the C loudness-meter handle). The public API is therefore safe
 /// to call from any thread — which is why the class can honestly be `Sendable` even though
 /// the compiler cannot see the queue/lock model. An `actor` would violate RT-safety
 /// (executor hops on the control path, cannot express the tap/render boundary).
 final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var avEngine: AVAudioEngine?
     var playerNode: AVAudioPlayerNode?
-    /// Internal (not private) so `AudioEngineBridge+Playback.swift` can read/write it.
-    var referenceToneBuffer: AVAudioPCMBuffer?
 
     // MARK: - Tap analysis (spectrum, loudness, monitoring)
 
@@ -47,6 +51,9 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// replacing it can no longer free an object under a read in flight (review: the snapshot's
     /// meter read raced `retryInitialization`). The RT taps capture what they need once, at install.
     var storedTapAnalysis = TapAnalysis()
+
+    /// Whether Monitoring shows: its analysers run only then. Captured by the before / after taps.
+    let monitorAnalysis = MonitorAnalysisSwitch()
 
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
@@ -75,7 +82,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var transportClock: DispatchSourceTimer?
 
     /// The epoch of the latest transport operation the engine has begun (`TransportSnapshot.epoch`),
-    /// stamped on every sample. Confined to `engineQueue`.
+    /// stamped on every sample; an operation older than it is dropped (`beginTransportOperation`).
+    /// Confined to `engineQueue`.
     var transportEpoch: UInt64 = 0
 
     /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as
@@ -242,19 +250,32 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// `engineQueue`: written by `publishMasterGain`, read where a player is built or started.
     var masterGainDecibels: Float = MasterGainLaw.unity
 
-    /// The device Pure plays on, whose volume Master Gain shows and sets, and the listener following
-    /// that volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on
-    /// `engineQueue` (Pure start), taken on `engineQueue` (teardown), read on `deviceVolumeQueue`.
+    /// The device whose volume Pure holds (and Master Gain steers), and the listener following that
+    /// volume (`watchDeviceVolume`) — for as long as the hold lasts, through a pause; `nil` otherwise.
+    /// Guarded by `stateLock`: set and taken on `engineQueue` (`enterPureVolume`, `pureVolumeEvent`),
+    /// read on `deviceVolumeQueue`.
     var deviceVolumeWatch: DeviceVolumeWatch?
 
-    /// Serial queue for the Pure device's volume: the user's sets (`requestDeviceVolume`) and the
-    /// device's change listener — HAL calls that must never run on the main thread.
+    /// Serial queue for the Pure device's volume: Master Gain on Pure (`MasterGainOnPure` — the entry,
+    /// the slider's moves, leaving, the loans a previous run left) and the device's change listener —
+    /// HAL calls that must never run on the main thread.
     let deviceVolumeQueue = DispatchQueue(label: "com.adaptivesound.device-volume")
 
-    /// The newest level asked of the Pure device, not yet applied, and whether a drain is posted
-    /// (latest value wins — `requestDeviceVolume`). Guarded by `stateLock`.
-    var pendingDeviceVolume: Float?
-    var deviceVolumeDrainPosted = false
+    /// Master Gain on Pure: the loan of the device's volume Pure holds, and those not yet put back.
+    /// Confined to `deviceVolumeQueue`.
+    var masterGainOnPure = MasterGainOnPure()
+
+    /// The Master Gain the Pure device was last steered to (the listener's change is read against it).
+    /// Confined to `deviceVolumeQueue`.
+    var pureGain: Float = MasterGainLaw.unity
+
+    /// The newest Master Gain for the Pure device, not yet applied, and whether a drain is posted
+    /// (latest value wins — `steerPureVolume`). Guarded by `stateLock`.
+    var pendingPureGain: Float?
+    var pureGainDrainPosted = false
+
+    /// `masterGainOnPure.allLoans` as last published, for the snapshot. Guarded by `stateLock`.
+    var publishedPureVolumeLoans: [PureVolumeLoan] = []
 
     // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 
@@ -310,7 +331,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// data has been published yet (engine not running or no signal).
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool {
-        tapAnalysis.spectrum?.doubleBuffer.read(into: &out) ?? false
+        tapAnalysis.spectrum?.frames.read(into: &out) ?? false
     }
 
     // MARK: - Monitoring read (per-channel before/after)
@@ -327,7 +348,12 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         let analysis = tapAnalysis
         let analyzers = (tap == .before) ? analysis.before : analysis.after
         guard channel >= 0, channel < analyzers.count else { return false }
-        return analyzers[channel].doubleBuffer.read(into: &out)
+        return analyzers[channel].frames.read(into: &out)
+    }
+
+    /// Run the per-channel analysers (Monitoring shows) or rest them. One atomic store.
+    func setMonitorAnalysis(_ isOn: Bool) {
+        monitorAnalysis.set(isOn)
     }
 
     // EQ control plane (withEffectsAU + publishEQ) lives in AudioEngineBridge+EQControl.swift.
@@ -338,7 +364,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// through a borrow of the AU). No AVFAudio, no HAL, no queue hop.
     func snapshot() -> EngineSnapshot {
         EngineSnapshot(transport: transportSnapshots.read(), signalPath: loadSignalPath(),
-                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
+                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate(),
+                       pureVolumeLoans: withStateLock { publishedPureVolumeLoans })
     }
 
     /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`), read through

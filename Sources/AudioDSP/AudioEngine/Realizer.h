@@ -4,7 +4,6 @@
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
 #include "../Loudness/TrackLoudnessGain.h" // the loudness-neutral EQ gain (EQ1c)
-#include "../Spatial/CrossfeedModule.h"    // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -97,11 +96,11 @@ namespace AdaptiveSound
             float value = 1.0F;
         };
 
-        // The crossfeed intent; the coefficients are derived from it at the owned rate.
+        // The crossfeed intent; the coefficients are derived from it at the owned rate. A preset
+        // plays at its full strength: there is no depth control (R1.1-A).
         struct CrossfeedIntent
         {
             uint32_t enabled = 0U;
-            float level = 0.0F;
             uint32_t preset = 0U; // CrossfeedPreset value
         };
 
@@ -126,8 +125,8 @@ namespace AdaptiveSound
         // Intensity, clamped to [0,1].
         void setPendingIntensity(float value);
 
-        // Crossfeed: level clamped to [0,1], preset to the valid CrossfeedPreset range.
-        void setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset);
+        // Crossfeed: on/off, and the preset (clamped to the valid CrossfeedPreset range).
+        void setPendingCrossfeed(uint32_t enabled, uint32_t preset);
 
         // --- Track loudness (any thread; each posts to the queue) ------------------------
         // A track's loudness profile from the analyzer (a prefix, then the whole track; the

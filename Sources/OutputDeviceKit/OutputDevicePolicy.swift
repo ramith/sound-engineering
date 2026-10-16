@@ -18,7 +18,8 @@
 //     and never puts a fallback back as the default. When the chosen device returns it is the app's
 //     device again: the next Play plays on it, and playback that resumed on the fallback moves back.
 //   • The device the app starts on is not a choice (R1): only a pick in the device menu, or turning
-//     the switch on, is. Until then nothing is chosen, and pinned behaves exactly as follow.
+//     the switch on, is. Until then nothing is chosen, and pinned behaves exactly as follow. The choice
+//     is kept across launches (R1.1, DEV-1) and handed back at launch (`.choiceRestored`).
 //   • OFF (follow): the app takes the system default as its device, playing or not.
 
 /// What the app is playing through when an output event arrives.
@@ -44,6 +45,10 @@ public enum OutputDeviceEvent: Sendable, Equatable {
     case engineReconfigured
     /// The Enhanced engine is about to start playback.
     case enhancedStarting
+    /// The device the user chose before the last quit was handed back at launch (DEV-1): the rule is
+    /// asked as for any change while nothing plays, so the app's device becomes the chosen one when it
+    /// is here (pinned), without touching the system default.
+    case choiceRestored
 }
 
 /// The state the rule decides from, read fresh for every event.

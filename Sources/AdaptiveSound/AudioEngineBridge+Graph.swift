@@ -8,7 +8,7 @@ import Foundation
 /// Two-AU graph construction (instantiate/attach/connect `player -> effectsAU -> spatialAU ->
 /// mainMixer -> output`) and the analysis-tap install/remove, factored out of the core
 /// `AudioEngineBridge` class body into a same-module extension to keep the class focused (SwiftLint
-/// `type_body_length`). The members touched here (`avEngine`, `playerNode`, `dspAudioUnit`,
+/// `type_body_length`). The members touched here (`avEngine`, `playerNode`, `effectsNode`,
 /// `spatialAudioUnit`, the analyzer arrays, the meter/analyzer handles, the
 /// `tapInstalled` flags) are module-internal on the base class so this extension can reach them.
 extension AudioEngineBridge {
@@ -94,7 +94,7 @@ extension AudioEngineBridge {
     /// Pre-allocate the spectrum analyzer, loudness meter, and per-channel monitoring analyzers off
     /// the audio thread (vDSP_create_fftsetup allocates), keyed to the mixer's output sample rate.
     private func allocateAnalysisState(engine: AVAudioEngine, format: AVAudioFormat) {
-        let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
+        let mixerSampleRate = engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
         let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
         // Precondition: no meter is set here. This runs only from initialize()'s graph build, and
         // the LEAK #1 re-init guard tears down (drops the analysis AFTER removeSpectrumTap) before
@@ -104,14 +104,10 @@ extension AudioEngineBridge {
         // the pre-DSP (player) and post-DSP (effects AU) tap points. N-channel by construction.
         let channelCount = Int(format.channelCount)
         setTapAnalysis(TapAnalysis(
-            spectrum: SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate),
-            meter: LoudnessMeterHandle(sampleRate: Double(sampleRate)),
-            before: (0 ..< channelCount).map { _ in
-                SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-            },
-            after: (0 ..< channelCount).map { _ in
-                SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-            }
+            spectrum: SpectrumAnalyzer(sampleRate: sampleRate),
+            meter: LoudnessMeterHandle(sampleRate: sampleRate),
+            before: (0 ..< channelCount).map { _ in SpectrumAnalyzer(sampleRate: sampleRate) },
+            after: (0 ..< channelCount).map { _ in SpectrumAnalyzer(sampleRate: sampleRate) }
         ))
     }
 
@@ -144,7 +140,7 @@ extension AudioEngineBridge {
         let meterHandle = analysis.meter?.handle
         guard let analyzer = analysis.spectrum else { return }
         mixer.installTap(onBus: 0,
-                         bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                         bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
                          format: mixerFormat) { [analyzer, meterHandle] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzer` (like the raw `meterHandle`)
             // is captured strongly at install, so the tap does zero refcount work (BS2). Valid because
@@ -181,17 +177,14 @@ extension AudioEngineBridge {
         guard let player = playerNode else { return }
         let playerFormat = player.outputFormat(forBus: 0)
         let analyzers = tapAnalysis.before // strong capture at install (BS2); see installMixerTap
+        let monitoring = monitorAnalysis
         player.installTap(onBus: 0,
-                          bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                          format: playerFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                          bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
+                          format: playerFormat) { [analyzers, monitoring] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` is captured strongly at
             // install and stays valid until removeSpectrumTap() drops this block (reconfigure only
             // resizes the arrays while the taps are removed).
-            let abl = buffer.mutableAudioBufferList
-            let channels = min(analyzers.count, Int(buffer.format.channelCount))
-            for index in 0 ..< channels {
-                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-            }
+            Self.analyseChannels(buffer, with: analyzers, shown: monitoring.isOn)
         }
         beforeTapInstalled = true
     }
@@ -203,18 +196,29 @@ extension AudioEngineBridge {
         guard let effectsUnit = effectsNode else { return }
         let auFormat = effectsUnit.outputFormat(forBus: 0)
         let analyzers = tapAnalysis.after // strong capture at install (BS2); see installMixerTap
+        let monitoring = monitorAnalysis
         effectsUnit.installTap(onBus: 0,
-                               bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                               format: auFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                               bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
+                               format: auFormat) { [analyzers, monitoring] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` captured strongly at install
             // (valid until removeSpectrumTap() drops this block; reconfigure resizes tap-removed).
-            let abl = buffer.mutableAudioBufferList
-            let channels = min(analyzers.count, Int(buffer.format.channelCount))
-            for index in 0 ..< channels {
-                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-            }
+            Self.analyseChannels(buffer, with: analyzers, shown: monitoring.isOn)
         }
         afterTapInstalled = true
+    }
+
+    /// A per-channel tap's buffer: each channel through its analyser while Monitoring shows, every
+    /// analyser resting otherwise (council C-52). AUDIO THREAD: real-time safe.
+    private static func analyseChannels(_ buffer: AVAudioPCMBuffer, with analyzers: [SpectrumAnalyzer], shown: Bool) {
+        let abl = buffer.mutableAudioBufferList
+        let channels = min(analyzers.count, Int(buffer.format.channelCount))
+        for index in 0 ..< channels {
+            if shown {
+                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+            } else {
+                analyzers[index].rest()
+            }
+        }
     }
 
     func removeSpectrumTap() {

@@ -17,73 +17,6 @@ import Testing
 /// tests are skipped as root, which can read any folder.
 @Suite("A sweep needs positive evidence (LIB-02)", .serialized)
 struct SweepEvidenceTests {
-    /// A store with one music folder, in a temporary directory.
-    private struct Library {
-        let base: URL
-        let music: URL
-        let store: LibraryStore
-        let root: Int64
-
-        static func make(_ tag: String) async throws -> Library {
-            let base = FileManager.default.temporaryDirectory
-                .appendingPathComponent("sweep-evidence-\(tag)-\(UUID().uuidString)", isDirectory: true)
-            let music = base.appendingPathComponent("Music", isDirectory: true)
-            try FileManager.default.createDirectory(at: music, withIntermediateDirectories: true)
-            let store = try await LibraryStore(url: base.appendingPathComponent("library.sqlite3"), appBuild: "test")
-            return try await Library(base: base, music: music, store: store, root: store.addRoot(music))
-        }
-
-        /// Write `count` songs into `folder` under the music folder.
-        @discardableResult
-        func songs(in folder: String, count: Int, prefix: String = "Song") throws -> [URL] {
-            let directory = music.appendingPathComponent(folder, isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            return (0 ..< count).map { index in
-                let url = directory.appendingPathComponent(String(format: "%03d \(prefix).flac", index))
-                FileManager.default.createFile(atPath: url.path, contents: Data([UInt8(index & 0xFF), 1, 2]))
-                return url
-            }
-        }
-
-        /// A user playlist of every song in the folder, each played once — what a sweep must not take.
-        func playlistOfEverySong() async throws -> Int64 {
-            let playlist = try await store.createPlaylist(name: "Keep me")
-            let ids = try await store.tracks(inFolder: root).map(\.id)
-            _ = try await store.appendEntries(playlistID: playlist, trackIDs: ids)
-            for id in ids {
-                try await store.incrementPlayCount(id: id, playedAt: 1_760_000_000)
-            }
-            return playlist
-        }
-
-        /// The refusal a walk of this folder throws for `reason`, the folder holding `stored` songs.
-        func refusal(_ reason: SweepRefusal.Reason, stored: Int) -> SweepRefusal {
-            SweepRefusal(folderID: root, reason: reason, storedRowCount: stored)
-        }
-
-        func discard() {
-            try? FileManager.default.removeItem(at: base)
-        }
-    }
-
-    /// The drive a walk finds at the folder's path: an identity the test sets, and can change.
-    private final class DriveAtRoot: @unchecked Sendable {
-        private let lock = NSLock()
-        private var current: RootIdentity?
-
-        init(_ identity: RootIdentity?) {
-            current = identity
-        }
-
-        func change(to identity: RootIdentity?) {
-            lock.withLock { current = identity }
-        }
-
-        var scanner: LibraryScanner {
-            LibraryScanner(rootIdentity: { _ in self.lock.withLock { self.current } })
-        }
-    }
-
     // MARK: LIB-02a — an unreadable subfolder
 
     /// A subfolder the walk may not read (its permissions changed, another user's folder, a folder
@@ -91,7 +24,7 @@ struct SweepEvidenceTests {
     @Test("LIB-02a: an unreadable subfolder's songs survive a walk", .enabled(if: getuid() != 0),
           arguments: [0o000, 0o444] as [UInt16])
     func unreadableSubfolderIsNotSwept(mode: UInt16) async throws {
-        let library = try await Library.make("lib02a")
+        let library = try await MusicFolder.make("lib02a")
         let albumB = library.music.appendingPathComponent("Album B", isDirectory: true)
         defer {
             chmod(albumB.path, 0o755)
@@ -107,9 +40,8 @@ struct SweepEvidenceTests {
         try await library.store.incrementPlayCount(id: song, playedAt: 1_760_000_100)
 
         #expect(chmod(albumB.path, mode_t(mode)) == 0)
-        await #expect(throws: library.refusal(.incompleteWalk, stored: 10)) {
-            try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
-        }
+        let locked = try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
+        #expect(locked.orphansSwept == 0)
         chmod(albumB.path, 0o755)
 
         #expect(try await library.store.trackCount(inFolder: library.root) == 10)
@@ -119,6 +51,61 @@ struct SweepEvidenceTests {
         #expect(readable.orphansSwept == 0)
     }
 
+    // MARK: C-55 — the evidence is scoped to what the walk could not read
+
+    /// A subfolder the walk can NEVER read (a NAS's locked `#recycle`, another user's folder) made every
+    /// walk of its music folder incomplete: a song deleted anywhere else in the folder was never swept,
+    /// and the walk's refusal skipped the tag pass for its new songs (council C-55). The walk is
+    /// evidence for everything it did read: only the songs under the unreadable subfolder are kept.
+    @Test("C-55: an unreadable subfolder keeps its own songs, and the rest of the folder sweeps",
+          .enabled(if: getuid() != 0), arguments: [0o000, 0o444] as [UInt16])
+    func unreadableSubfolderDoesNotBlockSweepsElsewhere(mode: UInt16) async throws {
+        let library = try await MusicFolder.make("c55")
+        let recycle = library.music.appendingPathComponent("#recycle", isDirectory: true)
+        defer {
+            chmod(recycle.path, 0o755)
+            library.discard()
+        }
+        let albumA = try library.songs(in: "Album A", count: 5)
+        let recycled = try library.songs(in: "#recycle", count: 3, prefix: "Old")
+        _ = try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
+        let playlist = try await library.playlistOfEverySong()
+        #expect(chmod(recycle.path, mode_t(mode)) == 0)
+
+        try FileManager.default.removeItem(at: albumA[0])
+        let added = try library.songs(in: "Album A", count: 1, prefix: "New")[0]
+        let walk = try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
+
+        #expect(walk.orphansSwept == 1, "a song deleted beside an unreadable subfolder was not swept")
+        #expect(try await library.store.track(url: albumA[0]) == nil)
+        #expect(try await library.store.track(url: added) != nil)
+        #expect(try await library.store.entries(inPlaylist: playlist).count == 7)
+        for song in recycled {
+            let row = try await library.store.track(url: song)
+            let id = try #require(row, "an unreadable subfolder's song was swept").id
+            #expect(try await library.store.userState(trackID: id)?.playCount == 1)
+        }
+    }
+
+    /// A music folder the walk cannot read at all (its permissions changed, a privacy setting denies
+    /// it) is no evidence of anything: the walk is refused, and every song is kept.
+    @Test("C-55: a music folder the walk cannot open is refused, every song kept", .enabled(if: getuid() != 0))
+    func unreadableMusicFolderIsRefused() async throws {
+        let library = try await MusicFolder.make("c55-root")
+        defer {
+            chmod(library.music.path, 0o755)
+            library.discard()
+        }
+        try library.songs(in: "Album A", count: 4)
+        _ = try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
+        #expect(chmod(library.music.path, 0o000) == 0)
+        await #expect(throws: library.refusal(.incompleteWalk, stored: 4)) {
+            try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
+        }
+        chmod(library.music.path, 0o755)
+        #expect(try await library.store.trackCount(inFolder: library.root) == 4)
+    }
+
     // MARK: LIB-02b — the drive goes away mid-walk
 
     /// The drive goes away in the middle of a walk (a USB drive unplugged, a NAS share dropping, a
@@ -126,7 +113,7 @@ struct SweepEvidenceTests {
     /// folder leaves its path after the first committed batch, as an unmounted drive's paths do.
     @Test("LIB-02b: a drive that goes away mid-walk keeps the songs the walk had not reached")
     func driveGoneMidWalkIsNotSwept() async throws {
-        let library = try await Library.make("lib02b")
+        let library = try await MusicFolder.make("lib02b")
         defer { library.discard() }
         for album in 0 ..< 20 {
             try library.songs(in: "Album \(album)", count: 40)
@@ -162,7 +149,7 @@ struct SweepEvidenceTests {
     /// onto Y's songs; and (dev, inode) cannot tell the drives apart, so only the volume UUID can.
     @Test("LIB-02d: another drive at the folder's path is never walked, swept or re-stamped")
     func otherDriveAtRootPathIsNotSwept() async throws {
-        let library = try await Library.make("lib02d")
+        let library = try await MusicFolder.make("lib02d")
         defer { library.discard() }
         let driveX = RootIdentity(dev: 16_777_234, inode: 2, volume: "X-UUID")
         let driveY = RootIdentity(dev: 16_777_235, inode: 3, volume: "Y-UUID")
@@ -203,7 +190,7 @@ struct SweepEvidenceTests {
 
     /// A folder bound to no drive, its drive away (see `unboundFolderWithDriveAway`).
     private struct UnboundFolder {
-        let library: Library
+        let library: MusicFolder
         let drive: DriveAtRoot
         let playlist: Int64
     }
@@ -212,7 +199,7 @@ struct SweepEvidenceTests {
     /// its drive; here, first walked on a volume with no UUID, which leaves the same state. Its 40 songs
     /// are on drive X, in a playlist, played; then X goes away (its songs move out of the folder).
     private func unboundFolderWithDriveAway(_ tag: String) async throws -> UnboundFolder {
-        let library = try await Library.make(tag)
+        let library = try await MusicFolder.make(tag)
         try library.songs(in: "Albums", count: 40, prefix: "X")
         let drive = DriveAtRoot(RootIdentity(dev: 60, inode: 6, volume: nil))
         _ = try await drive.scanner.scan(root: library.music, folderID: library.root, into: library.store)
@@ -283,7 +270,7 @@ struct SweepEvidenceTests {
     /// root is now checked before every batch, so the walk stops at the first batch after the swap.
     @Test("a drive swapped mid-walk stops the walk at the next batch, unbound to the other drive")
     func driveSwappedMidWalkCommitsNoMore() async throws {
-        let library = try await Library.make("swap")
+        let library = try await MusicFolder.make("swap")
         defer { library.discard() }
         for album in 0 ..< 3 {
             try library.songs(in: "Album \(album)", count: 300)
@@ -304,7 +291,7 @@ struct SweepEvidenceTests {
     /// A walk that DID see everything still reaps a genuinely deleted song.
     @Test("LIB-02 control: a genuine delete after a complete walk is still swept")
     func genuineDeleteIsSwept() async throws {
-        let library = try await Library.make("lib02c")
+        let library = try await MusicFolder.make("lib02c")
         defer { library.discard() }
         let songs = try library.songs(in: "A", count: 5)
         _ = try await LibraryScanner().scan(root: library.music, folderID: library.root, into: library.store)
@@ -318,7 +305,7 @@ struct SweepEvidenceTests {
     /// as before while its songs are where the library has them (ATK-6b/6c: when none is, it is not).
     @Test("a folder on a volume with no UUID is walked and swept as before")
     func volumeWithoutUUIDKeepsTodaysBehaviour() async throws {
-        let library = try await Library.make("no-uuid")
+        let library = try await MusicFolder.make("no-uuid")
         defer { library.discard() }
         let songs = try library.songs(in: "A", count: 5)
         let drive = DriveAtRoot(RootIdentity(dev: 50, inode: 5, volume: nil))

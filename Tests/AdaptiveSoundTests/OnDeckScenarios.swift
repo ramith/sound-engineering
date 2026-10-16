@@ -226,10 +226,11 @@ enum OnDeckScenarios {
     }
 
     /// AMEND-1: t0 plays; the user clicks t1, then t3; the two starts reach the engine in the other
-    /// order. (Which track then plays is the transport-command race, P4-2 — out of scope.) The newest
-    /// playback's on-deck must still arm: the join stays gapless.
-    static func startOvertake(pure: Bool, semantics: ArmSemantics) async throws -> Outcome {
-        let rig = try await Rig.playing(pure: pure, semantics: semantics)
+    /// order. The newest start plays (council C-15: the engine drops the overtaken t1 — before, it ran
+    /// and played t1 under the app's t3), and its on-deck still arms: the join stays gapless.
+    static func startOvertake(pure: Bool, semantics: ArmSemantics,
+                              commands: CommandSemantics = .dropsOvertaken) async throws -> Outcome {
+        let rig = try await Rig.playing(pure: pure, semantics: semantics, commands: commands)
         rig.engine.holdTransport(true)
         rig.vm.playTrack(at: 1)
         rig.vm.playTrack(at: 3)
@@ -245,8 +246,8 @@ enum OnDeckScenarios {
         let armed = rig.engine.armed
         let audible = rig.engine.current
         try await rig.endTrackAndFollow()
-        let ok = armed != nil && armed == promised && rig.engine.current == rig.shown
-        return Outcome(ok: ok, detail: "START-OVERTAKE on \(pathName(pure)) [\(semantics)]: HEARS "
+        let ok = audible == track(3) && armed != nil && armed == promised && rig.engine.current == rig.shown
+        return Outcome(ok: ok, detail: "START-OVERTAKE on \(pathName(pure)) [\(semantics), \(commands)]: HEARS "
             + "\(name(audible)) / SHOWS t3, promised \(name(promised)), armed \(name(armed)); after the end "
             + "HEARS \(name(rig.engine.current)) / SHOWS \(name(rig.shown))")
     }

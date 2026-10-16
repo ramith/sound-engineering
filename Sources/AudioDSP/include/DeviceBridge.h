@@ -27,6 +27,10 @@
 // Pure C11; #pragma once guards double-include.
 #include "MetadataBridge.h"
 
+// Re-export the pure-C FFmpeg switch (R1.1-A, FD-3): "Use FFmpeg for other formats", off by
+// default — ffmpegSetEnabled / ffmpegIsEnabled / ffmpegState. Pure C11; #pragma once guards.
+#include "FFmpegBridge.h"
+
 // Re-export the pure-C graphic-EQ designer (Sprint EQ, EQ1a) so `import AudioDSP` exposes
 // asEqDesignerCreate / asEqDesign / asEqDesignerDestroy to the Swift EQDesigner wrapper.
 // Pure C11; #pragma once guards double-include.
@@ -58,6 +62,7 @@ typedef struct
     uint32_t bufferFrameSize; ///< Hardware buffer frame size in frames
     uint32_t transportType;   ///< kAudioDevicePropertyTransportType FourCC (0 = unknown)
     uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
+    uint8_t isHeadphones;     ///< 1 = headphones (where crossfeed plays; classifyOutputDevice)
     // Fixed-size C name buffer for the Swift bridging header. All four suppressed rules are
     // irreducible in THIS file, which must be valid ISO C11 (see the file header): the c-array
     // rules can't use std::array (not valid C / not Swift-bridgeable), and every way to NAME the
@@ -104,6 +109,12 @@ extern "C"
 
     /// Read the latest measured loudness (any thread; lock-free).
     CLoudnessReadout loudnessMeterRead(void* meter) AUDIODSP_C_NOEXCEPT;
+
+    /// The track `trackToken` became audible (any thread but the tap's; lock-free). "Integrated"
+    /// measures the playing track: a different track starts a new measurement interval, the same
+    /// one announced again (a resume, a seek) continues it, and 0 (an unknown track) always starts
+    /// one. The tap applies it at its next buffer. NULL-safe.
+    void loudnessMeterBeginTrack(void* meter, uint64_t trackToken) AUDIODSP_C_NOEXCEPT;
 
     /// Enumerate output devices and populate the caller-supplied array.
     ///

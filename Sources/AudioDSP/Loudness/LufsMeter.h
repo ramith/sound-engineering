@@ -121,11 +121,13 @@ namespace AdaptiveSound
             z1 = (b1 * input) - (a1 * out) + z2;
             z2 = (b2 * input) - (a2 * out);
             // Denormal guard (S6 LOUD-1): fed exact-silence, this stable IIR's state decays
-            // geometrically through the double subnormal range (< ~2.2e-308) before reaching 0.
-            // Subnormal doubles are slow on some hardware, and — unlike single precision — AArch64
-            // FPCR.FZ does NOT flush them, so a thread-level FTZ would not help; flush here
-            // instead. Only true subnormals are zeroed, so no normal value (hence no LUFS reading)
-            // changes.
+            // geometrically through the double subnormal range (< ~2.2e-308) before reaching 0,
+            // and subnormal doubles are slow on some hardware. AArch64 FPCR.FZ does flush double
+            // subnormals as well as single ones (measured on M-series, council D67) — but the meter
+            // must not depend on its thread's mode: the UI readout's meter runs on AVAudioEngine's
+            // tap thread, which never flushes, and flush-to-zero is now scoped to our own render
+            // calls and workers (ScopedFlushToZero). So it flushes its own state, here. Only true
+            // subnormals are zeroed, so no normal value (hence no LUFS reading) changes.
             flushSubnormal(z1);
             flushSubnormal(z2);
             return out;
@@ -257,9 +259,27 @@ namespace AdaptiveSound
             histCount_.fill(0U);
             histSumEnergy_.fill(0.0);
             gatedBlockCount_ = 0U;
+            integrationHops_ = 0U;
+            hopStraddlesRestart_ = false;
             momentaryLufs_ = kSilenceLufs;
             shortTermLufs_ = kSilenceLufs;
             integratedLufs_ = kSilenceLufs;
+        }
+
+        // Start a new integration interval at the next sample — EBU Tech 3341 §2.3's start/reset
+        // of the measurement interval (council C-46: the UI's "Integrated" is the playing
+        // track's). The gating histogram is cleared, so Integrated covers only what follows, and
+        // only 400 ms blocks wholly inside the new interval are integrated: the hop in progress,
+        // which straddles the restart, is left out. The K-weighting state and the momentary /
+        // short-term windows run on — they slide over the signal itself, not the interval.
+        void restartIntegration() noexcept
+        {
+            histCount_.fill(0U);
+            histSumEnergy_.fill(0.0);
+            gatedBlockCount_ = 0U;
+            integratedLufs_ = kSilenceLufs;
+            integrationHops_ = 0U;
+            hopStraddlesRestart_ = hopSampleCount_ > 0U;
         }
 
         // Feed interleaved N-channel samples (ch0_fr0, ch1_fr0, …, ch0_fr1, …).
@@ -384,6 +404,16 @@ namespace AdaptiveSound
             {
                 ++subFilled_;
             }
+            // Whole hops inside the integration interval (restartIntegration): the hop that
+            // straddled a restart does not count.
+            if (hopStraddlesRestart_)
+            {
+                hopStraddlesRestart_ = false;
+            }
+            else if (integrationHops_ < static_cast<uint32_t>(kBlockHops))
+            {
+                ++integrationHops_;
+            }
 
             updateMomentaryAndIntegrated();
             updateShortTerm();
@@ -400,7 +430,9 @@ namespace AdaptiveSound
             const double loudness = blockLoudness(energy);
             momentaryLufs_ = loudness;
 
-            if (loudness >= kAbsoluteGateLufs)
+            // Integrated takes only blocks wholly inside the integration interval.
+            if (integrationHops_ >= static_cast<uint32_t>(kBlockHops) &&
+                loudness >= kAbsoluteGateLufs)
             {
                 addBlockToHistogram(loudness, energy);
                 ++gatedBlockCount_;
@@ -489,6 +521,11 @@ namespace AdaptiveSound
         std::array<uint64_t, kHistBins> histCount_{};
         std::array<double, kHistBins> histSumEnergy_{};
         uint32_t gatedBlockCount_ = 0U;
+
+        // Whole hops since the integration interval began (reset / restartIntegration), saturating
+        // at a block's 4; and whether the hop in progress straddles a restart.
+        uint32_t integrationHops_ = 0U;
+        bool hopStraddlesRestart_ = false;
 
         double momentaryLufs_ = kSilenceLufs;
         double shortTermLufs_ = kSilenceLufs;

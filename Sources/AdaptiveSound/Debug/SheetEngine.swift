@@ -6,8 +6,8 @@
     /// The renderer's `AudioPlaybackEngine`: hardware-free. Every lifecycle, transport and device verb
     /// is a no-op answering "nothing is running", so a render never builds an AVFAudio engine, opens a
     /// HAL session or enumerates CoreAudio devices. Its one job is serving the fixture's per-channel
-    /// before/after spectra, which the Monitoring tab polls straight from the engine
-    /// (`MonitoringViewModel`) rather than through the audio view model.
+    /// before/after spectra, which the Monitoring tab reads from the engine through the view model's
+    /// `SpectrumSampler`.
     final class SheetEngine: AudioPlaybackEngine {
         private let before: [[Float]]
         private let after: [[Float]]
@@ -24,9 +24,9 @@
 
         func shutdown() async throws {}
 
-        func startAudio(fileURL _: URL?, pureMode _: Bool, startAt _: Double, epoch _: UInt64) async throws {}
+        func startAudio(fileURL _: URL, pureMode _: Bool, startAt _: Double, epoch _: UInt64) async throws {}
 
-        func stopAudio(epoch _: UInt64) async throws {}
+        func stopAudio(epoch _: UInt64, pausing _: Bool) async throws {}
 
         func seek(to _: Double, epoch _: UInt64) async {}
 

@@ -1,25 +1,19 @@
 import Foundation
+import SettingsKit
 
 // MARK: - CrossfeedStrength
 
-/// User-facing crossfeed strength levels, mapping to the bs2b coefficient sets
-/// in the C++ DSP kernel.
+/// What each crossfeed strength shows and plays. The values themselves are a setting (`SettingsKit`).
 ///
-/// - Relaxed: subtlest, fc = 650 Hz, −9.5 dB cross level (bs2b "Jmeier").
-/// - defaultStrength: Bauer original, fc = 700 Hz, −9.0 dB (the safe default).
-/// - strong: most spacious, fc = 700 Hz, −6.0 dB (bs2b "Cmoy").
+/// Each strength is one of bs2b's own levels (libbs2b `bs2b.h`; council C-42), played at full
+/// strength by the DSP kernel's crossfeed:
+/// - Relaxed: the subtlest — bs2b "Jmeier", 650 Hz cut, 9.5 dB feed.
+/// - Default: bs2b "Cmoy", 700 Hz, 6.0 dB.
+/// - Strong: the most spacious — bs2b's own default level, 700 Hz, 4.5 dB.
 ///
-/// The C++ enum uses `CrossfeedPreset::Bauer` (= 1) for what the user sees as
-/// "Default" (§5 F8: avoids the `default:` keyword clash in C++ switch statements).
-enum CrossfeedStrength: Int, CaseIterable, Identifiable {
-    case relaxed = 0
-    case defaultStrength = 1
-    case strong = 2
-
-    var id: Int {
-        rawValue
-    }
-
+/// The C++ kernel names the presets after those levels (`CrossfeedPreset::Jmeier` / `Cmoy` /
+/// `Bs2bDefault`); the index is the shared contract.
+extension CrossfeedStrength {
     /// Display label shown in the UI Picker.
     var displayName: String {
         switch self {
@@ -29,17 +23,8 @@ enum CrossfeedStrength: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Crossfeed level in [0, 1] forwarded to `publishCrossfeed`.
-    /// Maps each strength to a normalised level derived from the bs2b cross-level values.
-    var dspLevel: Float {
-        switch self {
-        case .relaxed: 0.335 // α ≈ 0.335  (−9.5 dB)
-        case .defaultStrength: 0.355 // α ≈ 0.355  (−9.0 dB)
-        case .strong: 0.501 // α ≈ 0.501  (−6.0 dB)
-        }
-    }
-
-    /// Raw preset index sent to the C-ABI. Matches `CrossfeedPreset` (Relaxed=0, Bauer=1, Strong=2).
+    /// Raw preset index sent to the C-ABI. Matches `CrossfeedPreset` (Jmeier = 0, Cmoy = 1,
+    /// Bs2bDefault = 2).
     var presetIndex: UInt32 {
         UInt32(rawValue)
     }
