@@ -48,6 +48,7 @@ final class AudioViewModel {
             if isPlaying != oldValue {
                 onNowPlayingRefresh?()
             }
+            runTransportTickIfLive()
         }
     }
 
@@ -63,8 +64,12 @@ final class AudioViewModel {
     /// at the moment of pausing, moved by a scrub while paused, consumed + cleared by `play()` to
     /// resume from there via a seek. It belongs to the paused song's queue SLOT, not its row
     /// (S10.8 G): a queue edit that shifts the row keeps it. Any explicit new-track action
-    /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`.
-    var resumePoint: ResumePoint<UUID>?
+    /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`. When it
+    /// moves or goes while nothing plays, the scrubber follows at once (`placePlayhead`): no tick runs
+    /// then to carry it over (council C-52).
+    var resumePoint: ResumePoint<UUID>? {
+        didSet { placePlayhead(nil) }
+    }
 
     /// The number of the latest transport request (start, seek, stop) sent to the engine. The tick
     /// ignores engine samples older than it (`TransportSnapshot.isCurrent(for:)`): until the engine
@@ -75,8 +80,10 @@ final class AudioViewModel {
     /// (council C-15, `+TransportCommands`). Set in the turn the user asks, so a press while it runs
     /// acts on it — Space during a start pauses it, Next starts the next song, a second Play joins it —
     /// and only the newest one's outcome is applied. `nil`: none; `isPlaying` says what plays. The play
-    /// / pause control reads it (`playIntent`).
-    var transportCommand: TransportCommand?
+    /// / pause control reads it (`playIntent`). The transport tick runs while one is on its way.
+    var transportCommand: TransportCommand? {
+        didSet { runTransportTickIfLive() }
+    }
 
     /// The playback the on-deck requests belong to (`OnDeckTicket.session`): the epoch of the newest
     /// start. The engine applies only the newest request of the playback it is in (council D41).
@@ -254,8 +261,13 @@ final class AudioViewModel {
     @ObservationIgnored let spectrum: SpectrumSampler
 
     /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss, the readouts) at 20 Hz
-    /// from engine-ready to shutdown. Internal (not private) for `+TransportTick`.
+    /// while a song plays or a start, pause or stop is on its way (`transportTickIsLive`); it stops
+    /// itself once nothing is (council C-52). Internal (not private) for `+TransportTick`.
     @ObservationIgnored var transportTimer: Timer?
+
+    /// Whether the transport tick may run: from engine-ready (`armTransportTick`) to shutdown. Off in
+    /// a view model whose engine was never started (tests that tick by hand, the picture sheets).
+    @ObservationIgnored var transportTickArmed = false
 
     // MARK: - Playlist State
 
