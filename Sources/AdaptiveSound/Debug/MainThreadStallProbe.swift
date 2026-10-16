@@ -73,7 +73,9 @@
         func tickOnly() {
             measure("bridge.snapshot()") { _ = bridge.snapshot() }
             measure("vm.tickTransport()") { viewModel.tickTransport() }
-            measure("vm.tickSpectrum()") { viewModel.tickSpectrum() }
+            measure("vm.spectrum.lens(at:)") {
+                _ = viewModel.spectrum.lens(at: .now, isPlaying: true, isPure: false, reduceMotion: false)
+            }
             measure("bridge.readSpectrumBands") { _ = bridge.readSpectrumBands(into: &bands) }
         }
 

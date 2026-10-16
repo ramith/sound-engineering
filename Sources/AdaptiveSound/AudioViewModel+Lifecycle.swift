@@ -60,7 +60,7 @@ extension AudioViewModel {
                 errorMessage = nil
                 logUX("initializeEngine: ready — \(availableDevices.count) device(s), "
                     + "selected='\(selectedDevice?.name ?? "none")'")
-                startSpectrumTimer()
+                startTransportTick()
             } catch {
                 logUX("initializeEngine: error — \(error.localizedDescription)")
                 errorMessage = "Engine initialization failed: \(error.localizedDescription)"
@@ -120,9 +120,9 @@ extension AudioViewModel {
         settingsStore.flush() // a change made in the quit's own turn is written too
         queueMirrorTask?.cancel()
         await mirrorQueueNow()
-        // Stop the spectrum timer FIRST so no further `tickSpectrum` is scheduled (it polls
-        // the engine and could otherwise touch handles we're about to tear down).
-        stopSpectrumTimer()
+        // Stop the transport tick FIRST so no further tick is scheduled (it polls the engine and could
+        // otherwise touch handles we're about to tear down).
+        stopTransportTick()
         // S3 F5: the library subsystem (FSEvents watcher, volume monitor, in-flight scan/reconcile)
         // now lives on the LibraryModel peer, whose `shutdown()` the app-lifecycle owner
         // (AppDelegate) awaits BEFORE this — so the store is already quiescent (no scan/reconcile

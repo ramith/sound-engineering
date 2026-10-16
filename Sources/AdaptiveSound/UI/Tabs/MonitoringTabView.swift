@@ -11,66 +11,38 @@ import SwiftUI
 /// neutral grey) and AFTER (post-DSP, the analyzer's teal → lime) spectrum side by
 /// side, each half under its own tag (decision 4).
 ///
-/// **Tab-visibility-gated polling**: an async Task starts when this view appears
-/// and is cancelled when it disappears; `MonitoringViewModel` does the actual
-/// timer loop. The engine is never polled on behalf of this tab while another
-/// tab is selected.
+/// **Live only while it shows and plays** (council C-52): the lenses draw on the live clock
+/// (`LiveTimeline`, each frame as it comes), reading `SpectrumSampler` — the one sampler every live
+/// view shares — so nothing polls the engine for this tab while another tab is selected, the window
+/// is closed or hidden, or the song is paused. Its per-channel analysers run only while it shows
+/// (`showMonitoring`).
 struct MonitoringTabView: View {
     @Environment(AudioViewModel.self) private var viewModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Created once and retained for the lifetime of the tab.
-    @State private var monitorVM: MonitoringViewModel?
 
     var body: some View {
-        Group {
-            if let monitorVM {
-                MonitoringTabContent(
-                    monitorVM: monitorVM,
-                    isPlaying: viewModel.isPlaying,
-                    reduceMotion: reduceMotion
-                )
-            } else {
-                // Shown only during the brief window before the first .task fires.
-                MonitoringEmptyView()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // No background: the app glow shows through (`TabContentView`, S10.8 F1).
-        .task {
-            // Create once — .task is cancelled/re-run if the view leaves and re-enters
-            // the hierarchy (tab switch), so this also handles stopping + restarting.
-            let monVM = MonitoringViewModel(engine: viewModel.engine)
-            monitorVM = monVM
-            monVM.startPolling()
-            // Suspend here until the task is cancelled (tab leaves).
-            await withTaskCancellationHandler {
-                try? await Task.sleep(for: .seconds(86400)) // sleeps until cancelled
-            } onCancel: {
-                Task { @MainActor in monVM.stopPolling() }
-            }
-        }
+        MonitoringTabContent(sampler: viewModel.spectrum, isPlaying: viewModel.isPlaying)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // No background: the app glow shows through (`TabContentView`, S10.8 F1).
+            .onAppear { viewModel.spectrum.showMonitoring(true) }
+            .onDisappear { viewModel.spectrum.showMonitoring(false) }
     }
 }
 
 // MARK: - Monitoring Tab Content
 
-/// The populated content once MonitoringViewModel is ready: the header over one lens per channel.
-/// Extracted to keep MonitoringTabView's body below the function-body length limit. It reads only the
-/// channel count; the bands are read by `MonitorChannelColumn`, so the poll redraws the lenses alone.
+/// The header over one lens per channel. The lenses — and the "waiting" state before the engine has
+/// channels — sit on the live clock; the header around them doesn't redraw with it.
 private struct MonitoringTabContent: View {
-    let monitorVM: MonitoringViewModel
+    let sampler: SpectrumSampler
     let isPlaying: Bool
-    let reduceMotion: Bool
 
     var body: some View {
         // The region's height sets each lens's (`MonitorLayout`, S10.8 G1): with few channels the lenses
         // divide what the header leaves; past `rowMinHeight` each keeps that and the column scrolls. The
-        // `.task`/polling lifecycle lives on MonitoringTabView (unchanged), so this container doesn't
-        // affect start/stop-on-tab-switch. The scroll view spans the whole content region and the
-        // lenses sit inside its insets, so its clip — the region's own edge, which the shell clips
-        // anyway — never cuts a lens's shadow at rest, and a scrolled-away lens never draws (or takes
-        // clicks) over the chrome: no `.scrollClipDisabled()`, as Settings.
+        // scroll view spans the whole content region and the lenses sit inside its insets, so its clip —
+        // the region's own edge, which the shell clips anyway — never cuts a lens's shadow at rest, and a
+        // scrolled-away lens never draws (or takes clicks) over the chrome: no `.scrollClipDisabled()`, as
+        // Settings.
         GeometryReader { proxy in
             let regionHeight = Double(proxy.size.height)
             // edgeToEdge: the column brings its own (Twin Panels) insets rather than Screen's.
@@ -79,17 +51,19 @@ private struct MonitoringTabContent: View {
                     MonitoringHeaderView()
                         .frame(height: CGFloat(MonitorLayout.headerHeight), alignment: .top)
 
-                    if monitorVM.channelCount == 0 {
-                        MonitoringEmptyView()
-                            .frame(height: CGFloat(MonitorLayout.rowsHeight(regionHeight: regionHeight)))
-                    } else {
-                        MonitorChannelColumn(
-                            monitorVM: monitorVM,
-                            isPlaying: isPlaying,
-                            reduceMotion: reduceMotion,
-                            rowHeight: MonitorLayout.rowHeight(channelCount: monitorVM.channelCount,
-                                                               regionHeight: regionHeight)
-                        )
+                    LiveTimeline(.frames, running: isPlaying) { date in
+                        let frame = sampler.monitorFrame(at: date)
+                        if frame.channelCount == 0 {
+                            MonitoringEmptyView()
+                                .frame(height: CGFloat(MonitorLayout.rowsHeight(regionHeight: regionHeight)))
+                        } else {
+                            MonitorChannelColumn(
+                                frame: frame,
+                                isPlaying: isPlaying,
+                                rowHeight: MonitorLayout.rowHeight(channelCount: frame.channelCount,
+                                                                   regionHeight: regionHeight)
+                            )
+                        }
                     }
                 }
                 .padding(.top, CGFloat(MonitorLayout.insetTop))

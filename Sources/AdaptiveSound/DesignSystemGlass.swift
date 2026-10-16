@@ -85,16 +85,19 @@ extension View {
         modifier(HeroTitleModifier())
     }
 
-    /// An analyzer peak cap's opacity over its bar's fill (S10.8 B2a): dark 50% as shipped, light
-    /// 85%. A VIEW opacity, as shipped — baked into the gradient's colors it shifts dark caps.
-    func spectrumCapOpacity() -> some View {
-        modifier(AppearanceOpacity(light: SpectrumRamp.capOpacityLight, dark: SpectrumRamp.capOpacityDark))
-    }
-
     /// Dims DISABLED content in DARK only — the shipped 50% (guide E1). Light never dims: a native
     /// control draws its own disabled look, and an instruction beside it must stay AA (S10.8 B2a).
     func disabledDim(_ disabled: Bool) -> some View {
         modifier(AppearanceOpacity(light: 1, dark: disabled ? GlassDecor.disabledDimDark : 1))
+    }
+}
+
+extension GraphicsContext {
+    /// An analyzer peak cap's opacity over its bar's fill (S10.8 B2a), for a cap drawn in a `Canvas`:
+    /// dark 50% as shipped, light 85%. Set on the context the caps are filled through — a layer
+    /// opacity, as shipped; baked into the gradient's colors it shifts dark caps.
+    var spectrumCapOpacity: Double {
+        environment.colorScheme == .dark ? SpectrumRamp.capOpacityDark : SpectrumRamp.capOpacityLight
     }
 }
 

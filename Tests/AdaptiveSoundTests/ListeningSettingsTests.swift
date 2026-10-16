@@ -50,7 +50,7 @@ struct ListeningSettingsTests {
         let viewModel = launch(engine)
         viewModel.initializeEngine()
         await settle()
-        viewModel.stopSpectrumTimer()
+        viewModel.stopTransportTick()
         return (viewModel, engine)
     }
 
