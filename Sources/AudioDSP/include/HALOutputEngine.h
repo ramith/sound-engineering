@@ -82,7 +82,9 @@ namespace AdaptiveSound
         // parks them (PureModeBridge.cpp). Control-plane only.
         [[nodiscard]] bool renderMayStillRun() const;
 
-        // The real achieved state (lock-free snapshot for the UI / B3).
+        // The real achieved state, copied. Not a lock-free snapshot: configure() writes it and the
+        // Pure bridge reads it, both on the control plane (the app's engine queue) — never across
+        // threads.
         [[nodiscard]] AchievedOutputState achievedState() const;
 
       private:
