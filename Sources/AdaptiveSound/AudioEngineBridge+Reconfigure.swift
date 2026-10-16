@@ -145,10 +145,10 @@ extension AudioEngineBridge {
         let count = Int(channels)
         var analysis = tapAnalysis
         analysis.before = (0 ..< count).map { _ in
-            SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: Float(sampleRate))
+            SpectrumAnalyzer(sampleRate: sampleRate)
         }
         analysis.after = (0 ..< count).map { _ in
-            SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: Float(sampleRate))
+            SpectrumAnalyzer(sampleRate: sampleRate)
         }
         setTapAnalysis(analysis)
     }

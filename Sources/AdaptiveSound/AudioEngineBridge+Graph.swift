@@ -94,7 +94,7 @@ extension AudioEngineBridge {
     /// Pre-allocate the spectrum analyzer, loudness meter, and per-channel monitoring analyzers off
     /// the audio thread (vDSP_create_fftsetup allocates), keyed to the mixer's output sample rate.
     private func allocateAnalysisState(engine: AVAudioEngine, format: AVAudioFormat) {
-        let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
+        let mixerSampleRate = engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
         let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
         // Precondition: no meter is set here. This runs only from initialize()'s graph build, and
         // the LEAK #1 re-init guard tears down (drops the analysis AFTER removeSpectrumTap) before
@@ -104,14 +104,10 @@ extension AudioEngineBridge {
         // the pre-DSP (player) and post-DSP (effects AU) tap points. N-channel by construction.
         let channelCount = Int(format.channelCount)
         setTapAnalysis(TapAnalysis(
-            spectrum: SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate),
-            meter: LoudnessMeterHandle(sampleRate: Double(sampleRate)),
-            before: (0 ..< channelCount).map { _ in
-                SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-            },
-            after: (0 ..< channelCount).map { _ in
-                SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-            }
+            spectrum: SpectrumAnalyzer(sampleRate: sampleRate),
+            meter: LoudnessMeterHandle(sampleRate: sampleRate),
+            before: (0 ..< channelCount).map { _ in SpectrumAnalyzer(sampleRate: sampleRate) },
+            after: (0 ..< channelCount).map { _ in SpectrumAnalyzer(sampleRate: sampleRate) }
         ))
     }
 
@@ -144,7 +140,7 @@ extension AudioEngineBridge {
         let meterHandle = analysis.meter?.handle
         guard let analyzer = analysis.spectrum else { return }
         mixer.installTap(onBus: 0,
-                         bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                         bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
                          format: mixerFormat) { [analyzer, meterHandle] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzer` (like the raw `meterHandle`)
             // is captured strongly at install, so the tap does zero refcount work (BS2). Valid because
@@ -182,7 +178,7 @@ extension AudioEngineBridge {
         let playerFormat = player.outputFormat(forBus: 0)
         let analyzers = tapAnalysis.before // strong capture at install (BS2); see installMixerTap
         player.installTap(onBus: 0,
-                          bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                          bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
                           format: playerFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` is captured strongly at
             // install and stays valid until removeSpectrumTap() drops this block (reconfigure only
@@ -204,7 +200,7 @@ extension AudioEngineBridge {
         let auFormat = effectsUnit.outputFormat(forBus: 0)
         let analyzers = tapAnalysis.after // strong capture at install (BS2); see installMixerTap
         effectsUnit.installTap(onBus: 0,
-                               bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                               bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
                                format: auFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` captured strongly at install
             // (valid until removeSpectrumTap() drops this block; reconfigure resizes tap-removed).
