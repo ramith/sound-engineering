@@ -58,7 +58,7 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         }
     }
 
-    func stopAudio(epoch: UInt64) async throws {
+    func stopAudio(epoch: UInt64, pausing _: Bool) async throws {
         _ = await transport(.stop(epoch: epoch))
     }
 

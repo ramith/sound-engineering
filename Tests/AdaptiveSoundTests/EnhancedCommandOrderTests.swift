@@ -39,7 +39,7 @@ struct EnhancedCommandOrderTests {
         _ = rig.render(seconds: 0.2)
         let (_, older) = await rig.seek(to: 0.3) // stands in for the Stop's number
         let (_, newer) = await rig.seek(to: 0.5) // the Play the user asked after it
-        try await rig.bridge.stopAudio(epoch: older) // the Stop reaches the queue last
+        try await rig.bridge.stopAudio(epoch: older, pausing: false) // the Stop reaches the queue last
         #expect(rig.transport.epoch == newer)
         #expect(rig.bridge.enhancedPlayIntent, "a dropped stop leaves the play intent")
         let after = try #require(rig.render(seconds: 0.3, skipping: 0.1))
@@ -52,7 +52,7 @@ struct EnhancedCommandOrderTests {
         let rig = try await EnhancedTransportRig(path: path, name: "newest-stop")
         _ = rig.render(seconds: 0.2)
         let (_, seek) = await rig.seek(to: 0.3)
-        try await rig.bridge.stopAudio(epoch: seek + 1)
+        try await rig.bridge.stopAudio(epoch: seek + 1, pausing: false)
         #expect(rig.transport.epoch == seek + 1)
         #expect(!rig.bridge.enhancedPlayIntent)
         await rig.finish()

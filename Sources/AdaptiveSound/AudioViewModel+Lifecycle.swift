@@ -174,7 +174,8 @@ extension AudioViewModel {
     /// `pausedResumePosition` for resume.
     func performPause(epoch: UInt64) async {
         do {
-            try await engine.stopAudio(epoch: epoch)
+            // A pause: on Pure the device keeps the volume Pure set (founder decision 2026-10-16).
+            try await engine.stopAudio(epoch: epoch, pausing: true)
             // A Play asked since owns the transport: it plays on (the engine dropped this stop if it had
             // begun the Play first).
             guard finish(.stop(epoch)) else { return }
@@ -190,7 +191,8 @@ extension AudioViewModel {
     /// `await` this to guarantee ordering and avoid a use-after-free of the C handles (P2-C).
     func performStop(epoch: UInt64) async {
         do {
-            try await engine.stopAudio(epoch: epoch)
+            // Playback ends: Pure is left, and the device gets its own level back.
+            try await engine.stopAudio(epoch: epoch, pausing: false)
             // A start asked since owns the transport (and its playhead and length): leave them to it.
             guard finish(.stop(epoch)) else { return }
             isPlaying = false

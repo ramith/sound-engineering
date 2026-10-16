@@ -71,6 +71,13 @@ extension AudioEngineBridge {
         configChangeQueue.async { [weak self] in
             self?.bindTargetAliveListener()
         }
+        // Pure is left on a device the output moved away from (a pause on a DAC, then a pick of the
+        // speakers): its own level comes back. While Pure renders, its restart on the new device does
+        // that, after the old render stopped (`enterPureVolume`).
+        engineQueue.async { [weak self] in
+            guard let self, activePathKind != .pure else { return }
+            pureVolumeEvent(.outputMoved(toUID: Self.deviceUID(currentDeviceID)))
+        }
         return result
     }
 
@@ -225,6 +232,7 @@ extension AudioEngineBridge {
     /// leaves is cleared at the next Enhanced start, before the engine runs (`startEnhancedPlayback`).
     private func stopPlaybackAfterDeviceLoss() {
         tearDownPure()
+        pureVolumeEvent(.deviceLost) // nothing asked of a dying device: its loan stays held
         // Abandon in-flight resampler buffers and pending passthrough completions and clear the seam
         // hooks, so nothing the left-over schedule does later can roll a seam (review MINOR-3).
         stopEnhancedResampler()
