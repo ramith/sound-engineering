@@ -75,16 +75,23 @@ namespace AdaptiveSound
         FallbackEnhanced, // hand off to the Enhanced (DSP) path; bit-perfect not achievable
     };
 
-    // Why Pure Mode reached its decision (for logging / tests).
+    // Why Pure Mode is, or is not, playing bit-perfect — the ONE named reason (R1.1-A, council
+    // C-34): it crosses the C boundary as its code (PureModeBridge.h documents the order; Swift's
+    // PureModeReason mirrors it) and the UI names it. Codes are stable: append, never reorder.
     enum class PureModeReason : uint8_t
     {
-        BitPerfectInteger,       // device exposes integer PCM at the exact rate
-        RateMatchedFloatNoSRC,   // exact rate supported, but only float — no SRC needed
-        LossyWirelessCodec,      // BT / BT-LE / AirPlay codec sits below the HAL
-        VirtualDevice,           // virtual / aggregate device — no real exclusive hardware path
-        RateUnsupportedResample, // device cannot do the file's rate — Enhanced path must resample
-        ChannelCountMismatch,    // the device stream's channel count is not the file's — Pure maps
-                                 // no channels, so Enhanced plays it
+        BitPerfectInteger,       // 0 device exposes integer PCM at the exact rate
+        RateMatchedFloatNoSRC,   // 1 exact rate supported, but only float — no SRC needed
+        LossyWirelessCodec,      // 2 BT / BT-LE / AirPlay codec sits below the HAL
+        VirtualDevice,           // 3 virtual / aggregate device — no real exclusive hardware path
+        RateUnsupportedResample, // 4 device cannot do the file's rate — Enhanced path must resample
+        ChannelCountMismatch, // 5 the device stream's channel count is not the file's — Pure maps
+                              //   no channels, so Enhanced plays it
+        DeviceShallowerThanSource, // 6 Pure plays, but the output holds fewer bits than the source:
+                                   //   NOT bit-perfect (council C-33; bitExactness)
+        DeviceWouldNotStart,       // 7 the device would not take Pure's format, or would not start
+        FileUnreadable,            // 8 no decoder that may run can read the file
+        FileNeedsFFmpeg, // 9 Apple's decoder can't read the file, and FFmpeg is off (FD-3)
     };
 
     // The full result of evaluating Pure Mode.
@@ -104,5 +111,16 @@ namespace AdaptiveSound
 
     // Human-readable name for a PureModeReason (logging / tests). Never returns nullptr.
     [[nodiscard]] const char* pureModeReasonString(PureModeReason reason);
+
+    // Whether the output Pure achieved carries every bit of the source (council C-33): `engaged` —
+    // the reason the session plays as (BitPerfectInteger / RateMatchedFloatNoSRC) — when it does,
+    // else DeviceShallowerThanSource. Pure decodes through float32 (24 significant bits) and writes
+    // the device's own format (`outputBits`, `outputIsFloat`), so an integer source is bit-perfect
+    // only up to min(24, the device's bits); a float source only on a float device, at 32 bits or
+    // fewer. A source with no stated depth (a compressed one: 0 bits) is taken as carried.
+    [[nodiscard]] PureModeReason bitExactness(const FileFormat& file,
+                                              uint32_t outputBits,
+                                              bool outputIsFloat,
+                                              PureModeReason engaged);
 
 } // namespace AdaptiveSound

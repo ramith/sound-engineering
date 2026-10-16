@@ -61,15 +61,25 @@ struct SignalPathInfo: Equatable {
     /// Bit depth negotiated at the device boundary. 0 when the path is float or not started.
     var bitDepth: UInt32 = 0
 
+    /// The playing track's own bit depth, as Pure's decoder read it (0: compressed or unknown) — what
+    /// `bitDepth` is held against for "not bit-perfect" (C-33). 0 on Enhanced.
+    var sourceBitDepth: UInt32 = 0
+
     /// `true` when the device AU output format is float (vs integer PCM).
     var isFloat: Bool = false
 
     /// Active decoder backend. `nil` when the Enhanced path is in use.
     var decoder: DecoderKindUI?
 
-    /// `true` when Pure mode was requested by the user but capability evaluation or engine
-    /// startup forced a fallback to Enhanced. Cleared when Pure mode is not requested.
-    var fellBackToEnhanced: Bool = false
+    /// Why Pure isn't playing bit-perfect, or isn't playing (council C-34): set when Pure was asked
+    /// for and declined or waits (Enhanced plays), or plays but not bit-perfect. `nil` when Pure isn't
+    /// asked for, or plays bit-perfect.
+    var pureReason: PureModeReason?
+
+    /// `true` when Pure was asked for but Enhanced plays — it declined, or it waits (`pureReason`).
+    var fellBackToEnhanced: Bool {
+        pureReason.map { !$0.purePlays } ?? false
+    }
 
     /// `true` when playback was paused because the active output device disappeared (e.g. a
     /// Bluetooth device disconnected). The view model surfaces this and clears `isPlaying`; the
