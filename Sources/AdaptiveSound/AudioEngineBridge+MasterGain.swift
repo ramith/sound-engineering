@@ -17,10 +17,13 @@ import Foundation
 ///   `MasterGainOnPure` (EQEditKit): entering Pure lowers the device from the level it found — or, on a
 ///   device with no volume the app can set, Pure waits while Master Gain is turned down; the slider
 ///   moves the device, never above that level; the listener's own change stands; leaving Pure puts
-///   the level back. The rule and every HAL call it makes live on `deviceVolumeQueue` (never the main
-///   thread). `engineQueue` waits on it for the entry and the leaving, so the device is lowered before
-///   Pure renders and put back once Pure has stopped. The loans not yet put back ride in the
-///   snapshot, and the view model keeps them with the listener's settings (crash-safe).
+///   the level back. Pure's hold on the device lasts while Pure is its path, not only while a session
+///   renders: a pause keeps it, a stop that ends playback, Enhanced starting or the output moving
+///   leaves it (`pureVolumeEvent`, founder decision 2026-10-16) — and the device's volume is followed
+///   for as long as it is held. The rule and every HAL call it makes live on `deviceVolumeQueue`
+///   (never the main thread). `engineQueue` waits on it for the entry and the leaving, so the device
+///   is lowered before Pure renders and put back once Pure has stopped. The loans not yet put back
+///   ride in the snapshot, and the view model keeps them with the listener's settings (crash-safe).
 extension AudioEngineBridge {
     // MARK: - Enhanced: the app's gain on the player
 
@@ -53,30 +56,42 @@ extension AudioEngineBridge {
     }
 
     /// Take the device's volume for Pure, before Pure renders: lower it by Master Gain, or say that Pure
-    /// waits (a device with no volume the app can set, Master Gain turned down). A loan still held on
-    /// another device (Pure moved without stopping) is put back first. On `engineQueue`; the rule runs
-    /// on `deviceVolumeQueue`.
+    /// waits (a device with no volume the app can set, Master Gain turned down). A hold still on another
+    /// device (Pure moved, or a pause there) is given back first; the same device's hold — a resume, a
+    /// new song — carries on untouched. Then the device is followed while the hold lasts. On
+    /// `engineQueue`; the rule runs on `deviceVolumeQueue`.
     func enterPureVolume(deviceID: UInt32) -> MasterGainOnPure.Entry {
         let gain = masterGainDecibels
         let uid = Self.deviceUID(deviceID)
-        return deviceVolumeQueue.sync {
-            if let held = masterGainOnPure.loan, held.deviceUID != uid {
-                masterGainOnPure.leave(device: HALDeviceVolume(uid: held.deviceUID))
-            }
+        let (entry, ended, held) = deviceVolumeQueue.sync {
+            let ended = masterGainOnPure.handle(.outputMoved(toUID: uid)) { HALDeviceVolume(uid: $0) }
             pureGain = gain
             let entry = masterGainOnPure.enter(deviceUID: uid, gain: gain, device: HALDeviceVolume(deviceID: deviceID))
             publishPureVolumeLoans()
-            return entry
+            return (entry, ended, masterGainOnPure.loan != nil)
         }
+        if ended || !held {
+            unwatchDeviceVolume()
+        }
+        if held {
+            watchDeviceVolume(deviceID: deviceID)
+        }
+        return entry
     }
 
-    /// Put the device's volume back: Pure stopped (or never started). On `engineQueue`, after the
+    /// A transport event that may end Pure's hold on the device's volume (`PureVolumeEvent`): when it
+    /// does, the device gets its own level back and stops being followed. On `engineQueue`, after any
     /// render stopped; the rule runs on `deviceVolumeQueue`. A device that is gone keeps its loan.
-    func leavePureVolume() {
-        deviceVolumeQueue.sync {
-            guard let held = masterGainOnPure.loan else { return }
-            masterGainOnPure.leave(device: HALDeviceVolume(uid: held.deviceUID))
-            publishPureVolumeLoans()
+    func pureVolumeEvent(_ event: PureVolumeEvent) {
+        let ended = deviceVolumeQueue.sync {
+            let ended = masterGainOnPure.handle(event) { HALDeviceVolume(uid: $0) }
+            if ended {
+                publishPureVolumeLoans()
+            }
+            return ended
+        }
+        if ended {
+            unwatchDeviceVolume()
         }
     }
 
@@ -112,12 +127,13 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Read the volume of the device Pure has just started on and begin following it. Called by
-    /// `startPure` (engineQueue) once the session runs; the reading goes into the snapshot that
-    /// turns the path Pure (`.fixed` holds the slider at 0 dB).
-    func watchDeviceVolume(deviceID: UInt32) -> DeviceVolume {
-        unwatchDeviceVolume() // one watch at a time (a Pure restart re-registers)
+    /// Follow the volume of the device Pure holds, while the hold lasts — through a pause too, so the
+    /// listener's own change is never undone. Idempotent for the device already followed; one watch at
+    /// a time. On `engineQueue` (`enterPureVolume`).
+    private func watchDeviceVolume(deviceID: UInt32) {
         let device = AudioObjectID(deviceID)
+        guard withStateLock({ deviceVolumeWatch?.deviceID }) != device else { return }
+        unwatchDeviceVolume()
         var address = DeviceHardwareVolume.scalarAddress
         // On `deviceVolumeQueue`, serialized with the rule — never the main queue: the read is a HAL
         // call, and the HAL announces volume changes while it tears a device down.
@@ -130,7 +146,6 @@ extension AudioEngineBridge {
             NSLog("[PureMode] could not follow the volume of device \(deviceID)")
         }
         withStateLock { deviceVolumeWatch = DeviceVolumeWatch(deviceID: device, listener: added ? block : nil) }
-        return DeviceHardwareVolume.read(device)
     }
 
     /// Stop following the device's volume. Idempotent: the watch is taken under the lock, so exactly

@@ -193,6 +193,23 @@ struct ListeningSettingsTests {
         #expect(engine.state.withLock { $0.masterGains.last } == -20, "the engine has the level to turn down by")
     }
 
+    @Test("a pause reaches the engine as a pause, so Pure keeps the device's volume; a stop ends playback")
+    func pauseIsNotAStop() async {
+        let engine = DeviceTestEngine()
+        let viewModel = launch(engine)
+        viewModel.isEngineReady = true
+        queueOneSong(viewModel)
+        viewModel.pureModeEnabled = true
+        viewModel.startPlayback()
+        await settle()
+        viewModel.pause()
+        await settle()
+        #expect(engine.state.withLock { $0.stops } == [.pause], "playback resumes there: Pure's hold stays")
+        viewModel.stopPlayback()
+        await settle()
+        #expect(engine.state.withLock { $0.stops } == [.pause, .stop], "playback ended: Pure is left")
+    }
+
     @Test("on Pure the slider is still Master Gain; on a device with no volume the app can set, it stays at 0 dB")
     func sliderOnPure() {
         let viewModel = launch()
