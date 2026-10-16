@@ -5,9 +5,9 @@
 
 #include "AudioConstants.h"
 #include "ChannelLayout.h"
-#include "DoubleBufferSnapshot.h"
 #include "ParameterRamp.h"
 #include "TargetState.h"
+#include "TripleBufferSnapshot.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <cstdint>
 #include <functional>
@@ -130,7 +130,7 @@ namespace AdaptiveSound
         std::unique_ptr<CausalLoudnessTap> causalTap_; // the input, for the causal estimate
 
         // Lock-free parameter transport (wait-free SPSC triple-buffer snapshot).
-        DoubleBufferSnapshot<TargetState> targetStateSnapshot_;
+        TripleBufferSnapshot<TargetState> targetStateSnapshot_;
 
         // RT-thread-owned snapshot state (S6 RACE-1): the stable per-block copy of the snapshot.
         TargetState currentState_{};

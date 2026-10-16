@@ -1,6 +1,6 @@
-// SnapshotConcurrencyTests.inc — concurrency regression for DoubleBufferSnapshot<T>, the wait-free
+// SnapshotConcurrencyTests.inc — concurrency regression for TripleBufferSnapshot<T>, the wait-free
 // SPSC triple-buffer parameter transport (S6 RACE-1, hardened 2026-07-10). A concurrent off-RT
-// producer (publish) and RT consumer (tryCopySnapshot) must NEVER hand back a TORN snapshot mixing
+// producer (publish) and RT consumer (copySnapshot) must NEVER hand back a TORN snapshot mixing
 // two generations, and (under ThreadSanitizer) must contain NO data race. All synchronization rides
 // named atomics (no standalone fence), so `make tsan` models every ordering edge.
 //
@@ -20,7 +20,7 @@
 //      interleaving that exposed the false positive). Its all-zero default IS a self-consistent
 //      generation 0, so it needs no seed special-case — a clean, independent cross-check.
 
-#include "DoubleBufferSnapshot.h"
+#include "TripleBufferSnapshot.h"
 
 // Is an accepted RACE1 copy internally consistent for a SINGLE generation? gen 0 is the constructor's
 // IDENTITY seed (default TargetState — intensityLinear=1.0, NOT zeros), validated against the seed's
@@ -46,7 +46,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
 {
     static const char* const kName = "Snapshot_Seqlock_ConcurrentNoTear_RACE1";
 
-    AdaptiveSound::DoubleBufferSnapshot<AdaptiveSound::TargetState> snapshot;
+    AdaptiveSound::TripleBufferSnapshot<AdaptiveSound::TargetState> snapshot;
 
     // Bounded run: enough interleaving to exercise straddles, short enough for the gate + TSan.
     constexpr uint64_t kPublishCount = 200000U;
@@ -70,17 +70,14 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
     std::array<TearSample, 16> tearSamples{};
     std::atomic<size_t> tearSampleCount{0U};
 
-    // RT consumer: hammer tryCopySnapshot and verify each accepted copy is internally consistent
+    // RT consumer: hammer copySnapshot and verify each accepted copy is internally consistent
     // and monotonically non-decreasing in sequenceNumber.
     std::thread reader([&] {
         AdaptiveSound::TargetState out{};
         uint64_t lastSeq = 0U;
         while (!readerStop.load(std::memory_order_relaxed))
         {
-            if (!snapshot.tryCopySnapshot(out))
-            {
-                continue; // straddled beyond the retry budget → caller keeps last good (fine)
-            }
+            snapshot.copySnapshot(out);
             acceptedReads.fetch_add(1U, std::memory_order_relaxed);
 
             const uint64_t gen = out.sequenceNumber;
@@ -164,7 +161,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
 // Verifier #2 (hardening, 2026-07-10): WHOLE-PAYLOAD tear detection on the GENERIC transport.
 //
 // RACE1 above stamps a realistic TargetState and samples a few fields. This test instead drives
-// DoubleBufferSnapshot<T> on a WIDE synthetic payload whose EVERY 8-byte word must carry the SAME
+// TripleBufferSnapshot<T> on a WIDE synthetic payload whose EVERY 8-byte word must carry the SAME
 // generation, so a torn / mixed read is caught in ANY word — the strongest possible check for a
 // whole-struct `memcpy` transport (a real tear would leave some words on the old generation and some
 // on the new). It repeats the concurrent scenario over several FRESH snapshots to multiply the
@@ -200,7 +197,7 @@ static auto scanWholePayload(const GenStampedPayload& out) -> PayloadWordScan
     return PayloadWordScan{true, refGen, 0U};
 }
 
-// One concurrent round on a FRESH snapshot: an RT reader hammers tryCopySnapshot while the producer
+// One concurrent round on a FRESH snapshot: an RT reader hammers copySnapshot while the producer
 // publishes `publishes` distinct all-words-equal generations. Returns the round's tallies.
 struct WholePayloadRoundResult
 {
@@ -212,7 +209,7 @@ struct WholePayloadRoundResult
 };
 static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
 {
-    AdaptiveSound::DoubleBufferSnapshot<GenStampedPayload> snapshot;
+    AdaptiveSound::TripleBufferSnapshot<GenStampedPayload> snapshot;
 
     std::atomic<bool> readerStop{false};
     std::atomic<bool> readerRunning{false};
@@ -228,10 +225,7 @@ static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
         readerRunning.store(true, std::memory_order_release);
         while (!readerStop.load(std::memory_order_relaxed))
         {
-            if (!snapshot.tryCopySnapshot(out))
-            {
-                continue;
-            }
+            snapshot.copySnapshot(out);
             accepted.fetch_add(1U, std::memory_order_relaxed);
             const PayloadWordScan scan = scanWholePayload(out);
             if (!scan.consistent && torn.fetch_add(1U, std::memory_order_relaxed) == 0U)

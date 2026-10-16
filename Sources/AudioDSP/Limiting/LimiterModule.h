@@ -64,7 +64,7 @@
 // geometry is identical to the former compile-time kLimiterRingSize = 144 + 512,
 // preserving bit-exactness. grBuf_ is likewise a heap vector sized to maxFrames_.
 //
-// Parameters (LimiterParams, published via DoubleBufferSnapshot)
+// Parameters (LimiterParams, published via TripleBufferSnapshot)
 // =============================================================
 //   truePeakCeilingLinear — linear ceiling; default 0.891 (−1 dBTP). ≥ 1.0 bypasses
 //                           (zero-latency identity passthrough).
