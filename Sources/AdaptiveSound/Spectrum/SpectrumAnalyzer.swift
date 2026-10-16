@@ -7,10 +7,9 @@
 // - The audio tap callback (audio thread) calls `processTapBuffer(_:sampleRate:)`.
 //   That method does *no allocation*, *no lock*, and *no Swift runtime calls* beyond
 //   indexed buffer access and Accelerate/vDSP.
-// - The main thread reads at ~20 Hz (via `SpectrumDoubleBuffer.read(into:)`) to copy the
-//   last computed band magnitudes. The handoff uses a generation counter published through
-//   a stdlib `Atomic<Int>` (release-store on the writer, acquire-load on the reader), so no
-//   lock is ever taken on either side.
+// - The main thread reads at ~20 Hz (via `SpectrumTripleBuffer.read(into:)`) to copy the
+//   last computed band magnitudes: a wait-free triple buffer, so no lock is ever taken on either
+//   side and a frame is never torn.
 //
 // FFT design
 // ----------
@@ -48,7 +47,7 @@ import Foundation
 /// OFF the audio thread. After init the RT-safe entry points (`processTapBuffer`,
 /// `computeAndPublish`) are called from exactly ONE thread — the tap block that owns this
 /// analyzer instance — so no concurrent mutation of the scratch buffers occurs, and the
-/// only cross-thread publication is through the SPSC `SpectrumDoubleBuffer` (itself audited
+/// only cross-thread publication is through the SPSC `SpectrumTripleBuffer` (itself audited
 /// `@unchecked Sendable`). This is what lets the tap closure capture a Sendable analyzer
 /// without any lock. No lock/queue/allocation is added on the RT path.
 final class SpectrumAnalyzer: @unchecked Sendable {
@@ -78,7 +77,8 @@ final class SpectrumAnalyzer: @unchecked Sendable {
 
     // MARK: - Lock-free output
 
-    private(set) var doubleBuffer: SpectrumDoubleBuffer
+    /// The frames, tap thread → main thread.
+    let frames: SpectrumTripleBuffer
 
     // MARK: - Init (must be called OFF the audio thread)
 
@@ -102,7 +102,7 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         bandMagnitudes = [Float](repeating: 0, count: SpectrumConstants.bandCount)
         smoothedBands = [Float](repeating: 0, count: SpectrumConstants.bandCount)
 
-        doubleBuffer = SpectrumDoubleBuffer(count: SpectrumConstants.bandCount)
+        frames = SpectrumTripleBuffer(count: SpectrumConstants.bandCount)
         bandRanges = []
 
         // Pre-compute Hann window: w[n] = 0.5 * (1 - cos(2π·n/(N-1)))
@@ -285,9 +285,9 @@ final class SpectrumAnalyzer: @unchecked Sendable {
                         smoothedBands[bandIdx] = max(bandMagnitudes[bandIdx], prev)
                     }
 
-                    // 8. Publish to the double-buffer for the main thread
+                    // 8. Publish to the triple buffer for the main thread
                     smoothedBands.withUnsafeBufferPointer { sPtr in
-                        doubleBuffer.write(sPtr)
+                        frames.write(sPtr)
                     }
 
                     // Keep rBase and iBase alive through the closure
