@@ -66,7 +66,6 @@
 #include "MultichannelView.h"
 #include "PureModeFormat.h"
 #include "PureModeSource.h"
-#include "RtSwappableResource.h"
 #include "Spatial/SpatialRenderKernel.h"
 #include "TargetState.h"
 #include "TrackLoudnessBridge.h"

@@ -172,9 +172,7 @@ namespace AdaptiveSound
             };
             holdFrames_ = static_cast<uint32_t>(std::lround(kLfHoldSeconds * fs));
 
-            // Allocate and zero each channel's ring. Do NOT call rings_.reset() here:
-            // PerChannel<T>::reset() value-initialises slots, which for std::vector
-            // would empty them (resize to zero). Instead resize+fill each slot directly.
+            // Allocate and zero each channel's ring: resize + fill each slot to ringSize_.
             for (auto& ring : rings_)
             {
                 ring.assign(ringSize_, 0.0F);
@@ -525,8 +523,7 @@ namespace AdaptiveSound
         // Look-ahead ring buffers: one std::vector<float> per channel, each sized to
         // ringSize_ = kLimiterLookaheadFrames + maxFrames_ in initialize(). Heap-allocated
         // off-RT so the ring scales with the host's maximumFramesToRender. process() never
-        // allocates. Using a std::array of vectors (kMaxChannels slots) avoids the
-        // PerChannel<T> reset() pitfall for vector elements (its reset() would empty them).
+        // allocates. One vector per channel slot (kMaxChannels slots).
         std::array<std::vector<float>, kMaxChannels> rings_;
 
         // Per-sample gain envelope scratch: heap-allocated to maxFrames_ in initialize().
