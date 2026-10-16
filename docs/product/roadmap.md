@@ -71,7 +71,7 @@ Time-box: **at most 2 weeks**. Each item is medium-sized and was settled by a fo
 
 ### Where everything else went
 
-- **The Engine sprint** (FD-4): the gapless and scheduling internals — C-07, C-14 / F1 seam identity (KI-PB-16, KI-PB-17), C-21 (KI-GAP-01), C-22 (KI-GAP-04), C-23 (KI-GAP-02), C-24 (KI-GAP-05), C-28 (KI-DEV-03), C-36, C-37, C-48, C-08 (one probe / decode path), C-04's bounded-source half, ENH-001, KI-GAP-03, KI-PB-02. Backlog: US-R1F-02, [EP-PLAYENGINE](backlog.md#ep-playengine--the-engine-sprint).
+- **The Engine sprint** (FD-4): the gapless and scheduling internals — C-07, C-14 / F1 seam identity (KI-PB-16, KI-PB-17), C-21 (KI-GAP-01), ~~C-22 (KI-GAP-04)~~ C-22's cross-rate half, C-23 (KI-GAP-02), C-24 (KI-GAP-05), C-28 (KI-DEV-03), C-36, C-37, C-48, C-08 (one probe / decode path), C-04's bounded-source half, ENH-001, KI-GAP-03, KI-PB-02. Backlog: US-R1F-02, [EP-PLAYENGINE](backlog.md#ep-playengine--the-engine-sprint). *(KI-GAP-04 closed in R1.1-A, brought forward by the founder 2026-10-14: a same-rate join plays through one converter; the Engine sprint keeps only a join to another rate or width.)*
 - **Release readiness, deferred** (FD-7): C-10 (diagnostics), C-101 (playlist export and backup), C-103 (licence file, notarization, clean-Mac first run). Backlog: US-REL-01…05.
 - **Not adopted:** "CI is the only gate" (C-83's rule; FD-6); the `missing_since` tombstone (C-56's second layer) and the 100k-song performance gate (C-60) (FD-10).
 - **Parked until hardware** (FD-5): Pure pause as a device teardown (C-100, KI-PURE-01), the HAL device-state contract (C-31), the USB-DAC check, the virtual-DAC rig.
