@@ -1,10 +1,12 @@
 // R1.1-A (council C-51; panel P1 D53, D54): the spectrum analyser tells the truth. An independent
 // oracle — a sine of known frequency and level, the definition of dBFS — fed to the real
 // `SpectrumAnalyzer` the way AVAudioEngine delivers a tap (100 ms buffers, Apple's floor), at every
-// sample rate the app plays: the sine must light ITS band (the 1/6-octave span that holds it) at ITS
-// level. Before R1.1 a 0 dBFS sine read +3…+4.26 dB (the window's gain counted twice), the analyser
-// looked at the first 4096 frames of each buffer only (21 % of the audio at 192 kHz), and at high
-// rates bands shared bins and took in DC.
+// sample rate the app plays: the sine must light ITS band at ITS level. The bands tile the audible
+// range, 20 Hz – 20 kHz, in 44 equal log steps (founder decision 2026-10-16: the lens's "20 Hz – 20 kHz"
+// axis is true); the oracle derives them itself (`band(holding:)`). Before R1.1 a 0 dBFS sine read
+// +3…+4.26 dB (the window's gain counted twice), the analyser looked at the first 4096 frames of each
+// buffer only (21 % of the audio at 192 kHz), at high rates bands shared bins and took in DC, and the
+// bands stopped at 6 kHz: nothing above showed.
 
 @testable import AdaptiveSound
 import AVFoundation
@@ -15,8 +17,11 @@ struct SpectrumAnalyzerOracleTests {
     /// Every rate the app plays at, the two families and their multiples.
     static let rates: [Double] = [44100, 48000, 88200, 96000, 176_400, 192_000]
 
-    /// Bands across the display, from 100 Hz (where one band is about a bin wide) to the top band.
+    /// Bands across the display, from the bass to the top band (centres by `SpectrumConstants`).
     private static let bands = [8, 14, 20, 26, 32, 38, 43]
+
+    /// Tones across the whole range, deep bass to the top octave (founder decision 2026-10-16).
+    private static let rangeTones: [Double] = [30, 1000, 10000, 18000]
 
     /// A sine's reading may miss its dBFS by this much: the window's scalloping, not its gain.
     private static let levelTolerance = 0.5
@@ -35,6 +40,18 @@ struct SpectrumAnalyzerOracleTests {
         }
     }
 
+    @Test("tones from 30 Hz to 18 kHz each read 0 dBFS in the band that holds them, at every rate", arguments: rates)
+    func wholeRange(rate: Double) {
+        for hertz in Self.rangeTones {
+            let band = Self.band(holding: hertz)
+            let reading = Self.steadyReading(rate: rate) { Self.sine(hertz, amplitude: 1, at: $0, rate: rate) }
+            #expect(reading.loudestBand == band,
+                    "\(hertz) Hz at \(rate) Hz lit band \(reading.loudestBand), not \(band)")
+            #expect(abs(reading.decibels(band)) <= Self.levelTolerance,
+                    "\(hertz) Hz at \(rate) Hz read \(reading.decibels(band)) dB in band \(band), not 0 dBFS")
+        }
+    }
+
     @Test("a −20 dBFS sine between band centres reads −20 dB in the band that holds it", arguments: rates)
     func quieterSine(rate: Double) {
         let hertz = 997.0 // the AES17 test tone: never on a bin
@@ -48,7 +65,7 @@ struct SpectrumAnalyzerOracleTests {
 
     @Test("the whole tap buffer is analysed: a burst at its end shows", arguments: rates)
     func burstAtTheEndOfABuffer(rate: Double) {
-        let hertz = Double(SpectrumConstants.bandCentreHz(30)) // ~1 kHz
+        let hertz = Double(SpectrumConstants.bandCentreHz(30)) // the upper midrange
         let frames = Self.tapFrames(rate: rate)
         let burstStart = frames * 4 / 5 // the buffer's last fifth: past the first 4096 frames at ≥ 88.2 kHz
         let analyzer = Self.makeAnalyzer(rate: rate)
@@ -81,21 +98,20 @@ struct SpectrumAnalyzerOracleTests {
         }
     }
 
-    @Test("no bin is in two bands, none holds DC, and every band reads something", arguments: rates)
+    @Test("every band owns bins of its own, from 20 Hz to 20 kHz, and none holds DC",
+          arguments: rates + [352_800, 384_000])
     func bandsOwnTheirBins(rate: Double) {
-        let window = SpectrumAnalyzer.windowLength(sampleRate: rate)
-        let spans = SpectrumAnalyzer.bandLayout(binHertz: rate / Double(2 * window), binCount: window)
+        let spans = SpectrumAnalyzer.bandLayout(sampleRate: rate)
+        #expect(SpectrumConstants.bandEdgeHz(0) == 20 && SpectrumConstants.bandEdgeHz(spans.count) == 20000)
         var previousLast = 0 // bin 0 is DC: the first band starts above it
         for (band, span) in spans.enumerated() {
-            switch span {
-            case let .bins(range):
-                #expect(range.lowerBound > previousLast, "band \(band) shares bin \(range.lowerBound) at \(rate) Hz")
-                previousLast = range.upperBound
-            case .centre:
-                break
-            case .silent:
-                Issue.record("band \(band) reads nothing at \(rate) Hz")
+            guard let bins = span.bins else {
+                let centre = SpectrumConstants.bandCentreHz(Float(band))
+                Issue.record("band \(band) (\(centre) Hz) owns no bin at \(rate) Hz")
+                continue
             }
+            #expect(bins.lowerBound > previousLast, "band \(band) shares bin \(bins.lowerBound) at \(rate) Hz")
+            previousLast = bins.upperBound
         }
     }
 
@@ -166,12 +182,10 @@ struct SpectrumAnalyzerOracleTests {
         amplitude * Float(sin(2 * Double.pi * hertz * Double(index) / rate))
     }
 
-    /// The band whose 1/6-octave span — half a step either side of its centre — holds `hertz`.
+    /// The band that holds `hertz`: the bands tile 20 Hz – 20 kHz in 44 equal log steps, band k
+    /// spanning [20·1000^(k/44), 20·1000^((k+1)/44)) Hz.
     private static func band(holding hertz: Double) -> Int {
-        let halfStep = pow(2.0, 1.0 / 12.0)
-        return (0 ..< SpectrumConstants.bandCount).first { band in
-            let centre = Double(SpectrumConstants.bandCentreHz(Float(band)))
-            return centre / halfStep <= hertz && hertz < centre * halfStep
-        } ?? -1
+        let step = log(1000.0) / Double(SpectrumConstants.bandCount)
+        return Int((log(hertz / 20) / step).rounded(.down))
     }
 }

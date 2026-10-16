@@ -11,19 +11,26 @@ enum SpectrumConstants {
     static let windowSeconds: Double = 4096.0 / 48000.0
     static let bandCount: Int = 44
     static let displayBarCount: Int = 88 // 2 bars per band; view interpolates
-    /// The lowest band's centre. The 44 bands climb in 1/6-octave steps from here, so the highest sits
-    /// near 5.7 kHz (`bandCentreHz(43)`) — the analyzer shows no band above that.
-    static let minHz: Float = 40.0
+    /// The analyser's range: its 44 bands tile 20 Hz – 20 kHz, the audible range, in equal log steps —
+    /// each a 44th of three decades, ≈ 0.23 octave — so the lens's "20 Hz – 20 kHz" axis is true and the
+    /// treble shows (founder decision 2026-10-16). Before: 1/6-octave bands from 37.8 Hz to 6.05 kHz.
+    static let lowestHz: Double = 20
+    static let highestHz: Double = 20000
     static let noiseFloorDB: Float = -80.0 // dB floor mapped to 0.0
     /// The bars' release time constant: y = max(x, e^(−Δt/τ)·y) per frame. The shipped 0.85 per 100 ms
     /// tap buffer (τ = 0.1 s / ln(1/0.85)), now per second of audio, whatever buffer size the tap gets.
     static let releaseSeconds: Double = 0.1 / log(1 / 0.85)
 
-    /// The centre (Hz) of analyzer band `band` — fractional for the display bars between two bands:
-    /// 1/6-octave steps up from `minHz`. The analyzer's bins and the EQ graph's silhouette both place
-    /// bands by this one formula.
+    /// Band edge `edge` in Hz, 0…`bandCount`: band b spans [edge b, edge b + 1). Edge 0 is 20 Hz and the
+    /// last is 20 kHz. The analyser's bins and every view that places a band by frequency read this.
+    static func bandEdgeHz(_ edge: Int) -> Double {
+        lowestHz * pow(highestHz / lowestHz, Double(edge) / Double(bandCount))
+    }
+
+    /// The centre (Hz) of analyzer band `band` — its edges' geometric mean; fractional for the display
+    /// bars between two bands. The EQ graph's silhouette places bars by it.
     static func bandCentreHz(_ band: Float) -> Float {
-        minHz * powf(2.0, band / 6.0)
+        Float(lowestHz * pow(highestHz / lowestHz, (Double(band) + 0.5) / Double(bandCount)))
     }
 
     /// The centre (Hz) of display bar `bar` of `barCount` (the 44 bands upsampled, `SpectrumSampler`).
