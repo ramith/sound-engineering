@@ -66,8 +66,9 @@ public struct LibraryScanner: Sendable {
 
     /// Reads what is at a root's path now — nil when it is not reachable. The real filesystem by default
     /// (`RootReachabilityProbe.identity(of:)`); a seam, so a test can stand in a drive that is swapped,
-    /// or goes away, under a walk without mounting one.
-    private let rootIdentity: @Sendable (URL) -> RootIdentity?
+    /// or goes away, under a walk without mounting one. Also what a loose song's folder is judged by
+    /// (`FileAvailability`: missing only on the startup disk).
+    let rootIdentity: @Sendable (URL) -> RootIdentity?
 
     public init(rootIdentity: @escaping @Sendable (URL) -> RootIdentity? = RootReachabilityProbe.identity(of:)) {
         self.rootIdentity = rootIdentity
