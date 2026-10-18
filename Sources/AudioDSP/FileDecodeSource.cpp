@@ -1069,15 +1069,15 @@ namespace AdaptiveSound
             return ok;
         }
 
-        uint32_t pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept
+        uint32_t pullFloat(float* out, uint32_t frames, uint32_t requestedChannels) noexcept
         {
-            if (out == nullptr || frames == 0U || channels == 0U)
+            if (out == nullptr || frames == 0U || requestedChannels == 0U)
             {
                 return 0U;
             }
-            const std::size_t want = static_cast<std::size_t>(frames) * channels;
+            const std::size_t want = static_cast<std::size_t>(frames) * requestedChannels;
             // Channel count must match what the ring holds; otherwise emit silence.
-            if (channels != channels_)
+            if (requestedChannels != channels_)
             {
                 std::memset(out, 0, want * sizeof(float));
                 return 0U;
@@ -1097,7 +1097,7 @@ namespace AdaptiveSound
             filled += ring_.popBlock(out + filled, want - filled);
 
             // Keep only whole frames; stash any trailing partial frame for the next pull.
-            const std::size_t wholeFloats = (filled / channels) * channels;
+            const std::size_t wholeFloats = (filled / requestedChannels) * requestedChannels;
             const std::size_t remainder = filled - wholeFloats;
             if (remainder > 0U)
             {
@@ -1108,7 +1108,7 @@ namespace AdaptiveSound
             {
                 std::memset(out + wholeFloats, 0, (want - wholeFloats) * sizeof(float));
             }
-            return static_cast<uint32_t>(wholeFloats / channels);
+            return static_cast<uint32_t>(wholeFloats / requestedChannels);
         }
 
         [[nodiscard]] double sampleRate() const noexcept
