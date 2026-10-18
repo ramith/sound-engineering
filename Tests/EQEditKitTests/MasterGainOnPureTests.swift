@@ -28,10 +28,20 @@ final class FakeVolumeDevice: DeviceVolumeControl {
         return DeviceVolumeReading(level: level, range: range)
     }
 
+    /// Pure's lowering: within the range and, as the HAL does, never above 0 dB (turn-down only).
     func set(_ decibels: Float) -> Bool {
+        land(decibels, upTo: min(range.upperBound, 0))
+    }
+
+    /// The give-back: what was found, within the device's own range only (a device may sit above 0 dB).
+    func restore(_ decibels: Float) -> Bool {
+        land(decibels, upTo: range.upperBound)
+    }
+
+    private func land(_ decibels: Float, upTo ceiling: Float) -> Bool {
         guard isPresent, hasVolume, decibels.isFinite else { return false }
         sets.append(decibels)
-        level = min(max((decibels / step).rounded() * step, range.lowerBound), range.upperBound)
+        level = min(max((decibels / step).rounded() * step, range.lowerBound), ceiling)
         return true
     }
 
@@ -305,5 +315,17 @@ struct MasterGainOnPureTests {
         #expect(dac.sets.allSatisfy { $0 <= max(found, -40) }, "\(what): set to \(dac.sets), above what Pure found")
         #expect(rule.unreturned.isEmpty, "\(what): a damaged loan is dropped, not kept out forever")
         #expect(!loan.isSound || what == "anchor above the ceiling")
+    }
+
+    /// Some interfaces run above 0 dB (+6, +12). Pure's lowering stays turn-down only, but what it gives
+    /// back is what it found — within the device's own range, not clamped to 0 dB (H-4).
+    @Test("a device found above 0 dB gets that level back, not 0 dB")
+    func foundAboveZeroIsGivenBack() {
+        let interface = FakeVolumeDevice(level: 6, range: -64 ... 12)
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -10, device: interface)
+        #expect(interface.level == -4)
+        let ended = rule.handle(.stopped) { _ in interface }
+        #expect(ended && interface.level == 6, "given back at \(interface.level) dB")
     }
 }

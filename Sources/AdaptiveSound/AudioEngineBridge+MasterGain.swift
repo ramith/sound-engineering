@@ -233,13 +233,14 @@ enum DeviceHardwareVolume {
         return DeviceVolumeReading(level: decibels, range: Float(range.mMinimum) ... Float(range.mMaximum))
     }
 
-    /// Set the device's volume, clamped to its own dB range and to 0 dB at most (turn-down only — the
-    /// hearing-safety clamp); a level that is not a number sets nothing. The device takes the nearest
-    /// value it can select. False when the device refused (or is gone).
+    /// Set the device's volume, clamped to its own dB range and — for Pure's lowering (`turnDownOnly`) —
+    /// to 0 dB at most (the hearing-safety clamp); the give-back puts back what Pure found, which on some
+    /// interfaces is above 0 dB (H-4), within the range only. A level that is not a number sets nothing.
+    /// The device takes the nearest value it can select. False when the device refused (or is gone).
     @discardableResult
-    static func set(_ device: AudioObjectID, decibels: Float) -> Bool {
+    static func set(_ device: AudioObjectID, decibels: Float, turnDownOnly: Bool = true) -> Bool {
         guard let current = reading(device) else { return false }
-        let ceiling = min(current.range.upperBound, MasterGainLaw.unity)
+        let ceiling = turnDownOnly ? min(current.range.upperBound, MasterGainLaw.unity) : current.range.upperBound
         var target = Float32(min(max(decibels, current.range.lowerBound), ceiling))
         guard target.isFinite else { return false }
         var address = address(kAudioDevicePropertyVolumeDecibels)
@@ -282,5 +283,9 @@ struct HALDeviceVolume: DeviceVolumeControl {
 
     func set(_ decibels: Float) -> Bool {
         DeviceHardwareVolume.set(deviceID, decibels: decibels)
+    }
+
+    func restore(_ decibels: Float) -> Bool {
+        DeviceHardwareVolume.set(deviceID, decibels: decibels, turnDownOnly: false)
     }
 }
