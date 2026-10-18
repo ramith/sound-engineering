@@ -401,7 +401,8 @@ static auto testCrossfeedCentreFlatVsBs2b() -> void
     constexpr double kOracleTolDb = 0.02;
     constexpr double kBs2bFloorDb = -1.8; // the deepest bs2b level (default) bottoms at −1.75 dB
     constexpr std::array<double, 13U> kProbesHz = {
-        100.0, 150.0, 200.0, 300.0, 500.0, 700.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0, 7000.0, 10000.0,
+        100.0,  150.0,  200.0,  300.0,  500.0,  700.0,   1000.0, //
+        1500.0, 2000.0, 3000.0, 5000.0, 7000.0, 10000.0,
     };
 
     std::string fail;
