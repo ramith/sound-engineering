@@ -1,4 +1,5 @@
 @testable import AdaptiveSound
+import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 import PlaybackQueueKit
@@ -51,13 +52,13 @@ final class EnhancedTransportRig: @unchecked Sendable {
     /// Further fixture files a test wrote (`writeTrack`), removed with the track by `finish`.
     private var fixtures: [URL] = []
 
-    /// Build the graph, write `tones` (Hz, equal levels summing to `toneAmplitude`) at `path`'s
-    /// rate — `frames` long (default `toneSeconds`) — and play the file from the top.
-    init(path: SubPath, name: String, tones: [Double] = [440], frames: Int? = nil) async throws {
+    /// Build the graph, write `tones` (Hz, equal levels summing to `toneAmplitude`) at `rate` (default:
+    /// `path`'s) — `frames` long (default `toneSeconds`) — and play the file from the top.
+    init(path: SubPath, name: String, tones: [Double] = [440], frames: Int? = nil, rate: Double? = nil) async throws {
         try #require(stall.buildGraph(slowUnit: false), "the real graph did not build offline")
-        let length = frames ?? Int(Self.toneSeconds * path.fileRate)
-        url = try Self.writeTones(tones, named: "\(name)-\(path.rawValue)", rate: path.fileRate,
-                                  frames: 0 ..< length)
+        let fileRate = rate ?? path.fileRate
+        let length = frames ?? Int(Self.toneSeconds * fileRate)
+        url = try Self.writeTones(tones, named: "\(name)-\(path.rawValue)", rate: fileRate, frames: 0 ..< length)
         let file = try AVAudioFile(forReading: url)
         duration = Double(file.length) / file.processingFormat.sampleRate
         try await play()
@@ -178,6 +179,21 @@ final class EnhancedTransportRig: @unchecked Sendable {
         }
     }
 
+    /// Pull output in paced 512-frame blocks until `condition` holds after a block, at most `limit`
+    /// frames. Returns how many frames had been pulled when it first held (`nil`: it never did, or the
+    /// render failed). The condition is read after the block's completions had their time to land.
+    func frames(until condition: () -> Bool, limit: Int) -> Int? {
+        var pulled = 0
+        while pulled < limit {
+            guard samples(frames: 512, paced: true) != nil else { return nil }
+            pulled += 512
+            if condition() {
+                return pulled
+            }
+        }
+        return nil
+    }
+
     /// Pull `seconds` of output and return its peak after the first `skipping` seconds (the DSP's
     /// look-ahead and tails), or `nil` when the render failed.
     func render(seconds: Double, skipping: Double = 0) -> Float? {
@@ -196,6 +212,50 @@ final class EnhancedTransportRig: @unchecked Sendable {
     }
 
     // MARK: - Fixture
+
+    /// Play `frames` of the tone program at `rate` (the resampler sub-path unless it is the graph's
+    /// rate), with the program's next `nextFrames` — so the two join into one sound — on deck as
+    /// another track.
+    static func playing(_ tones: [Double], rate: Double, frames: Int, thenNext nextFrames: Int,
+                        name: String) async throws -> EnhancedTransportRig {
+        let rig = try await EnhancedTransportRig(path: rate == graphRate ? .passthrough : .resampler, name: name,
+                                                 tones: tones, frames: frames, rate: rate)
+        let next = try rig.writeTrack(tones, named: "\(name)-next", rate: rate, frames: frames ..< frames + nextFrames)
+        await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 1))
+        return rig
+    }
+
+    /// ONE conversion of `frames` frames of the tone program at `rate` from frame `first` to the
+    /// graph's rate — the production converter in the production chunks, then its flush: what the
+    /// player plays for that stretch of a resampled program.
+    static func oneConversion(_ tones: [Double], rate: Double, frames: Int, from first: Int = 0) throws -> [Float] {
+        let input = try #require(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2))
+        let output = try #require(AVAudioFormat(standardFormatWithSampleRate: graphRate, channels: 2))
+        let resampler = try #require(StreamingResampler(from: input, to: output))
+        let chunk = Int(StreamingResampler.inputChunkFrames)
+        var converted: [Float] = []
+        var start = 0
+        for _ in 0 ... frames / chunk + 2 {
+            let count = min(chunk, frames - start)
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: input, frameCapacity: AVAudioFrameCount(chunk)))
+            buffer.frameLength = AVAudioFrameCount(count)
+            let data = try #require(buffer.floatChannelData)
+            for index in 0 ..< count {
+                let sample = toneSample(tones, frame: first + start + index, rate: rate)
+                data[0][index] = sample
+                data[1][index] = sample
+            }
+            start += count
+            let result = try resampler.convert(buffer, inputEnded: count == 0)
+            let left = try #require(result.buffer.floatChannelData)
+            converted += UnsafeBufferPointer(start: left[0], count: Int(result.buffer.frameLength))
+            if result.endOfStream {
+                return converted
+            }
+        }
+        Issue.record("the converter never reported the end of its stream")
+        return converted
+    }
 
     /// Write another track (removed by `finish`): `frames` of the same tone program at `rate`, on
     /// `channels` channels — `frames` starting where the playing track ends continues its sound.

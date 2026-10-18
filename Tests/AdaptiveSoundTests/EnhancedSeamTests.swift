@@ -195,11 +195,7 @@ struct EnhancedSeamTests {
     /// Play track A (`lengthA` frames of the program) through the real bridge, with track B — the
     /// program's next `nextFrames`, so the two join into one sound — on deck.
     static func playWithNextOnDeck(lengthA: Int, nextFrames: Int = nextFrames, name: String) async throws -> Rig {
-        let rig = try await Rig(path: .resampler, name: name, tones: tones, frames: lengthA)
-        let next = try rig.writeTrack(tones, named: "\(name)-next", rate: rate,
-                                      frames: lengthA ..< lengthA + nextFrames)
-        await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 1))
-        return rig
+        try await Rig.playing(tones, rate: rate, frames: lengthA, thenNext: nextFrames, name: name)
     }
 
     /// The first output frame of the track that starts at input frame `inputFrame`: the converter
@@ -208,34 +204,9 @@ struct EnhancedSeamTests {
         Int((Double(inputFrame) * Rig.graphRate / rate).rounded(.up))
     }
 
-    /// ONE conversion of `frames` frames of the program from frame `from`: the production converter
-    /// in the production chunks, then its flush.
+    /// ONE conversion of `frames` frames of the program from frame `from` (`Rig.oneConversion`).
     static func continuousConversion(frames: Int, from first: Int = 0) throws -> [Float] {
-        let input = try #require(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2))
-        let output = try #require(AVAudioFormat(standardFormatWithSampleRate: Rig.graphRate, channels: 2))
-        let resampler = try #require(StreamingResampler(from: input, to: output))
-        var converted: [Float] = []
-        var start = 0
-        for _ in 0 ... frames / chunk + 2 {
-            let count = min(chunk, frames - start)
-            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: input, frameCapacity: AVAudioFrameCount(chunk)))
-            buffer.frameLength = AVAudioFrameCount(count)
-            let data = try #require(buffer.floatChannelData)
-            for index in 0 ..< count {
-                let sample = Rig.toneSample(tones, frame: first + start + index, rate: rate)
-                data[0][index] = sample
-                data[1][index] = sample
-            }
-            start += count
-            let result = try resampler.convert(buffer, inputEnded: count == 0)
-            let left = try #require(result.buffer.floatChannelData)
-            converted += UnsafeBufferPointer(start: left[0], count: Int(result.buffer.frameLength))
-            if result.endOfStream {
-                return converted
-            }
-        }
-        Issue.record("the converter never reported the end of its stream")
-        return converted
+        try Rig.oneConversion(tones, rate: rate, frames: frames, from: first)
     }
 
     /// The shift (frames; negative: early) that best lines `output` up with `reference` over 400
