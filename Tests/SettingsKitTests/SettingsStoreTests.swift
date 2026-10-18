@@ -133,20 +133,6 @@ struct SettingsStoreTests {
         #expect(load().useFFmpeg, "turned on, it stays on")
     }
 
-    @Test("SETTINGS-10: Pure's device-volume loans are kept, so a crash puts them back; a bad value reads none")
-    func pureVolumeLoansKept() {
-        let loan = PureVolumeLoan(deviceUID: "AppleUSBAudioEngine:DAC:1", ceiling: -20, anchor: -20, lastSet: -32)
-        let store = SettingsStore(defaults: defaults)
-        var settings = store.load()
-        #expect(settings.pureVolumeLoans.isEmpty)
-        settings.pureVolumeLoans = [loan]
-        store.save(settings)
-        store.flush()
-        #expect(load().pureVolumeLoans == [loan])
-        stored(#"{"version":1,"pureVolumeLoans":"lowered"}"#)
-        #expect(load().pureVolumeLoans.isEmpty)
-    }
-
     /// The never-louder rule against every kind of bad stored value (R1.1-A close-out break-it, SET-1 / SET-2):
     /// whatever can't be what the listener left reads Silent — a value of another plist type, JSON that
     /// isn't an object or doesn't parse, an object with no level, and a level that is not a number, ±∞ or
@@ -188,29 +174,6 @@ struct SettingsStoreTests {
             stored(json)
             #expect(load().masterGainDecibels == level)
         }
-    }
-
-    /// Each kept loan is a device left turned down: one bad entry must not cost the others, and a damaged
-    /// one is not kept (SET-3, SET-4). Good loans read; one of a wrong type, with a field missing, a field
-    /// that is not a number, an empty device, or its anchor above its ceiling, is dropped on its own.
-    @Test("SETTINGS-12: Pure volume loans are read one by one — a bad one is dropped, the good ones kept")
-    func loansReadLeniently() {
-        let good = #"{"deviceUID":"DAC-A","ceiling":-20,"anchor":-20,"lastSet":-32}"#
-        let alsoGood = #"{"deviceUID":"DAC-G","ceiling":-10,"anchor":-15,"lastSet":-25}"#
-        let bad = [
-            #"{"deviceUID":"DAC-B","ceiling":"oops","anchor":-20,"lastSet":-32}"#,
-            #"{"deviceUID":"DAC-C","ceiling":-20,"lastSet":-32}"#,
-            #"{"deviceUID":"DAC-D","ceiling":-20,"anchor":"NaN","lastSet":-32}"#,
-            #"{"deviceUID":"DAC-E","ceiling":"+Infinity","anchor":-20,"lastSet":-32}"#,
-            #"{"deviceUID":"DAC-F","ceiling":-30,"anchor":0,"lastSet":-40}"#,
-            #"{"deviceUID":"","ceiling":-20,"anchor":-20,"lastSet":-32}"#,
-            #""a string""#, "7", "null",
-        ]
-        stored(#"{"version":1,"masterGainDecibels":-10,"pureVolumeLoans":["#
-            + ([good] + bad + [alsoGood]).joined(separator: ",") + "]}")
-        let settings = load()
-        #expect(settings.pureVolumeLoans.map(\.deviceUID) == ["DAC-A", "DAC-G"])
-        #expect(settings.masterGainDecibels == -10, "the rest of the value still reads")
     }
 
     @Test("SETTINGS-06: Master Gain is never restored louder than it was left")

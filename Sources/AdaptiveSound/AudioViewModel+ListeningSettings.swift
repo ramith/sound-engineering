@@ -23,8 +23,7 @@ extension AudioViewModel {
             repeatMode: repeatMode,
             keepPlaybackOnDevice: pinPlaybackToSelectedDevice,
             chosenOutputUID: chosenOutputUID,
-            useFFmpeg: useFFmpeg,
-            pureVolumeLoans: pureVolumeLoans
+            useFFmpeg: useFFmpeg
         )
     }
 
@@ -44,7 +43,6 @@ extension AudioViewModel {
         pinPlaybackToSelectedDevice = settings.keepPlaybackOnDevice
         chosenOutputUID = settings.chosenOutputUID
         useFFmpeg = settings.useFFmpeg // sets the process's FFmpeg switch, before any library work
-        pureVolumeLoans = settings.pureVolumeLoans // handed to the engine at engine-ready
         rememberListeningSettings()
         logUX("settings restored: pure=\(settings.pureMode) gain=\(MasterGainLaw.text(settings.masterGainDecibels)) "
             + "crossfeed=\(settings.crossfeed) [\(settings.crossfeedStrength.displayName)] "
@@ -56,15 +54,6 @@ extension AudioViewModel {
     /// Keep the settings as they stand (written at the end of this main-actor turn).
     func rememberListeningSettings() {
         settingsStore.save(listeningSettings)
-    }
-
-    /// Keep the device-volume loans the engine reports (each tick's snapshot), when they changed: a
-    /// device Pure turned down is put back at the next launch if the app dies first.
-    func rememberPureVolumeLoans(_ loans: [PureVolumeLoan]) {
-        guard loans != pureVolumeLoans else { return }
-        pureVolumeLoans = loans
-        logUX("pure volume loans → \(loans.map { "\($0.deviceUID) anchor \(MasterGainLaw.text($0.anchor))" })")
-        rememberListeningSettings()
     }
 
     /// Keep the device the user chose, read back from the engine after a pick or the switch turned on —

@@ -274,9 +274,6 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var pendingPureGain: Float?
     var pureGainDrainPosted = false
 
-    /// `masterGainOnPure.allLoans` as last published, for the snapshot. Guarded by `stateLock`.
-    var publishedPureVolumeLoans: [PureVolumeLoan] = []
-
     // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 
     /// The device-list (`kAudioHardwarePropertyDevices`) and system-default-output
@@ -364,8 +361,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// through a borrow of the AU). No AVFAudio, no HAL, no queue hop.
     func snapshot() -> EngineSnapshot {
         EngineSnapshot(transport: transportSnapshots.read(), signalPath: loadSignalPath(),
-                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate(),
-                       pureVolumeLoans: withStateLock { publishedPureVolumeLoans })
+                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
     }
 
     /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`), read through

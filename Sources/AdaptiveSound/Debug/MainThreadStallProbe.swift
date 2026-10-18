@@ -1,6 +1,7 @@
 #if DEBUG
     import AudioToolbox
     import Foundation
+    import SettingsKit
 
     // MARK: - Every main-thread entry into the engine, timed (`make main-thread-stall`)
 
@@ -20,6 +21,11 @@
         private var toggle = false
         private let flatPoints = [Float](repeating: 0, count: 31)
         private var bands = [Float](repeating: 0, count: 64)
+        /// Pure's loan journal, over the view model's own (isolated) defaults.
+        private var loanJournal: PureVolumeLoanJournal {
+            PureVolumeLoanJournal(defaults: viewModel.defaults)
+        }
+
         private let devices = [
             AudioDeviceModel(id: 0x7FFF_0001, name: "Stall A", sampleRate: 48000, bufferFrameSize: 512,
                              uid: "stall-a", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true),
@@ -61,7 +67,7 @@
                 viewModel.selectedDevice = devices[flip ? 0 : 1]
             }
             measure("vm.setMasterGain (Enhanced)") { viewModel.setMasterGain(position: flip ? 0.5 : 0.6) }
-            measure("engine.returnPureVolumeLoans") { bridge.returnPureVolumeLoans([]) }
+            measure("engine.keepPureVolumeLoans") { bridge.keepPureVolumeLoans(in: loanJournal) }
             measure("vm.pinPlaybackToSelectedDevice didSet") { viewModel.pinPlaybackToSelectedDevice = flip }
             measure("engine.restoreChosenOutput") { bridge.restoreChosenOutput(uid: flip ? devices[0].uid : nil) }
             measure("engine.chosenOutputUID") { _ = bridge.chosenOutputUID() }

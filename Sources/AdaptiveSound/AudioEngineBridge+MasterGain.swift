@@ -2,6 +2,7 @@
 import CoreAudio
 import EQEditKit
 import Foundation
+import SettingsKit
 
 // MARK: - AudioEngineBridge Master Gain (S10.8 G, break-it G-GAIN-1; R1.1-A, C-29)
 
@@ -22,8 +23,9 @@ import Foundation
 ///   leaves it (`pureVolumeEvent`, founder decision 2026-10-16) — and the device's volume is followed
 ///   for as long as it is held. The rule and every HAL call it makes live on `deviceVolumeQueue`
 ///   (never the main thread). `engineQueue` waits on it for the entry and the leaving, so the device
-///   is lowered before Pure renders and put back once Pure has stopped. The loans not yet put back
-///   ride in the snapshot, and the view model keeps them with the listener's settings (crash-safe).
+///   is lowered before Pure renders and put back once Pure has stopped. The rule writes the loans not yet
+///   put back ahead of every change it makes to a device, to the engine's journal (`PureVolumeLoanJournal`:
+///   crash-safe — H-2).
 extension AudioEngineBridge {
     // MARK: - Enhanced: the app's gain on the player
 
@@ -45,13 +47,14 @@ extension AudioEngineBridge {
 
     // MARK: - Pure: the output device's own volume
 
-    /// See `AudioPlaybackEngine.returnPureVolumeLoans`. Returns at once: the rule takes the loans in and
-    /// puts back those whose devices are here, on `deviceVolumeQueue`.
-    func returnPureVolumeLoans(_ loans: [PureVolumeLoan]) {
+    /// See `AudioPlaybackEngine.keepPureVolumeLoans`. Returns at once: the rule writes the journal ahead of
+    /// every change from now on, takes in the loans an earlier run left, and puts back those whose devices
+    /// are here — on `deviceVolumeQueue`.
+    func keepPureVolumeLoans(in journal: PureVolumeLoanJournal) {
         deviceVolumeQueue.async {
-            self.masterGainOnPure.adopt(loans)
+            self.masterGainOnPure.writeAhead = { journal.keep($0) }
+            self.masterGainOnPure.adopt(journal.loans())
             self.masterGainOnPure.returnUnreturned { HALDeviceVolume(uid: $0) }
-            self.publishPureVolumeLoans()
         }
     }
 
@@ -62,7 +65,6 @@ extension AudioEngineBridge {
         deviceVolumeQueue.async {
             guard !self.masterGainOnPure.unreturned.isEmpty else { return }
             self.masterGainOnPure.returnUnreturned { HALDeviceVolume(uid: $0) }
-            self.publishPureVolumeLoans()
         }
     }
 
@@ -78,7 +80,6 @@ extension AudioEngineBridge {
             let ended = masterGainOnPure.handle(.outputMoved(toUID: uid)) { HALDeviceVolume(uid: $0) }
             pureGain = gain
             let entry = masterGainOnPure.enter(deviceUID: uid, gain: gain, device: HALDeviceVolume(deviceID: deviceID))
-            publishPureVolumeLoans()
             return (entry, ended, masterGainOnPure.loan != nil)
         }
         if ended || !held {
@@ -95,9 +96,7 @@ extension AudioEngineBridge {
     /// render stopped; the rule runs on `deviceVolumeQueue`. A device that is gone keeps its loan.
     func pureVolumeEvent(_ event: PureVolumeEvent) {
         let ended = deviceVolumeQueue.sync {
-            let ended = masterGainOnPure.handle(event) { HALDeviceVolume(uid: $0) }
-            publishPureVolumeLoans() // the hold, or a device back again, may have been given back
-            return ended
+            masterGainOnPure.handle(event) { HALDeviceVolume(uid: $0) }
         }
         if ended {
             unwatchDeviceVolume()
@@ -132,7 +131,6 @@ extension AudioEngineBridge {
             let device = HALDeviceVolume(uid: held.deviceUID)
             masterGainOnPure.gainChanged(to: gain, device: device)
             storeDeviceVolume(DeviceHardwareVolume.read(device.deviceID))
-            publishPureVolumeLoans()
         }
     }
 
@@ -175,7 +173,6 @@ extension AudioEngineBridge {
     private func deviceVolumeChanged(_ device: AudioObjectID) {
         masterGainOnPure.deviceChanged(gain: pureGain, device: HALDeviceVolume(deviceID: device))
         storeDeviceVolume(DeviceHardwareVolume.read(device))
-        publishPureVolumeLoans()
     }
 
     /// Put a device reading into the snapshot — only while the path is Pure, so a late listener
@@ -185,13 +182,6 @@ extension AudioEngineBridge {
             guard info.path == .pure else { return }
             info.deviceVolume = volume
         }
-    }
-
-    /// The loans not yet put back, for the snapshot (and so the listener's settings). On
-    /// `deviceVolumeQueue`.
-    private func publishPureVolumeLoans() {
-        let loans = masterGainOnPure.allLoans
-        withStateLock { publishedPureVolumeLoans = loans }
     }
 }
 

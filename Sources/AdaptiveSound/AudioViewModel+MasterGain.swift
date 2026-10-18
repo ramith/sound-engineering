@@ -9,8 +9,9 @@ import Foundation
 /// down by it instead (`MasterGainOnPure`, EQEditKit): Pure engages at any Master Gain and the music is
 /// as loud as it was; on a device with no volume the app can set, Pure waits while Master Gain is turned
 /// down, and says why (`PureModeReason.waitsForMasterGain`). The view model only asks for Pure — the
-/// engine knows the device. The loans of a device's volume not yet put back are kept with the listener's
-/// settings (`pureVolumeLoans`), so a crash leaves no device turned down.
+/// engine knows the device. The loans of a device's volume not yet put back are kept in their own journal,
+/// which the engine writes ahead of every change (`PureVolumeLoanJournal`), so a crash leaves no device
+/// turned down.
 extension AudioViewModel {
     /// How the next start takes Pure, for the play log.
     var pureStartNote: String {

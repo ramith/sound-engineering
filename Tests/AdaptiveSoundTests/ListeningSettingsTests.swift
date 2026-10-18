@@ -7,6 +7,7 @@
 import EQEditKit
 import Foundation
 import LibraryScan
+import SettingsKit
 import Testing
 
 @MainActor
@@ -225,18 +226,14 @@ struct ListeningSettingsTests {
         #expect(!viewModel.masterGainControl.isAdjustable)
     }
 
-    @Test("the device-volume loans the engine holds are kept, and handed back to the engine at the next launch")
+    @Test("at engine-ready the engine is handed Pure's loan journal over the app's defaults — what a crash left")
     func loansKeptAcrossALaunch() async {
-        let loan = PureVolumeLoan(deviceUID: "AppleUSBAudioEngine:DAC:1", ceiling: -20, anchor: -20, lastSet: -32)
-        let (viewModel, _) = await launchReady(on: Self.speakers, devices: [Self.speakers])
-        viewModel.rememberPureVolumeLoans([loan]) // as the tick reads them from the snapshot
-        await settle()
-        // The app died while Pure had the DAC turned down: the next launch hands the loan back.
+        let loan = PureVolumeLoan(deviceUID: "AppleUSBAudioEngine:DAC:1", ceiling: -20, anchor: -20, lastSet: -32,
+                                  pending: -32)
+        PureVolumeLoanJournal(defaults: defaults).keep([loan]) // as the engine wrote it ahead, before dying
         let (_, relaunchedEngine) = await launchReady(on: Self.speakers, devices: [Self.speakers])
-        #expect(relaunchedEngine.state.withLock { $0.returnedLoans } == [[loan]])
+        #expect(relaunchedEngine.state.withLock { $0.journalLoans } == [[loan]])
     }
-
-    // MARK: - The chosen output device (DEV-1)
 
     @Test("the device the user chose comes back after a relaunch; the device the app launches on is not a choice")
     func chosenDeviceKept() async {

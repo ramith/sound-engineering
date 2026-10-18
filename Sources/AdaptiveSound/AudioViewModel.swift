@@ -260,11 +260,6 @@ final class AudioViewModel {
         }
     }
 
-    /// The output devices whose own volume Pure turned down and has not yet put back, as the engine
-    /// last reported them (`EngineSnapshot.pureVolumeLoans`) — kept with the listener's settings and
-    /// handed back to the engine at the next engine-ready, so a crash leaves no device turned down.
-    @ObservationIgnored var pureVolumeLoans: [PureVolumeLoan] = []
-
     // MARK: - Live spectrum and the transport tick
 
     /// The one reader of the analysers for every live view — the lens, the EQ's silhouette,
