@@ -587,7 +587,8 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 — release readiness, deferred (FD-7, 2026-10-14) |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, d540c5c; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
-| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure is left — a stop that ends playback, Enhanced starting, the output moving, quit — but **not at a pause** (founder 2026-10-16: playback resumes there, so the level stays and the Mac's volume indicator doesn't jump); a volume-key press in Pure, or while paused in it, is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain") | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). A device unplugged while lowered gets its level back at the next launch, or the next Pure start on it | — (by design) |
+| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure is left — a stop that ends playback, Enhanced starting, the output moving, quit — but **not at a pause** (founder 2026-10-16: playback resumes there, so the level stays and the Mac's volume indicator doesn't jump); a volume-key press in Pure, or while paused in it, is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain"). **Never louder than Master Gain says** (close-out H-1): a cut deeper than the device's own range waits ("Pure waits: device range"); Silent mutes a device that has a mute (given back with the volume), else waits. While Pure already plays, the slider moved below the device's floor mutes a device that has a mute; **one without holds its floor until the next start**, which waits | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). The loans are written ahead of every device change (`PureVolumeLoanJournal`, H-2); a device unplugged while lowered gets its level back when it is seen again (a transport event, a device-list change) or at the next launch | — (by design) |
+| **A loose song off the startup disk is never offered by Remove Missing**, only shown unavailable — even if it was really deleted | R1.1-A close-out AV-1 (option b): a loose song has no drive binding, so only on the startup disk can its folder being there prove it gone; elsewhere a same-named drive may stand in its drive's place (`FileAvailability`) | a volume column on loose rows (option a, v10) if it is ever wanted |
 | **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, d540c5c; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool (council C-57) |
@@ -598,6 +599,27 @@ These are not defects; each is a decision or a planned feature. They are listed 
 ---
 
 ## Closed
+
+### Fixed in R1.1-A — the close-out break-it's FIX-FIRST items (branch `r1.1a/breakit-fixes`)
+
+Library side (SET-1…4, AV-1) and audio side (H-1…5, D-1), each with the breaker's red test kept as a regression test
+(red on c9efbe6):
+- **SET-1 / SET-2:** Master Gain is never restored louder for any stored value — another plist type, unreadable
+  JSON, a missing or non-numeric level all read Silent, and a damaged value is copied aside.
+- **SET-3 / SET-4:** a damaged kept Pure volume loan is never put back above what Pure found, nor as a non-number;
+  loans are read one by one.
+- **AV-1:** Remove Missing never offers a loose song off the startup disk (see *Known limitations*).
+- **H-5:** a Master Gain step on Pure reads the device first, so the listener's own volume change is never undone.
+- **H-1:** a cut below the device's range waits; Silent mutes (see *Known limitations*).
+- **H-2:** Pure's loans are written ahead of every device change, to their own journal — a crash at any instant
+  gives the level back.
+- **H-3:** a device lost mid-Pure and back in the same session gets its level back at once.
+- **H-4:** a device found above 0 dB gets that level back.
+- **D-1:** a 24-bit FLAC / ALAC read by Apple's decoder is known as 24-bit — dithered on a 16-bit word, labelled
+  not bit-perfect. **Still owed on hardware (D-2):** whether the AU's negotiated format on a mixable 16-bit DAC
+  stream is float32, which would hide the device's depth from the rule (one `logASBD` on a 16-bit DAC).
+- **LOW:** a configure failure names the refused rate or channels instead of "device refused" — not unit-testable
+  offline; owed with the USB-DAC / HDMI check (FD-5).
 
 ### Fixed in R1.1-A — live readouts (branch `r1.1a/readouts`)
 
