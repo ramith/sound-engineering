@@ -23,6 +23,12 @@
 //   output moving to another device.
 // - A DEVICE WITH NO VOLUME THE APP CAN SET (many DACs, HDMI): turned down, Pure waits — Enhanced keeps
 //   playing at the listener's level until Master Gain is back at 0 dB (`waitsForMasterGain`).
+// - NEVER LOUDER THAN MASTER GAIN SAYS (R1.1-A close-out break-it, H-1): a cut deeper than the device's own
+//   range can't be made on the device, so Pure waits (`waitsBelowDeviceRange`) rather than stop at the
+//   device's floor; Silent is silence — the device is muted if it has a mute the app can set (and the mute
+//   is given back with the volume), else Pure waits. While Pure already plays, the slider moved below the
+//   floor (or to Silent) mutes a device that has a mute; one without holds its floor, and the next start
+//   waits.
 // - CRASH-SAFE: every loan not yet settled (`allLoans`) is kept with the listener's settings. A loan a
 //   device couldn't take back (it went away) or that a crash left is put back when the device is seen
 //   again (`returnUnreturned`, at launch) — by the same rule: only if it still reads what Pure set.
@@ -55,12 +61,25 @@ public protocol DeviceVolumeControl {
     /// The give-back: set the level Pure found, within the device's own range only — a device may sit
     /// above 0 dB (H-4). False when the device refused or is gone.
     func restore(_ decibels: Float) -> Bool
+    /// Whether the device is muted, or nil when it has no mute the app can set.
+    func isMuted() -> Bool?
+    /// Mute or unmute it. False when it has no mute the app can set, refused, or is gone.
+    func setMuted(_ mute: Bool) -> Bool
 }
 
 public extension DeviceVolumeControl {
     /// A device whose range ends at 0 dB gives back as it sets.
     func restore(_ decibels: Float) -> Bool {
         set(decibels)
+    }
+
+    /// No mute the app can set.
+    func isMuted() -> Bool? {
+        nil
+    }
+
+    func setMuted(_: Bool) -> Bool {
+        false
     }
 }
 
@@ -76,6 +95,9 @@ public struct PureVolumeLoan: Codable, Equatable, Sendable {
     public var anchor: Float
     /// What the device read right after Pure last set it: a reading that matches is Pure's own.
     public var lastSet: Float
+    /// Pure muted the device (Silent, or a cut below its range while playing — H-1): the mute is given
+    /// back with the volume. A mute the listener made is never touched.
+    public var mutedByPure: Bool
 
     /// Whether the record can be trusted (R1.1-A close-out break-it, SET-3 / SET-4): a device, three
     /// levels that are numbers, and an anchor no higher than the ceiling — what Pure itself writes. A
@@ -86,11 +108,28 @@ public struct PureVolumeLoan: Codable, Equatable, Sendable {
             && anchor <= ceiling + MasterGainOnPure.sameLevel
     }
 
-    public init(deviceUID: String, ceiling: Float, anchor: Float, lastSet: Float) {
+    public init(deviceUID: String, ceiling: Float, anchor: Float, lastSet: Float, mutedByPure: Bool = false) {
         self.deviceUID = deviceUID
         self.ceiling = ceiling
         self.anchor = anchor
         self.lastSet = lastSet
+        self.mutedByPure = mutedByPure
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case deviceUID, ceiling, anchor, lastSet, mutedByPure
+    }
+
+    /// A kept record, as written; one from before the mute (no `mutedByPure`) reads as no mute made.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            deviceUID: container.decode(String.self, forKey: .deviceUID),
+            ceiling: container.decode(Float.self, forKey: .ceiling),
+            anchor: container.decode(Float.self, forKey: .anchor),
+            lastSet: container.decode(Float.self, forKey: .lastSet),
+            mutedByPure: container.decodeIfPresent(Bool.self, forKey: .mutedByPure) ?? false
+        )
     }
 }
 
@@ -118,6 +157,9 @@ public struct MasterGainOnPure: Sendable {
         case engaged
         /// Pure waits: Master Gain is turned down and the device has no volume the app can set.
         case waitsForMasterGain
+        /// Pure waits: Master Gain asks for less than the device's own range can give — a cut below its
+        /// floor, or Silent on a device with no mute the app can set (H-1).
+        case waitsBelowDeviceRange
     }
 
     /// Two readings this close are the same level (a device's read-back is exact; this absorbs float noise).
@@ -151,8 +193,17 @@ public struct MasterGainOnPure: Sendable {
 
     /// Pure is about to play on the device `deviceUID` (`device`) with Master Gain at `gain` dB.
     public mutating func enter(deviceUID: String, gain: Float, device: some DeviceVolumeControl) -> Entry {
-        if let held = loan, held.deviceUID == deviceUID {
-            // Pure starts again on the device it already holds (a new song): the loan carries on.
+        if var held = loan, held.deviceUID == deviceUID {
+            // Pure starts again on the device it already holds (a new song): the loan carries on — from a
+            // change of the listener's, if they made one — unless Master Gain now asks for less than the
+            // device can give (then Pure waits; Enhanced starting gives the hold back).
+            if let reading = device.read(), abs(reading.level - held.lastSet) > Self.sameLevel {
+                held = Self.reanchored(held, to: reading.level, gain: steeredGain)
+                loan = held
+            }
+            guard Self.reaches(gain, anchor: held.anchor, ceiling: held.ceiling, on: device) else {
+                return .waitsBelowDeviceRange
+            }
             gainChanged(to: gain, device: device)
             return .engaged
         }
@@ -164,11 +215,29 @@ public struct MasterGainOnPure: Sendable {
         guard let reading = device.read() else {
             return Self.isTurnedDown(gain) ? .waitsForMasterGain : .engaged
         }
+        guard Self.reaches(gain, anchor: reading.level, ceiling: reading.level, on: device) else {
+            return .waitsBelowDeviceRange // nothing touched: Enhanced plays the cut
+        }
         loan = PureVolumeLoan(
             deviceUID: deviceUID, ceiling: reading.level, anchor: reading.level, lastSet: reading.level
         )
         gainChanged(to: gain, device: device)
         return .engaged
+    }
+
+    /// Whether Master Gain `gain` can be played on `device` from `anchor`: a level within its own range,
+    /// or Silent on a device with a mute the app can set (H-1).
+    private static func reaches(_ gain: Float, anchor: Float, ceiling: Float, on device: some DeviceVolumeControl)
+        -> Bool {
+        guard let reading = device.read() else { return true }
+        return reachesByLevel(gain, anchor: anchor, ceiling: ceiling, range: reading.range)
+            || (!isAudible(gain) && device.isMuted() != nil)
+    }
+
+    /// Whether Master Gain `gain` is a level within `range` from `anchor` (not Silent, not below the floor).
+    private static func reachesByLevel(_ gain: Float, anchor: Float, ceiling: Float, range: ClosedRange<Float>)
+        -> Bool {
+        isAudible(gain) && min(anchor + min(gain, MasterGainLaw.unity), ceiling) >= range.lowerBound - sameLevel
     }
 
     /// Master Gain moved to `gain` while Pure plays: the device follows.
@@ -182,6 +251,20 @@ public struct MasterGainOnPure: Sendable {
             loan = held
         }
         steeredGain = gain
+        // Silent, or below the device's own floor: silence on a device with a mute — never louder than
+        // Master Gain says (H-1). One without holds its floor (the next start waits).
+        if !Self.reachesByLevel(gain, anchor: held.anchor, ceiling: held.ceiling, range: reading.range),
+           device.isMuted() != nil {
+            if device.isMuted() == false, device.setMuted(true) {
+                held.mutedByPure = true
+                loan = held
+            }
+            return
+        }
+        if held.mutedByPure, device.setMuted(false) { // back within range: the mute Pure made goes
+            held.mutedByPure = false
+            loan = held
+        }
         let target = Self.level(anchor: held.anchor, ceiling: held.ceiling, gain: gain, range: reading.range)
         guard abs(target - reading.level) > Self.sameLevel else { return } // already there
         if device.set(target), let answer = device.read() {
@@ -275,6 +358,9 @@ public struct MasterGainOnPure: Sendable {
     private func settle(_ held: PureVolumeLoan, device: some DeviceVolumeControl) -> Bool {
         guard held.isSound else { return true }
         guard let reading = device.read() else { return false }
+        if held.mutedByPure, device.isMuted() == true { // the mute Pure made goes back with the volume
+            _ = device.setMuted(false)
+        }
         guard reading.level.isFinite, abs(reading.level - held.lastSet) <= Self.sameLevel else { return true }
         let target = min(max(min(held.anchor, held.ceiling), reading.range.lowerBound), reading.range.upperBound)
         guard target.isFinite else { return true }

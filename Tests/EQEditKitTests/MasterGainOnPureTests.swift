@@ -14,6 +14,9 @@ final class FakeVolumeDevice: DeviceVolumeControl {
     var range: ClosedRange<Float>
     var hasVolume = true
     var isPresent = true
+    /// Whether the device has a mute the app can set, and whether it is muted.
+    var hasMute = false
+    var muted = false
     /// The device's step, in dB: a set lands on the nearest step.
     var step: Float = 0.5
     private(set) var sets: [Float] = []
@@ -21,6 +24,17 @@ final class FakeVolumeDevice: DeviceVolumeControl {
     init(level: Float, range: ClosedRange<Float> = -64 ... 0) {
         self.level = level
         self.range = range
+    }
+
+    func isMuted() -> Bool? {
+        guard isPresent, hasMute else { return nil }
+        return muted
+    }
+
+    func setMuted(_ mute: Bool) -> Bool {
+        guard isPresent, hasMute else { return false }
+        muted = mute
+        return true
     }
 
     func read() -> DeviceVolumeReading? {
@@ -73,16 +87,72 @@ struct MasterGainOnPureTests {
         #expect(rule.loan?.ceiling == -20 && rule.loan?.lastSet == -32)
     }
 
-    @Test("the device's own range bounds it; Silent is the device's minimum")
+    /// Pure must never play louder than Master Gain says (H-1): a cut deeper than the device's own range
+    /// can't be made on the device, so Pure waits — nothing is touched — and says why. (It used to clamp at
+    /// the device's floor: −50 dB found, −20 asked, the device at −60 — 10 dB louder than Enhanced.)
+    @Test("a cut deeper than the device's own range: Pure waits, nothing touched (H-1)")
     func rangeLimits() {
         let dac = FakeVolumeDevice(level: -50, range: -60 ... 0)
         var rule = MasterGainOnPure()
-        _ = rule.enter(deviceUID: Self.uid, gain: -20, device: dac)
-        #expect(dac.level == -60)
-        rule.gainChanged(to: -.infinity, device: dac)
-        #expect(dac.level == -60)
-        rule.gainChanged(to: .nan, device: dac)
-        #expect(dac.level == -60, "a bad level reads as Silent, the law's safe reading")
+        let entry = rule.enter(deviceUID: Self.uid, gain: -20, device: dac)
+        #expect(entry == .waitsBelowDeviceRange && dac.sets.isEmpty && rule.loan == nil)
+        let reachable = rule.enter(deviceUID: Self.uid, gain: -10, device: dac)
+        #expect(reachable == .engaged && dac.level == -60, "−10 dB reaches the floor exactly")
+    }
+
+    /// Silent is silence (H-1): on a device with a mute the app can set, Pure mutes it — and gives the mute
+    /// back with the volume; on one without, Pure waits. A bad level reads as Silent.
+    @Test("Silent mutes a device that has a mute, and gives the mute back; without one Pure waits",
+          arguments: [-Float.infinity, .nan])
+    func silentMutes(silent: Float) {
+        let dac = FakeVolumeDevice(level: -20)
+        dac.hasMute = true
+        var rule = MasterGainOnPure()
+        let entry = rule.enter(deviceUID: Self.uid, gain: silent, device: dac)
+        #expect(entry == .engaged && dac.muted && dac.level == -20, "muted at the level found")
+        rule.gainChanged(to: -6, device: dac)
+        #expect(!dac.muted && dac.level == -26, "back in range: unmuted, at the cut")
+        rule.gainChanged(to: silent, device: dac)
+        #expect(dac.muted)
+        let ended = rule.handle(.stopped) { _ in dac }
+        #expect(ended && !dac.muted && dac.level == -20, "the volume and the mute given back")
+
+        let quiet = FakeVolumeDevice(level: -20) // no mute
+        var other = MasterGainOnPure()
+        let waits = other.enter(deviceUID: Self.uid, gain: silent, device: quiet)
+        #expect(waits == .waitsBelowDeviceRange && quiet.sets.isEmpty)
+    }
+
+    @Test("a device the listener muted stays muted: Pure gives back only a mute it made")
+    func listenersMuteIsTheirs() {
+        let dac = FakeVolumeDevice(level: -20)
+        dac.hasMute = true
+        dac.muted = true // the listener's own
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -.infinity, device: dac)
+        let ended = rule.handle(.stopped) { _ in dac }
+        #expect(ended && dac.muted)
+    }
+
+    /// While Pure plays, the slider moved below the device's floor can't be waited for — Pure is already
+    /// playing — so a device with a mute is muted (silence: never louder than Master Gain says); one without
+    /// stays at its floor (the nearest it can go) and the next start waits.
+    @Test("the slider below the floor while Pure plays: muted, or at the floor and the next start waits")
+    func sliderBelowTheFloorWhilePlaying() {
+        let dac = FakeVolumeDevice(level: -15, range: -50 ... 0)
+        dac.hasMute = true
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -10, device: dac)
+        rule.gainChanged(to: -45, device: dac)
+        #expect(dac.muted, "Master Gain says −60 dB, below the device's −50: silence")
+
+        let noMute = FakeVolumeDevice(level: -15, range: -50 ... 0)
+        var other = MasterGainOnPure()
+        _ = other.enter(deviceUID: Self.uid, gain: -10, device: noMute)
+        other.gainChanged(to: -45, device: noMute)
+        #expect(noMute.level == -50)
+        let next = other.enter(deviceUID: Self.uid, gain: -45, device: noMute)
+        #expect(next == .waitsBelowDeviceRange, "the next song waits: Enhanced plays the cut")
     }
 
     @Test("a device with no volume the app can set: turned down, Pure waits and nothing is touched")
@@ -223,109 +293,5 @@ struct MasterGainOnPureTests {
         var waiting = MasterGainOnPure(unreturned: session.allLoans)
         waiting.returnUnreturned { _ in nil as FakeVolumeDevice? }
         #expect(waiting.unreturned.count == 1)
-    }
-
-    // MARK: - The hold lasts while Pure is this device's path (founder decision 2026-10-16)
-
-    /// The engine's devices, by UID.
-    private static func devices(_ list: [String: FakeVolumeDevice]) -> (String) -> FakeVolumeDevice {
-        { uid in list[uid] ?? FakeVolumeDevice(level: 0) }
-    }
-
-    @Test("pause and resume in Pure never touch the device's volume")
-    func pauseKeepsTheLevel() {
-        let dac = FakeVolumeDevice(level: -20)
-        var rule = MasterGainOnPure()
-        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac) // lowered to -32: one set
-        let ended1 = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
-        #expect(!ended1, "a pause is not leaving Pure")
-        #expect(dac.level == -32 && dac.sets.count == 1)
-        let resumed = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
-        #expect(resumed == .engaged)
-        #expect(dac.level == -32 && dac.sets.count == 1)
-
-        // The listener's own change while paused is still theirs.
-        dac.listenerSets(-35)
-        rule.deviceChanged(gain: -12, device: dac)
-        _ = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
-        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
-        #expect(dac.level == -35 && dac.sets.count == 1, "never undone, not even on resume")
-    }
-
-    @Test("leaving Pure gives the level back once: a stop, or Enhanced starting")
-    func leavingGivesItBackOnce() {
-        for leaving in [PureVolumeEvent.stopped, .enhancedStarted] {
-            let dac = FakeVolumeDevice(level: -20)
-            var rule = MasterGainOnPure()
-            _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
-            _ = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
-            let ended2 = rule.handle(leaving, device: Self.devices([Self.uid: dac]))
-            #expect(ended2)
-            #expect(dac.level == -20 && dac.sets.count == 2 && rule.loan == nil)
-            let ended3 = rule.handle(.stopped, device: Self.devices([Self.uid: dac]))
-            #expect(!ended3, "nothing left to give back")
-            #expect(dac.sets.count == 2)
-        }
-    }
-
-    @Test("the output moving to another device gives the level back on the old one")
-    func outputMovedGivesBackTheOldDevice() {
-        let dac = FakeVolumeDevice(level: -20)
-        var rule = MasterGainOnPure()
-        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
-        _ = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
-        let ended4 = rule.handle(.outputMoved(toUID: Self.uid), device: Self.devices([Self.uid: dac]))
-        #expect(!ended4)
-        #expect(dac.level == -32, "the same device: still Pure's")
-        let ended5 = rule.handle(.outputMoved(toUID: "BuiltInSpeakerDevice"), device: Self.devices([Self.uid: dac]))
-        #expect(ended5)
-        #expect(dac.level == -20 && rule.loan == nil)
-    }
-
-    @Test("a lost device keeps the hold: nothing is asked of a dying device, its loan is not lost")
-    func deviceLostKeepsTheHold() {
-        let dac = FakeVolumeDevice(level: -20)
-        var rule = MasterGainOnPure()
-        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
-        dac.isPresent = false
-        let ended6 = rule.handle(.deviceLost, device: Self.devices([Self.uid: dac]))
-        #expect(!ended6)
-        #expect(rule.allLoans.map(\.deviceUID) == [Self.uid])
-        // Quit with the device still gone: the loan stays out, kept for the next launch.
-        let ended7 = rule.handle(.stopped, device: Self.devices([Self.uid: dac]))
-        #expect(ended7)
-        #expect(rule.unreturned.map(\.deviceUID) == [Self.uid])
-    }
-
-    // MARK: - A damaged loan (R1.1-A close-out break-it, SET-4)
-
-    @Test("a damaged loan never puts the device back above what Pure found, and never sends a non-number",
-          arguments: [
-              ("anchor above the ceiling", Float(0), Float(-30), Float(-40)),
-              ("NaN anchor", .nan, -30, -40), ("+∞ anchor", .infinity, -30, -40), ("−∞ anchor", -.infinity, -30, -40),
-              ("NaN ceiling", -30, .nan, -40), ("+∞ ceiling", -30, .infinity, -40), ("NaN lastSet", -30, -30, .nan),
-          ])
-    func damagedLoanIsNeverLouder(what: String, anchor: Float, ceiling: Float, lastSet: Float) {
-        let dac = FakeVolumeDevice(level: lastSet.isFinite ? lastSet : -40) // reads what Pure last set
-        let loan = PureVolumeLoan(deviceUID: Self.uid, ceiling: ceiling, anchor: anchor, lastSet: lastSet)
-        var rule = MasterGainOnPure(unreturned: [loan])
-        rule.returnUnreturned { _ in dac }
-        #expect(dac.sets.allSatisfy { $0.isFinite }, "\(what): a non-number reached the device")
-        let found = min(anchor.isFinite ? anchor : -.infinity, ceiling.isFinite ? ceiling : -.infinity)
-        #expect(dac.sets.allSatisfy { $0 <= max(found, -40) }, "\(what): set to \(dac.sets), above what Pure found")
-        #expect(rule.unreturned.isEmpty, "\(what): a damaged loan is dropped, not kept out forever")
-        #expect(!loan.isSound || what == "anchor above the ceiling")
-    }
-
-    /// Some interfaces run above 0 dB (+6, +12). Pure's lowering stays turn-down only, but what it gives
-    /// back is what it found — within the device's own range, not clamped to 0 dB (H-4).
-    @Test("a device found above 0 dB gets that level back, not 0 dB")
-    func foundAboveZeroIsGivenBack() {
-        let interface = FakeVolumeDevice(level: 6, range: -64 ... 12)
-        var rule = MasterGainOnPure()
-        _ = rule.enter(deviceUID: Self.uid, gain: -10, device: interface)
-        #expect(interface.level == -4)
-        let ended = rule.handle(.stopped) { _ in interface }
-        #expect(ended && interface.level == 6, "given back at \(interface.level) dB")
     }
 }

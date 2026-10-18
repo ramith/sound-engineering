@@ -260,6 +260,32 @@ enum DeviceHardwareVolume {
         return status == noErr
     }
 
+    /// Whether the device's main output is muted, or nil when it has no mute the app can set (H-1: Silent
+    /// on Pure mutes it).
+    static func muted(_ device: AudioObjectID) -> Bool? {
+        var address = address(kAudioDevicePropertyMute)
+        guard AudioObjectHasProperty(device, &address) else { return nil }
+        var settable: DarwinBoolean = false
+        guard AudioObjectIsPropertySettable(device, &address, &settable) == noErr, settable.boolValue else {
+            return nil
+        }
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value != 0
+    }
+
+    /// Mute or unmute the device's main output. False when it refused (or is gone).
+    static func setMuted(_ device: AudioObjectID, _ mute: Bool) -> Bool {
+        var address = address(kAudioDevicePropertyMute)
+        var value: UInt32 = mute ? 1 : 0
+        let status = AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value)
+        if status != noErr {
+            NSLog("[PureMode] device mute set failed (\(status))")
+        }
+        return status == noErr
+    }
+
     private static func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress(
             mSelector: selector,
@@ -296,5 +322,13 @@ struct HALDeviceVolume: DeviceVolumeControl {
 
     func restore(_ decibels: Float) -> Bool {
         DeviceHardwareVolume.set(deviceID, decibels: decibels, turnDownOnly: false)
+    }
+
+    func isMuted() -> Bool? {
+        DeviceHardwareVolume.muted(deviceID)
+    }
+
+    func setMuted(_ mute: Bool) -> Bool {
+        DeviceHardwareVolume.setMuted(deviceID, mute)
     }
 }

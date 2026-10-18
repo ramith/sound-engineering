@@ -48,6 +48,7 @@ struct PureModeReasonTests {
         #expect(PureModeReason.needsFFmpeg.note == "Pure off: needs FFmpeg")
         #expect(PureModeReason.notBitPerfect.note == "Not bit-perfect")
         #expect(PureModeReason.waitsForMasterGain.note == "Pure waits: Master Gain")
+        #expect(PureModeReason.masterGainBelowDeviceRange.note == "Pure waits: device range")
     }
 
     @Test("C-33: the depth sentence names both depths; the Master Gain one names the level")
@@ -65,6 +66,8 @@ struct PureModeReasonTests {
                 "a float output has no integer step to dither")
         let waits = PureModeReason.waitsForMasterGain.detail(in: info, masterGain: -12)
         #expect(waits.contains("-12.0 dB"))
+        let belowRange = PureModeReason.masterGainBelowDeviceRange.detail(in: info, masterGain: -50)
+        #expect(belowRange.contains("-50.0 dB") && belowRange.contains("Enhanced"), "H-1: says why, and what plays")
         #expect(PureModeReason.needsFFmpeg.detail(in: info, masterGain: 0).contains("FFmpeg"))
     }
 
