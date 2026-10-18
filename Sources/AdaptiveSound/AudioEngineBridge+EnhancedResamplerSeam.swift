@@ -32,8 +32,9 @@ extension AudioEngineBridge {
     ///
     /// Returns `true` if a buffer was scheduled (more may follow); `false` at EOF / on error / when
     /// the generation no longer matches (the loop then stops chaining — no buffer is scheduled).
-    /// When returning `false` due to EOF on the current session, fires `onResamplerEOF` (if set)
-    /// so the gapless extension can roll into the next track without a gap.
+    /// Once the whole stream is scheduled, fires `onResamplerEOF` if a next track is armed, so the
+    /// gapless extension can roll into it without a gap; the END is the stream's last buffer's
+    /// (`streamPlayedOut`), once it has been heard.
     @discardableResult
     func readConvertSchedule(
         session: EnhancedResampleSession,
@@ -44,62 +45,65 @@ extension AudioEngineBridge {
         // generation, so this session is stale — schedule nothing more (cleanly abandons chaining).
         guard isCurrent(generation: generation, session: session) else { return false }
         if session.reachedEnd {
-            // Current session is exhausted. Fire the gapless EOF hook so the next track can be
-            // scheduled without stopping the player — or, with NO hook armed (final track /
-            // single track), surface the ended state (break-it BLOCKER-1). Runs on
-            // resampleQueue, where all session state is serialized. A join the player has not
-            // reached yet goes first: the end waits for it (`commitJoin`).
-            if session.pendingJoin != nil {
-                session.endAwaitsJoin = true
-            } else {
+            // The whole stream is scheduled. A next track armed by now rolls in behind it, here, where
+            // a roll still has the lead to be seamless (the gapless EOF hook). The END is not this
+            // iteration's: it runs with the stream's last 70–200 ms still queued, which the view
+            // model's stop at the end of the queue cut (S-1). It is the last buffer's, once heard.
+            if session.pendingJoin == nil, onResamplerEOF != nil, onDeckURL != nil {
                 fireResamplerEOFOrEnd(session: session, player: player)
             }
             return false
         }
 
-        guard let inputBuffer = readChunk(session: session),
-              let outputBuffer = convertChunk(session: session, inputBuffer: inputBuffer)
-        else {
-            return false
-        }
+        guard let inputBuffer = readChunk(session: session) else { return false }
+        let outputBuffer = convertChunk(session: session, inputBuffer: inputBuffer)
 
         // Re-check AFTER the (potentially slow) convert: a seek may have landed while we were
         // converting. If so, drop this buffer on the floor rather than schedule stale audio.
         guard isCurrent(generation: generation, session: session) else { return false }
-        guard outputBuffer.frameLength > 0 else { return false }
-
-        scheduleConverted(outputBuffer, session: session, player: player, generation: generation)
-        return true
+        if let outputBuffer, outputBuffer.frameLength > 0 {
+            scheduleConverted(outputBuffer, session: session, player: player, generation: generation)
+            return true
+        }
+        // Nothing to play from the stream's last chunk (its convert failed or gave nothing): one
+        // silent frame carries the end its last buffer would have, so the end is never lost.
+        if session.reachedEnd, let marker = AVAudioPCMBuffer.silence(format: session.resampler.outputFormat) {
+            let end = streamEnd(session: session, player: player, generation: generation)
+            player.scheduleBuffer(marker, completionCallbackType: player.playedBackCallbackType, completionHandler: end)
+        }
+        return false
     }
+
+    /// A completion handler: what a scheduled buffer reports back.
+    typealias Completion = @Sendable (AVAudioPlayerNodeCompletionCallbackType) -> Void
 
     /// Schedule one converted 48 kHz chunk. `.dataConsumed` fires when the player has consumed it; we
     /// then chain the next iteration on the serial queue. The completion does NO converter work
     /// itself — it only re-dispatches — so we never touch the converter off `resampleQueue`.
     ///
-    /// The chunk that holds a pending join goes as two buffers: the ending track's frames, whose
+    /// The stream's last chunk reports its end instead, once it has been heard (`streamEnd`). The
+    /// chunk that holds a pending join goes as two buffers: the ending track's frames, whose
     /// completion counts the seam once the player has consumed that track's last frame
-    /// (`commitJoin`), then the next track's, which chains. A join at the chunk's end — or past the
-    /// stream's last frame — counts on the chunk's own completion. MUST run on `resampleQueue`.
+    /// (`commitJoin`), then the next track's, which reports what the chunk reports. A join at the
+    /// chunk's end — or past the stream's last frame — counts on the chunk's own completion. MUST run
+    /// on `resampleQueue`.
     private func scheduleConverted(
         _ buffer: AVAudioPCMBuffer,
         session: EnhancedResampleSession,
         player: AVAudioPlayerNode,
         generation: UInt64
     ) {
-        let chain: @Sendable (AVAudioPlayerNodeCompletionCallbackType) -> Void = { [weak self, weak player] _ in
-            guard let self, let player else { return }
-            self.resampleQueue.async {
-                _ = self.readConvertSchedule(session: session, player: player, generation: generation)
-            }
-        }
+        let (lastType, last): (AVAudioPlayerNodeCompletionCallbackType, Completion) = session.reachedEnd
+            ? (player.playedBackCallbackType, streamEnd(session: session, player: player, generation: generation))
+            : (.dataConsumed, chain(session: session, player: player, generation: generation))
         // This chunk's place in the session's output: it ends where the converter's output stands.
         let chunkEnd = session.resampler.outputFrames
         let chunkStart = chunkEnd - Int64(buffer.frameLength)
         guard let join = session.pendingJoin, join.outputFrame <= chunkEnd || session.reachedEnd else {
-            player.scheduleBuffer(buffer, completionCallbackType: .dataConsumed, completionHandler: chain)
+            player.scheduleBuffer(buffer, completionCallbackType: lastType, completionHandler: last)
             return
         }
-        let commit: @Sendable (AVAudioPlayerNodeCompletionCallbackType) -> Void = { [weak self, weak player] _ in
+        let commit: Completion = { [weak self, weak player] _ in
             guard let self, let player else { return }
             self.resampleQueue.async {
                 self.commitJoin(session: session, player: player, generation: generation)
@@ -112,12 +116,34 @@ extension AudioEngineBridge {
            let ending = buffer.copy(frames: 0 ..< AVAudioFrameCount(endingFrames)),
            let next = buffer.copy(frames: AVAudioFrameCount(endingFrames) ..< buffer.frameLength) {
             player.scheduleBuffer(ending, completionCallbackType: .dataConsumed, completionHandler: commit)
-            player.scheduleBuffer(next, completionCallbackType: .dataConsumed, completionHandler: chain)
+            player.scheduleBuffer(next, completionCallbackType: lastType, completionHandler: last)
             return
         }
-        player.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { type in
+        player.scheduleBuffer(buffer, completionCallbackType: lastType) { type in
             commit(type)
-            chain(type)
+            last(type)
+        }
+    }
+
+    /// The completion that chains the next read → convert → schedule iteration.
+    private func chain(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64)
+        -> Completion {
+        { [weak self, weak player] _ in
+            guard let self, let player else { return }
+            self.resampleQueue.async {
+                _ = self.readConvertSchedule(session: session, player: player, generation: generation)
+            }
+        }
+    }
+
+    /// The completion of the stream's last buffer: its end, once heard (`streamPlayedOut`).
+    private func streamEnd(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64)
+        -> Completion {
+        { [weak self, weak player] _ in
+            guard let self, let player else { return }
+            self.resampleQueue.async {
+                self.streamPlayedOut(session: session, player: player, generation: generation)
+            }
         }
     }
 
@@ -172,6 +198,18 @@ extension AudioEngineBridge {
 // MARK: - Frames of a PCM buffer
 
 extension AVAudioPCMBuffer {
+    /// One frame of silence in `format` (`nil`: no memory).
+    static func silence(format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1) else { return nil }
+        silence.frameLength = 1
+        if let channels = silence.floatChannelData {
+            for channel in 0 ..< Int(format.channelCount) {
+                channels[channel][0] = 0
+            }
+        }
+        return silence
+    }
+
     /// A copy of frames `range` of this buffer — float, one buffer per channel, as every file's
     /// processing format and the player's format are (`nil`: another layout, or no memory).
     func copy(frames range: Range<AVAudioFrameCount>) -> AVAudioPCMBuffer? {
