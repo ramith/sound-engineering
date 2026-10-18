@@ -305,7 +305,8 @@ extern "C"
 
         if (!session->engine->configure(cap, eval, session->gapless.get()))
         {
-            tellReason(outReason, PureModeReason::DeviceWouldNotStart);
+            // The rate the device would not take, its channels, or anything else (C-34).
+            tellReason(outReason, session->engine->configureDeclineReason());
             return 0;
         }
         // The word the device was set to may hold fewer bits than the file (a 24-bit file on a 16-bit
