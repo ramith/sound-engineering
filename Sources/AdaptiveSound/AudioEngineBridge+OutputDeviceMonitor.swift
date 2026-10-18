@@ -37,6 +37,7 @@ extension AudioEngineBridge {
             objectID: system, selector: kAudioHardwarePropertyDevices, queue: queue
         ) { [weak self] in
             self?.outputDeviceDidChange(.devicesChanged)
+            self?.returnPureVolumeLoansOnReappearance() // a device Pure lowered may be back (H-3)
         }
         defaultOutputListener = AudioPropertyListener(
             objectID: system, selector: kAudioHardwarePropertyDefaultOutputDevice, queue: queue

@@ -22,4 +22,18 @@ struct BreakItMasterGainOnPureTests {
         // The listener's −45 stands, and the slider's own +1 dB step moves from it: −44, not −29 (16 dB up).
         #expect(dac.level == -44, "the listener set −45 dB; the slider step put it back to \(dac.level) dB")
     }
+
+    @Test("a device lost mid-Pure, back in the same session and played on Enhanced, gets its level back")
+    func lostDeviceBackInTheSameSession() {
+        let dac = FakeVolumeDevice(level: -20)
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        _ = rule.handle(.deviceLost) { _ in dac }
+        dac.isPresent = false
+        _ = rule.handle(.enhancedStarted) { _ in dac } // the speakers play: the DAC's loan goes unreturned
+        dac.isPresent = true
+        // The DAC is back and plays Enhanced (what production calls on that start):
+        _ = rule.handle(.enhancedStarted) { _ in dac }
+        #expect(dac.level == -20, "the DAC stays \(dac.level) dB, and Enhanced applies Master Gain on top")
+    }
 }
