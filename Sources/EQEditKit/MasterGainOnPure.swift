@@ -218,10 +218,13 @@ public struct MasterGainOnPure: Sendable {
     }
 
     /// Apply `event`: when it ends Pure's hold, put the level back (`leave`) on the held device
-    /// (`device(uid)`). True when the hold ended — the engine stops following the device then.
+    /// (`device(uid)`). And every loan not yet put back whose device is here again is put back too — a
+    /// device lost mid-Pure and back in the same session gets its level back at the next transport event,
+    /// not only at the next launch (H-3). True when the hold ended — the engine stops following the device.
     @discardableResult
     public mutating func handle<Device: DeviceVolumeControl>(_ event: PureVolumeEvent,
                                                              device: (String) -> Device) -> Bool {
+        defer { returnUnreturned { device($0) } }
         guard let held = loan, Self.ends(event, heldOn: held.deviceUID) else { return false }
         leave(device: device(held.deviceUID))
         return true
