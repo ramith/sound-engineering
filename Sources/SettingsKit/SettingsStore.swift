@@ -3,9 +3,11 @@
 // (`AppDataLocation`), injected, so a test gives it a suite of its own.
 //
 // It keeps the settings the way the EQ keeps its slots (`eqStateV2`): one versioned JSON value, written
-// whole, so its fields can never disagree on disk; a value this build can't read at all is copied aside
-// before anything overwrites it (`listeningSettingsV1.unreadable`); an earlier build's keys are read once,
-// when there is no value yet, and left in place so a downgrade still finds them.
+// whole, so its fields can never disagree on disk; a value this build can't read at all — JSON that
+// doesn't parse, or a stored value of another type entirely (a string, a number … from `defaults write`,
+// a sync tool, a bug) — is copied aside before anything overwrites it (`listeningSettingsV1.unreadable`)
+// and reads as `.unreadable`, Master Gain Silent; an earlier build's keys are read once, when there is no
+// value at all yet, and left in place so a downgrade still finds them.
 //
 // WRITES ARE CHEAP AND COALESCED. `save` records the newest settings and writes them at the end of the
 // main-actor turn — once, however many settings that turn changed, and not at all when they equal what
@@ -45,11 +47,13 @@ public final class SettingsStore {
     /// what it returns is written when it next changes.
     public func load() -> ListeningSettings {
         let settings: ListeningSettings
-        if let data = defaults.data(forKey: Key.settings) {
-            if let decoded = try? Self.decoder.decode(ListeningSettings.self, from: data) {
+        if let value = defaults.object(forKey: Key.settings) {
+            // Any value is the listener's: one that isn't readable settings — not Data, or Data that doesn't
+            // decode — is kept aside and reads Silent, never as a new install at unity (SET-1).
+            if let data = value as? Data, let decoded = try? Self.decoder.decode(ListeningSettings.self, from: data) {
                 settings = decoded
             } else {
-                defaults.set(data, forKey: Key.unreadable)
+                defaults.set(value, forKey: Key.unreadable)
                 settings = .unreadable
             }
         } else {
