@@ -120,7 +120,7 @@ extension AudioEngineBridge {
         switch route {
         case .passthrough, .playerConversion:
             player.scheduleSegment(file, startingFrame: frame, frameCount: AVAudioFrameCount(file.length - frame),
-                                   at: nil, completionCallbackType: .dataPlayedBack,
+                                   at: nil, completionCallbackType: player.playedBackCallbackType,
                                    completionHandler: passthroughEndOfTrack(epoch: epoch, player: player))
         case let .resampler(session):
             let primed = resampleQueue.sync {
@@ -165,8 +165,8 @@ extension AudioEngineBridge {
 
     // MARK: - The passthrough schedule's completion
 
-    /// The completion of a passthrough schedule installed under passthrough `epoch`: at
-    /// `.dataPlayedBack` it hops to `resampleQueue` and runs the end-of-track path
+    /// The completion of a passthrough schedule installed under passthrough `epoch`: once the file has
+    /// been heard (`playedBackCallbackType`) it hops to `resampleQueue` and runs the end-of-track path
     /// (`firePassthroughEOFOrEnd`: the seam, or the end) — unless a later stop / seek / reschedule
     /// moved the epoch on, since `player.stop()` fires it too, indistinguishable from a real end
     /// (the wrong-song bug). The one copy of this closure (council DUP-1), for the restart's
@@ -180,5 +180,17 @@ extension AudioEngineBridge {
                 self.firePassthroughEOFOrEnd(player: player)
             }
         }
+    }
+}
+
+// MARK: - When a schedule has been heard
+
+extension AVAudioPlayerNode {
+    /// The completion type that reports a schedule has been HEARD — what an end of track waits for,
+    /// so stopping at it cuts nothing: `.dataPlayedBack`, which waits out the output's latency. An
+    /// engine in manual rendering never reports that one (it has no device); there, what is rendered
+    /// is the output, so it gets `.dataRendered`.
+    var playedBackCallbackType: AVAudioPlayerNodeCompletionCallbackType {
+        engine?.isInManualRenderingMode == true ? .dataRendered : .dataPlayedBack
     }
 }

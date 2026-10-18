@@ -19,10 +19,13 @@ import PlaybackQueueKit
 ///   (`commitJoin`). Otherwise, when the resampler's completion chain reaches end-of-file it fires
 ///   the hook (still on `resampleQueue`): `rollResamplerToNext` opens the new file, builds a NEW
 ///   resampler session, and primes it (`primeEnhancedResamplerLocked`) without stopping the player.
+///   With nothing armed, the stream's end is its last buffer's, once heard (`streamPlayedOut`) —
+///   as on the passthrough sub-path, so the stop at the end of the queue cuts nothing (S-1).
 ///
 /// **Passthrough sub-path** (48 kHz file, `scheduleFile`):
-///   `commitEnhanced` schedules the file with `completionCallbackType: .dataPlayedBack` and dispatches
-///   onto `resampleQueue` when the hardware finishes playing the last sample. `onPassthroughEOF`
+///   `commitEnhanced` schedules the file with `completionCallbackType: .dataPlayedBack` (rendered,
+///   offline: `playedBackCallbackType`) and dispatches onto `resampleQueue` when the hardware
+///   finishes playing the last sample. `onPassthroughEOF`
 ///   fires there. If a next track is armed and it is also 48 kHz → `scheduleFile` the new file
 ///   immediately (consecutive schedules play back-to-back, byte-exact); if the next track is a
 ///   different rate → a new resampler session for it, primed without stopping the player.
