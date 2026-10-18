@@ -16,8 +16,9 @@ enum SpectrumColorPalette {
     /// The vertical bar gradients (top → bottom) for a field of `count` bars, left → right, in
     /// `environment`'s appearance (its colour scheme and contrast).
     static func barGradients(count: Int, in environment: EnvironmentValues) -> [Gradient] {
-        let key = Key(count: count, scheme: environment.colorScheme, contrast: environment.colorSchemeContrast)
-        if let gradients = built[key] {
+        let scheme = environment.colorScheme
+        let contrast = environment.colorSchemeContrast
+        if let gradients = built[scheme]?[contrast]?[count] {
             return gradients
         }
         let gradients = (0 ..< count).map { index in
@@ -27,18 +28,12 @@ enum SpectrumColorPalette {
                 .init(color: resolved(shade.bottom, in: environment), location: 1),
             ])
         }
-        built[key] = gradients
+        built[scheme, default: [:]][contrast, default: [:]][count] = gradients
         return gradients
     }
 
-    /// One appearance's gradients for one bar count.
-    private struct Key: Hashable {
-        let count: Int
-        let scheme: ColorScheme
-        let contrast: ColorSchemeContrast
-    }
-
-    private static var built: [Key: [Gradient]] = [:]
+    /// The gradients built so far: per appearance (colour scheme, then contrast), per bar count.
+    private static var built: [ColorScheme: [ColorSchemeContrast: [Int: [Gradient]]]] = [:]
 
     private static func resolved(_ pair: AppearancePair, in environment: EnvironmentValues) -> Color {
         Color(DesignSystem.Color.from(pair).resolve(in: environment))

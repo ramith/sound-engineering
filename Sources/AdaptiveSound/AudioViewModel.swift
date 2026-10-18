@@ -1,4 +1,3 @@
-import DesignTokenKit
 import EQEditKit
 import Foundation
 import LibraryScan

@@ -1,5 +1,4 @@
 import AVFoundation
-import EQEditKit
 import Foundation
 import PlaybackQueueKit
 import SettingsKit
