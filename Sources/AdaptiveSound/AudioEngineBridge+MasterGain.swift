@@ -55,6 +55,17 @@ extension AudioEngineBridge {
         }
     }
 
+    /// The devices changed: a device Pure lowered and couldn't give back (it went away) may be here again —
+    /// give its level back now, by the same rule (only if it still reads what Pure set), not only at the
+    /// next launch (H-3). Returns at once; the HAL work runs on `deviceVolumeQueue`.
+    func returnPureVolumeLoansOnReappearance() {
+        deviceVolumeQueue.async {
+            guard !self.masterGainOnPure.unreturned.isEmpty else { return }
+            self.masterGainOnPure.returnUnreturned { HALDeviceVolume(uid: $0) }
+            self.publishPureVolumeLoans()
+        }
+    }
+
     /// Take the device's volume for Pure, before Pure renders: lower it by Master Gain, or say that Pure
     /// waits (a device with no volume the app can set, Master Gain turned down). A hold still on another
     /// device (Pure moved, or a pause there) is given back first; the same device's hold — a resume, a
@@ -85,9 +96,7 @@ extension AudioEngineBridge {
     func pureVolumeEvent(_ event: PureVolumeEvent) {
         let ended = deviceVolumeQueue.sync {
             let ended = masterGainOnPure.handle(event) { HALDeviceVolume(uid: $0) }
-            if ended {
-                publishPureVolumeLoans()
-            }
+            publishPureVolumeLoans() // the hold, or a device back again, may have been given back
             return ended
         }
         if ended {
