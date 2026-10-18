@@ -115,7 +115,7 @@ struct SettingsStoreTests {
         #expect(!settings.shuffle)
         #expect(settings.repeatMode == 0)
         #expect(settings.chosenOutputUID == nil)
-        #expect(settings.masterGainDecibels == MasterGainLaw.unity, "never stored: unity")
+        #expect(settings.masterGainDecibels == -.infinity, "version 1 always writes it: absent is damage, Silent")
 
         // A later build's value: its new fields are ignored, the known ones read.
         stored(#"{"version":2,"shuffle":true,"leveling":"album","masterGainDecibels":-6}"#)
@@ -145,6 +145,49 @@ struct SettingsStoreTests {
         #expect(load().pureVolumeLoans == [loan])
         stored(#"{"version":1,"pureVolumeLoans":"lowered"}"#)
         #expect(load().pureVolumeLoans.isEmpty)
+    }
+
+    /// The never-louder rule against every kind of bad stored value (R1.1-A close-out break-it, SET-1 / SET-2):
+    /// whatever can't be what the listener left reads Silent — a value of another plist type, JSON that
+    /// isn't an object or doesn't parse, an object with no level, and a level that is not a number, ±∞ or
+    /// above 0 dB. A damaged value of any kind is copied aside before anything overwrites it.
+    @Test("SETTINGS-11: Master Gain is never restored louder, whatever is stored — every bad value reads Silent")
+    func neverLouderForAnyBadValue() {
+        let unreadable = Self.key + ".unreadable"
+        let wrongTypes: [(String, Any)] = [
+            ("a string", "garbage"), ("a number", 42), ("a bool", true), ("a date", Date()),
+            ("a dictionary", ["masterGainDecibels": -30]), ("an array", [1, 2]),
+        ]
+        for (what, value) in wrongTypes {
+            defaults.removePersistentDomain(forName: Self.suiteName)
+            defaults.set(value, forKey: Self.key)
+            #expect(load().masterGainDecibels == -.infinity, "\(what): read louder than Silent")
+            #expect(defaults.object(forKey: unreadable) != nil, "\(what): not kept aside")
+        }
+        let badJSON = ["not json at all", "[]", #""text""#, "5", "null", #"{"version":1"#]
+        for json in badJSON {
+            defaults.removePersistentDomain(forName: Self.suiteName)
+            stored(json)
+            #expect(load().masterGainDecibels == -.infinity, "\(json): read louder than Silent")
+            #expect(defaults.object(forKey: unreadable) != nil, "\(json): not kept aside")
+        }
+        let badLevels = [
+            #"{}"#, #"{"version":1}"#, #"{"version":1,"pureMode":true}"#, #"{"masterGainDecibels":null}"#,
+            #"{"masterGainDecibels":"NaN"}"#, #"{"masterGainDecibels":"+Infinity"}"#,
+            #"{"masterGainDecibels":"-Infinity"}"#, #"{"masterGainDecibels":0.5}"#, #"{"masterGainDecibels":3}"#,
+            #"{"masterGainDecibels":"loud"}"#, #"{"masterGainDecibels":true}"#, #"{"masterGainDecibels":[0]}"#,
+        ]
+        for json in badLevels {
+            defaults.removePersistentDomain(forName: Self.suiteName)
+            stored(json)
+            #expect(load().masterGainDecibels == -.infinity, "\(json): read louder than Silent")
+        }
+        // A level that can be what was left reads as itself.
+        for (json, level) in [(#"{"masterGainDecibels":-12}"#, Float(-12)), (#"{"masterGainDecibels":0}"#, 0)] {
+            defaults.removePersistentDomain(forName: Self.suiteName)
+            stored(json)
+            #expect(load().masterGainDecibels == level)
+        }
     }
 
     @Test("SETTINGS-06: Master Gain is never restored louder than it was left")
