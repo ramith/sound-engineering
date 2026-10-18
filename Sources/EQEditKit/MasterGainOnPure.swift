@@ -49,8 +49,19 @@ public struct DeviceVolumeReading: Equatable, Sendable {
 public protocol DeviceVolumeControl {
     /// The device's volume now, or nil when it has none the app can set (or it is gone).
     func read() -> DeviceVolumeReading?
-    /// Set the level, in dB within the device's range. False when the device refused or is gone.
+    /// Pure's lowering: set the level, in dB within the device's range and never above 0 dB (turn-down
+    /// only). False when the device refused or is gone.
     func set(_ decibels: Float) -> Bool
+    /// The give-back: set the level Pure found, within the device's own range only — a device may sit
+    /// above 0 dB (H-4). False when the device refused or is gone.
+    func restore(_ decibels: Float) -> Bool
+}
+
+public extension DeviceVolumeControl {
+    /// A device whose range ends at 0 dB gives back as it sets.
+    func restore(_ decibels: Float) -> Bool {
+        set(decibels)
+    }
 }
 
 /// Pure's loan of a device's volume: what to put back when Pure stops. Kept with the listener's settings
@@ -264,7 +275,7 @@ public struct MasterGainOnPure: Sendable {
         guard reading.level.isFinite, abs(reading.level - held.lastSet) <= Self.sameLevel else { return true }
         let target = min(max(min(held.anchor, held.ceiling), reading.range.lowerBound), reading.range.upperBound)
         guard target.isFinite else { return true }
-        return abs(target - reading.level) <= Self.sameLevel || device.set(target)
+        return abs(target - reading.level) <= Self.sameLevel || device.restore(target)
     }
 
     /// Put back an unreturned loan of `deviceUID`, if there is one, before a new one is taken.
