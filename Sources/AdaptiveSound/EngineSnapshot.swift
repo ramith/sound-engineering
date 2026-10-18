@@ -1,4 +1,3 @@
-import EQEditKit
 import PlaybackQueueKit
 
 // MARK: - EngineSnapshot
@@ -19,7 +18,4 @@ struct EngineSnapshot: Equatable {
     var loudness: LoudnessSnapshot = .unmeasured
     /// The rate the EQ is designed at: the live AU's, else the graph's 48 kHz.
     var eqDesignRate: Double = 48000
-    /// The output devices whose own volume Pure turned down and has not yet put back
-    /// (`MasterGainOnPure.allLoans`): what the view model keeps with the listener's settings.
-    var pureVolumeLoans: [PureVolumeLoan] = []
 }
