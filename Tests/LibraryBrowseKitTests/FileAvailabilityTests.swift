@@ -91,4 +91,27 @@ struct FileAvailabilityTests {
         try FileManager.default.removeItem(at: elsewhere)
         #expect(try await availability([loose], in: folder) == [.unreachable])
     }
+
+    /// A loose song (played from a file, kept in a playlist, left by a removed folder) has no drive
+    /// binding: off the startup disk, its folder being there is no evidence of anything — a same-named
+    /// drive with that folder may be mounted where its own unplugged drive was. So there it is never
+    /// missing, only unreachable (R1.1-A close-out break-it, AV-1). On the startup disk, which nothing can
+    /// be mounted in place of, a deleted loose song is still missing. The drive is the scanner's seam,
+    /// as the walk reads it (`RootReachabilityProbe.identity`).
+    @Test("AV-1: a loose song off the startup disk is never missing — only unreachable",
+          arguments: [("startup disk", RootIdentity.startupDisk, true), ("another drive", "A1B2C3D4-EXTERNAL", false),
+                      ("a drive with no UUID", nil, false)])
+    func looseSongOffTheStartupDisk(drive: String, volume: String?, missingWhenDeleted: Bool) async throws {
+        let folder = try await MusicFolder.make("avail-loose-drive")
+        defer { folder.discard() }
+        let downloads = folder.base.appendingPathComponent("Downloads", isDirectory: true)
+        try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+        let loose = downloads.appendingPathComponent("mix.flac")
+        let onDrive = DriveAtRoot(RootIdentity(dev: 7, inode: 7, volume: volume))
+        FileManager.default.createFile(atPath: loose.path, contents: Data([1]))
+        #expect(try await availability([loose], in: folder, scanner: onDrive.scanner) == [.available])
+        try FileManager.default.removeItem(at: loose) // its folder is there; the song is not
+        let expected: FileAvailability = missingWhenDeleted ? .missing : .unreachable
+        #expect(try await availability([loose], in: folder, scanner: onDrive.scanner) == [expected], "\(drive)")
+    }
 }
