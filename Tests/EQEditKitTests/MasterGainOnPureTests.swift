@@ -286,4 +286,24 @@ struct MasterGainOnPureTests {
         #expect(ended7)
         #expect(rule.unreturned.map(\.deviceUID) == [Self.uid])
     }
+
+    // MARK: - A damaged loan (R1.1-A close-out break-it, SET-4)
+
+    @Test("a damaged loan never puts the device back above what Pure found, and never sends a non-number",
+          arguments: [
+              ("anchor above the ceiling", Float(0), Float(-30), Float(-40)),
+              ("NaN anchor", .nan, -30, -40), ("+∞ anchor", .infinity, -30, -40), ("−∞ anchor", -.infinity, -30, -40),
+              ("NaN ceiling", -30, .nan, -40), ("+∞ ceiling", -30, .infinity, -40), ("NaN lastSet", -30, -30, .nan),
+          ])
+    func damagedLoanIsNeverLouder(what: String, anchor: Float, ceiling: Float, lastSet: Float) {
+        let dac = FakeVolumeDevice(level: lastSet.isFinite ? lastSet : -40) // reads what Pure last set
+        let loan = PureVolumeLoan(deviceUID: Self.uid, ceiling: ceiling, anchor: anchor, lastSet: lastSet)
+        var rule = MasterGainOnPure(unreturned: [loan])
+        rule.returnUnreturned { _ in dac }
+        #expect(dac.sets.allSatisfy { $0.isFinite }, "\(what): a non-number reached the device")
+        let found = min(anchor.isFinite ? anchor : -.infinity, ceiling.isFinite ? ceiling : -.infinity)
+        #expect(dac.sets.allSatisfy { $0 <= max(found, -40) }, "\(what): set to \(dac.sets), above what Pure found")
+        #expect(rule.unreturned.isEmpty, "\(what): a damaged loan is dropped, not kept out forever")
+        #expect(!loan.isSound || what == "anchor above the ceiling")
+    }
 }

@@ -66,6 +66,15 @@ public struct PureVolumeLoan: Codable, Equatable, Sendable {
     /// What the device read right after Pure last set it: a reading that matches is Pure's own.
     public var lastSet: Float
 
+    /// Whether the record can be trusted (R1.1-A close-out break-it, SET-3 / SET-4): a device, three
+    /// levels that are numbers, and an anchor no higher than the ceiling — what Pure itself writes. A
+    /// damaged one (a kept value edited, a bug) is never put back: the device stays where it is, never
+    /// louder than Pure left it.
+    public var isSound: Bool {
+        !deviceUID.isEmpty && ceiling.isFinite && anchor.isFinite && lastSet.isFinite
+            && anchor <= ceiling + MasterGainOnPure.sameLevel
+    }
+
     public init(deviceUID: String, ceiling: Float, anchor: Float, lastSet: Float) {
         self.deviceUID = deviceUID
         self.ceiling = ceiling
@@ -121,7 +130,7 @@ public struct MasterGainOnPure: Sendable {
     /// Take in loans a previous run left (kept with the listener's settings) as unreturned — except
     /// for a device whose loan is held or already kept: what this run knows is newer.
     public mutating func adopt(_ kept: [PureVolumeLoan]) {
-        for kept in kept where !allLoans.contains(where: { $0.deviceUID == kept.deviceUID }) {
+        for kept in kept where kept.isSound && !allLoans.contains(where: { $0.deviceUID == kept.deviceUID }) {
             unreturned.append(kept)
         }
     }
@@ -226,13 +235,17 @@ public struct MasterGainOnPure: Sendable {
         gain > -.infinity
     }
 
-    /// Put `held` back on `device`: true when it is settled — put back, or the listener's level stands
-    /// (the device reads something other than Pure's last set). False when the device can't be read or
-    /// set (it is gone): the loan stays out.
+    /// Put `held` back on `device`: true when it is settled — put back, the listener's level stands (the
+    /// device reads something other than Pure's last set), or the record is damaged and nothing is touched.
+    /// False when the device can't be read or set (it is gone): the loan stays out. What is put back is the
+    /// anchor, never above the ceiling — the level Pure found — within the device's range; never a level
+    /// that is not a number (SET-4).
     private func settle(_ held: PureVolumeLoan, device: some DeviceVolumeControl) -> Bool {
+        guard held.isSound else { return true }
         guard let reading = device.read() else { return false }
-        guard abs(reading.level - held.lastSet) <= Self.sameLevel else { return true }
-        let target = min(max(held.anchor, reading.range.lowerBound), reading.range.upperBound)
+        guard reading.level.isFinite, abs(reading.level - held.lastSet) <= Self.sameLevel else { return true }
+        let target = min(max(min(held.anchor, held.ceiling), reading.range.lowerBound), reading.range.upperBound)
+        guard target.isFinite else { return true }
         return abs(target - reading.level) <= Self.sameLevel || device.set(target)
     }
 
