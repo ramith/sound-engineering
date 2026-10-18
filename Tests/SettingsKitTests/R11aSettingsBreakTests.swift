@@ -62,6 +62,56 @@ struct R11aSettingsBreakTests {
         #expect(report.allSatisfy { $0.hasSuffix("-inf") })
     }
 
+    /// One malformed loan must not cost the others: each one is a device left turned down.
+    @Test("SET-3: one bad Pure volume loan doesn't drop the good ones")
+    func oneBadLoan() {
+        defer { cleanUp() }
+        let json = #"{"version":1,"masterGainDecibels":-10,"pureVolumeLoans":["#
+            + #"{"deviceUID":"DAC-A","ceiling":-20,"anchor":-20,"lastSet":-32},"#
+            + #"{"deviceUID":"DAC-B","ceiling":"oops","anchor":-20,"lastSet":-32}]}"#
+        defaults.set(Data(json.utf8), forKey: Self.key)
+        let loans = SettingsStore(defaults: defaults).load().pureVolumeLoans
+        print("R11A SET-3 loans read: \(loans.map(\.deviceUID))")
+        #expect(loans.map(\.deviceUID) == ["DAC-A"])
+    }
+
+    /// A kept loan is put back at launch. The rule says Pure "never sets it higher [than the ceiling], nor
+    /// puts back more" — but a damaged loan (anchor above its ceiling, or NaN) is put back as stored.
+    @Test("SET-4: a damaged kept loan never puts a device back above its ceiling, nor NaN")
+    func damagedLoanReturn() {
+        final class Device: DeviceVolumeControl {
+            var level: Float
+            var sets: [Float] = []
+            init(level: Float) {
+                self.level = level
+            }
+
+            func read() -> DeviceVolumeReading? {
+                DeviceVolumeReading(level: level, range: -64 ... 0)
+            }
+
+            func set(_ decibels: Float) -> Bool {
+                sets.append(decibels)
+                level = decibels
+                return true
+            }
+        }
+        var report: [String] = []
+        var bad = 0
+        for (name, anchor) in [("anchor above ceiling", Float(0)), ("NaN anchor", Float.nan)] {
+            let loan = PureVolumeLoan(deviceUID: "DAC", ceiling: -30, anchor: anchor, lastSet: -40)
+            var pure = MasterGainOnPure(unreturned: [loan])
+            let device = Device(level: -40) // still reads what Pure last set: the loan is returned
+            pure.returnUnreturned { _ in device }
+            report.append("\(name): device set to \(device.sets)")
+            if device.sets.contains(where: { !($0 <= -30) }) {
+                bad += 1
+            }
+        }
+        print("R11A SET-4 " + report.joined(separator: " | "))
+        #expect(bad == 0)
+    }
+
     @Test("SET-5: saves coalesce; flush at quit writes the newest; a later turn writes nothing more")
     func quitFlush() async {
         defer { cleanUp() }

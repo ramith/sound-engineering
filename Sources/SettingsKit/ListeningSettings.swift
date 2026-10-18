@@ -86,6 +86,12 @@ public struct ListeningSettings: Equatable, Sendable {
         return stored
     }
 
+    /// The kept loans, read one by one (SET-3): one that can't be read, or a damaged one (not
+    /// `PureVolumeLoan.isSound`), is dropped on its own — every other is a device still turned down.
+    static func soundLoans(_ stored: [Lenient<PureVolumeLoan>]?) -> [PureVolumeLoan] {
+        (stored ?? []).compactMap(\.value).filter(\.isSound)
+    }
+
     /// A stored repeat mode, or off when it isn't one.
     static func validRepeatMode(_ stored: Int?) -> Int {
         guard let stored, (0 ... 2).contains(stored) else { return 0 }
@@ -120,7 +126,7 @@ extension ListeningSettings: Codable {
             keepPlaybackOnDevice: container.field(.keepPlaybackOnDevice) ?? faithful.keepPlaybackOnDevice,
             chosenOutputUID: container.field(.chosenOutputUID).flatMap { (uid: String) in uid.isEmpty ? nil : uid },
             useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg,
-            pureVolumeLoans: container.field(.pureVolumeLoans) ?? faithful.pureVolumeLoans
+            pureVolumeLoans: Self.soundLoans(container.field(.pureVolumeLoans))
         )
     }
 
@@ -137,6 +143,15 @@ extension ListeningSettings: Codable {
         try container.encodeIfPresent(chosenOutputUID, forKey: .chosenOutputUID)
         try container.encode(useFFmpeg, forKey: .useFFmpeg)
         try container.encode(pureVolumeLoans, forKey: .pureVolumeLoans)
+    }
+}
+
+/// One element of a stored array, read on its own: a bad one is nil, and the array still reads.
+struct Lenient<Value: Decodable>: Decodable {
+    let value: Value?
+
+    init(from decoder: any Decoder) {
+        value = try? Value(from: decoder)
     }
 }
 
