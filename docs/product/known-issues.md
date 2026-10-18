@@ -1001,6 +1001,33 @@ another rate or channel count keeps a fresh converter, its click and its end-of-
 *(As found at `481c822`:)* Each track gets its own sample-rate converter (`AudioEngineBridge+GaplessRoll.swift:225`),
 so the filter state restarts at the seam: a click 18 to 26 dB below peak at every join of a 44.1 or 96 kHz album.
 
+### Fixed in R1.1-A — the end of the queue plays the last frame (branch `r1.1a/end-of-queue`)
+
+Found by the R1.1-A close-out break-it (audio, S-1). Two commits, named by their subjects: "the Enhanced transport rig
+plays any rate and joins tracks" (test fixtures) and "the end of the queue plays the last track to its last frame".
+The test came first and failed on `814e719`: `Tests/AdaptiveSoundTests/EnhancedEndOfQueueTests.swift` plays through
+the real bridge on an offline engine, paced at a device's speed, and reads the player's own clock when the end rises,
+for eight final tracks on both sub-paths; it also pins that a stop or seek in the last moments still cuts at once.
+Five runs under a 16-process CPU load and a ThreadSanitizer run passed.
+
+#### KI-GAP-06 — The end of the queue cut the last ~70–200 ms of a resampled final track
+
+**Status:** ✅ CLOSED in R1.1-A, "the end of the queue plays the last track to its last frame" (S-1). The end of a
+resampled stream is now its last scheduled buffer's, once heard (`streamPlayedOut`): `.dataPlayedBack`, which waits out
+the output's latency, as the passthrough sub-path always used — one rule for both (`playedBackCallbackType`; in
+offline manual rendering, which never reports it, `.dataRendered`). A join still pending is counted first, so the seam
+always comes before the end. The read iterations after the flush only roll in a next track that is already armed,
+where a roll still has its lead. Measured on the player's clock: before, the end rose 5–198 ms before the last frame
+(a 1000-frame and a 0.3 s track after a same-rate join: 12 and 119 ms); after, 1–10 ms after it (one render block,
+offline). A user's stop or seek still cuts at once. *Never listed open; as found:*
+
+*(As found at `c9efbe6`:)* `readConvertSchedule` raised the end in the read iteration after the flush was scheduled
+(`fireResamplerEOFOrEnd` with no hook armed), while the last partial chunk and the flush were still queued — 68–199 ms
+at 44.1 / 96 kHz. The view model's stop at the end of the queue (`stopAtEndOfQueue`, 0–50 ms later) cut them:
+fade-outs and reverb tails at the end of every album played from 44.1 / 96 kHz files. A track under ~0.4 s after a
+same-rate join lost almost all of it, its end raised at the join (`endAwaitsJoin`). And when a next track's request
+reached the engine after that early end, the view model's fresh start of it cut the same tail.
+
 ### Fixed in R1.1-A — a faithful default and the listener's settings kept (branch `r1.1a/faithful-default`)
 
 Founder decision FD-2 (2026-10-14). Four commits, named by their subjects: "SettingsKit — the listener's settings and
