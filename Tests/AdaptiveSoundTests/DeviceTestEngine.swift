@@ -41,8 +41,8 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var seeks: [Double] = []
         /// Every Master Gain published.
         var masterGains: [Float] = []
-        /// Every `returnPureVolumeLoans` call: the loans an earlier run left, handed back at engine-ready.
-        var returnedLoans: [[PureVolumeLoan]] = []
+        /// Every `keepPureVolumeLoans` call: the loans the journal it was handed holds (an earlier run's).
+        var journalLoans: [[PureVolumeLoan]] = []
         var onOutputDevicesChanged: (@MainActor () -> Void)?
         /// How often the view model read the engine's state (`snapshot`) — its transport tick.
         var snapshotReads = 0
@@ -95,8 +95,9 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         state.withLock { $0.masterGains.append(decibels) }
     }
 
-    func returnPureVolumeLoans(_ loans: [PureVolumeLoan]) {
-        state.withLock { $0.returnedLoans.append(loans) }
+    func keepPureVolumeLoans(in journal: PureVolumeLoanJournal) {
+        let loans = journal.loans()
+        state.withLock { $0.journalLoans.append(loans) }
     }
 
     func publishEQ(points _: [Float], isOn _: Bool) {}

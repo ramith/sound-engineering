@@ -42,10 +42,6 @@ public struct ListeningSettings: Equatable, Sendable {
     /// "Use FFmpeg for other formats": FFmpeg may read a file Apple's decoder can't (R1.1-A, FD-3).
     /// Off by default.
     public var useFFmpeg: Bool
-    /// The output devices whose own volume Pure turned down and has not yet put back
-    /// (`MasterGainOnPure.allLoans`) — kept, so a crash or a device that went away gets its level back
-    /// at the next launch. Empty on a new install, and whenever nothing is lowered.
-    public var pureVolumeLoans: [PureVolumeLoan]
 
     /// Settings as given; every default is the faithful one (`faithful`).
     public init(
@@ -57,8 +53,7 @@ public struct ListeningSettings: Equatable, Sendable {
         repeatMode: Int = 0,
         keepPlaybackOnDevice: Bool = true,
         chosenOutputUID: String? = nil,
-        useFFmpeg: Bool = false,
-        pureVolumeLoans: [PureVolumeLoan] = []
+        useFFmpeg: Bool = false
     ) {
         self.pureMode = pureMode
         self.masterGainDecibels = masterGainDecibels
@@ -69,7 +64,6 @@ public struct ListeningSettings: Equatable, Sendable {
         self.keepPlaybackOnDevice = keepPlaybackOnDevice
         self.chosenOutputUID = chosenOutputUID
         self.useFFmpeg = useFFmpeg
-        self.pureVolumeLoans = pureVolumeLoans
     }
 
     /// A new install: the music as it was recorded.
@@ -86,12 +80,6 @@ public struct ListeningSettings: Equatable, Sendable {
         return stored
     }
 
-    /// The kept loans, read one by one (SET-3): one that can't be read, or a damaged one (not
-    /// `PureVolumeLoan.isSound`), is dropped on its own — every other is a device still turned down.
-    static func soundLoans(_ stored: [Lenient<PureVolumeLoan>]?) -> [PureVolumeLoan] {
-        (stored ?? []).compactMap(\.value).filter(\.isSound)
-    }
-
     /// A stored repeat mode, or off when it isn't one.
     static func validRepeatMode(_ stored: Int?) -> Int {
         guard let stored, (0 ... 2).contains(stored) else { return 0 }
@@ -106,7 +94,7 @@ public struct ListeningSettings: Equatable, Sendable {
 extension ListeningSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case version, pureMode, masterGainDecibels, crossfeed, crossfeedStrength, shuffle, repeatMode
-        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg, pureVolumeLoans
+        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg
     }
 
     /// The format this build writes.
@@ -125,8 +113,7 @@ extension ListeningSettings: Codable {
             repeatMode: Self.validRepeatMode(container.field(.repeatMode)),
             keepPlaybackOnDevice: container.field(.keepPlaybackOnDevice) ?? faithful.keepPlaybackOnDevice,
             chosenOutputUID: container.field(.chosenOutputUID).flatMap { (uid: String) in uid.isEmpty ? nil : uid },
-            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg,
-            pureVolumeLoans: Self.soundLoans(container.field(.pureVolumeLoans))
+            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg
         )
     }
 
@@ -142,16 +129,6 @@ extension ListeningSettings: Codable {
         try container.encode(keepPlaybackOnDevice, forKey: .keepPlaybackOnDevice)
         try container.encodeIfPresent(chosenOutputUID, forKey: .chosenOutputUID)
         try container.encode(useFFmpeg, forKey: .useFFmpeg)
-        try container.encode(pureVolumeLoans, forKey: .pureVolumeLoans)
-    }
-}
-
-/// One element of a stored array, read on its own: a bad one is nil, and the array still reads.
-struct Lenient<Value: Decodable>: Decodable {
-    let value: Value?
-
-    init(from decoder: any Decoder) {
-        value = try? Value(from: decoder)
     }
 }
 

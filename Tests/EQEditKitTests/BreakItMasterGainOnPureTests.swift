@@ -39,6 +39,37 @@ struct BreakItMasterGainOnPureTests {
         #expect(dac.muted || dac.level <= -60, "Master Gain says −60 dB; Pure plays \(dac.level) dB")
     }
 
+    /// The app dies the instant the HAL is asked to move the device: what the journal held then is what the
+    /// next launch has (H-2). The loan is written ahead — the pending level kept before the device moves —
+    /// so a crash between the two still finds Pure's level, and gives the found one back.
+    @Test("crash-safe: a crash after a slider move (the tick had not kept the new loan) still gives the level back")
+    func crashAfterAMove() {
+        let dac = FakeVolumeDevice(level: -20)
+        let journal = LoanJournal()
+        var run = MasterGainOnPure(writeAhead: journal.writer)
+        _ = run.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        var kept: [PureVolumeLoan] = []
+        dac.onSet = { kept = journal.loans } // the crash: while paused, the tick sleeps — nothing else keeps it
+        run.gainChanged(to: -24, device: dac)
+        var nextLaunch = MasterGainOnPure(unreturned: kept)
+        nextLaunch.returnUnreturned { _ in dac }
+        #expect(dac.level == -20, "after the crash the device stays at \(dac.level) dB")
+    }
+
+    @Test("crash-safe: a crash before the first tick after entering Pure still gives the level back")
+    func crashRightAfterEntering() {
+        let dac = FakeVolumeDevice(level: -20)
+        let journal = LoanJournal()
+        var kept: [PureVolumeLoan] = []
+        dac.onSet = { kept = journal.loans } // the crash, at Pure's first set
+        var run = MasterGainOnPure(writeAhead: journal.writer)
+        _ = run.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        dac.onSet = nil
+        var nextLaunch = MasterGainOnPure(unreturned: kept)
+        nextLaunch.returnUnreturned { _ in dac }
+        #expect(dac.level == -20, "the device stays at \(dac.level) dB: the loan was never kept")
+    }
+
     @Test("the listener's volume-down stands even when a slider step lands before the HAL's change notice")
     func sliderStepBeforeTheNotice() {
         let dac = FakeVolumeDevice(level: -20)

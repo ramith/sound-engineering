@@ -22,7 +22,7 @@ import SettingsKit
 /// makes one. State comes back as ONE copy (`snapshot()`); the rest hand values to non-blocking
 /// sinks, or read a value under a lock held only for the read. Anything that must touch the hardware
 /// is `async`, or hands its work to an engine queue and answers through the snapshot
-/// (`publishMasterGain` on Pure, `returnPureVolumeLoans`).
+/// (`publishMasterGain` on Pure, `keepPureVolumeLoans`).
 extension AudioPlaybackEngine {
     // MARK: Gapless defaults (overridden by the live engine + the mock)
 
@@ -62,8 +62,8 @@ extension AudioPlaybackEngine {
     /// Default: no-op. Conformers with a player override this.
     func publishMasterGain(decibels _: Float) {}
 
-    /// Default: no-op — no device volume was ever lowered.
-    func returnPureVolumeLoans(_: [PureVolumeLoan]) {}
+    /// Default: no-op — no device volume is ever lowered.
+    func keepPureVolumeLoans(in _: PureVolumeLoanJournal) {}
 
     /// Default: no-op — a conformer without per-channel analysers has nothing to run or rest.
     func setMonitorAnalysis(_: Bool) {}
@@ -187,12 +187,12 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// thread. Synchronous; calls apply in the order made. Default impl: no-op.
     func publishMasterGain(decibels: Float)
 
-    /// Hand back the device-volume loans an earlier run left (`EngineSnapshot.pureVolumeLoans`, kept
-    /// with the listener's settings): the engine puts back the level of each device that is here and
-    /// still reads what Pure set — a crash, or a device that went away mid-Pure, leaves no device
-    /// turned down. Returns at once (the HAL work runs on an engine queue); the snapshot's loans say
-    /// what is still out. Call at engine-ready. Default impl: no-op.
-    func returnPureVolumeLoans(_ loans: [PureVolumeLoan])
+    /// Keep Pure's device-volume loans in `journal` (over the launch's defaults): the engine reads the loans
+    /// an earlier run left there and puts back the level of each device that is here and still reads what
+    /// Pure set (or was setting) — a crash, or a device that went away mid-Pure, leaves no device turned
+    /// down — and from then on writes the journal ahead of every change it makes to a device (H-2).
+    /// Returns at once (the HAL work runs on an engine queue). Call at engine-ready. Default impl: no-op.
+    func keepPureVolumeLoans(in journal: PureVolumeLoanJournal)
 
     // MARK: DSP Parameters
 

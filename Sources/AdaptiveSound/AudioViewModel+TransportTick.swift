@@ -186,7 +186,6 @@ extension AudioViewModel {
         if signalPath != freshPath {
             signalPath = freshPath
         }
-        rememberPureVolumeLoans(snapshot.pureVolumeLoans)
         refreshEQDesignRate(snapshot.eqDesignRate)
     }
 }
