@@ -161,10 +161,6 @@ final class EnhancedResampleSession: @unchecked Sendable {
     /// The join the player has yet to reach (one at a time); `nil` once it is counted.
     private(set) var pendingJoin: Join?
 
-    /// The stream ended with a join still unheard: its end (`fireResamplerEOFOrEnd`) waits for the
-    /// join to be counted, so the view model never sees the end before the seam.
-    var endAwaitsJoin = false
-
     /// A next track found to need its own converter (another format): not opened again for a join.
     var refusedJoin: URL?
 

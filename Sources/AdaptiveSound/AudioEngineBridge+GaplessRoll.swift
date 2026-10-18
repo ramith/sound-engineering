@@ -59,9 +59,9 @@ extension AudioEngineBridge {
     /// The player has consumed the last frame before the pending join (the completion of the
     /// buffer that ends there): the next track is audible now. Count the seam — the title, its
     /// loudness gain — and move the playhead base back by the ending track's length, exactly: the
-    /// playhead reads the next track's own time from its first frame, however late this runs. Then
-    /// an end that waited for the join (`endAwaitsJoin`). Abandons when a seek, stop or track change
-    /// superseded the session. MUST be called on `resampleQueue`.
+    /// playhead reads the next track's own time from its first frame, however late this runs.
+    /// Abandons when a seek, stop or track change superseded the session. MUST be called on
+    /// `resampleQueue`.
     func commitJoin(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64) {
         guard isCurrent(generation: generation, session: session), let join = session.takePendingJoin() else {
             return
@@ -70,10 +70,21 @@ extension AudioEngineBridge {
         bumpTransitionCount(player: player, nextURL: join.url, endingTrackSeconds: join.endingTrackSeconds)
         logUX("gapless: one-stream seam '\(join.url.lastPathComponent)' reached at output frame "
             + "\(join.outputFrame)")
-        if session.endAwaitsJoin {
-            session.endAwaitsJoin = false
-            fireResamplerEOFOrEnd(session: session, player: player)
+    }
+
+    /// The stream's last buffer has been heard (its `playedBackCallbackType` completion): its last
+    /// track has truly ended — nothing of it is left for the view model's stop at the end of the
+    /// queue to cut (S-1). A join still pending is counted first, so the seam always comes before
+    /// the end. Then the end-of-track path (`fireResamplerEOFOrEnd`): a next track armed this late
+    /// rolls in now, after a short gap; with none, the end flag goes up. Abandons when a seek, stop
+    /// or track change superseded the session (`player.stop()` fires this completion too). MUST be
+    /// called on `resampleQueue`.
+    func streamPlayedOut(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64) {
+        guard isCurrent(generation: generation, session: session) else { return }
+        if session.pendingJoin != nil {
+            commitJoin(session: session, player: player, generation: generation)
         }
+        fireResamplerEOFOrEnd(session: session, player: player)
     }
 
     // MARK: - Seam handlers (called on resampleQueue)
@@ -247,10 +258,10 @@ extension AudioEngineBridge {
         return nextFile
     }
 
-    /// Schedule `file` on the still-running player with a `.dataPlayedBack` completion that
-    /// re-dispatches onto `resampleQueue` to fire `onPassthroughEOF` — the shared "consecutive
-    /// scheduleFile" gapless primitive used by every passthrough seam (and the resampler→
-    /// passthrough fallbacks). MUST be called on `resampleQueue`.
+    /// Schedule `file` on the still-running player with a completion — once it has been heard
+    /// (`playedBackCallbackType`) — that re-dispatches onto `resampleQueue` to fire
+    /// `onPassthroughEOF`: the shared "consecutive scheduleFile" gapless primitive used by every
+    /// passthrough seam (and the resampler→passthrough fallbacks). MUST be called on `resampleQueue`.
     private func scheduleFileChainingPassthrough(
         _ file: AVAudioFile,
         player: AVAudioPlayerNode,
@@ -265,7 +276,7 @@ extension AudioEngineBridge {
         // stop/seek/reschedule bumps the epoch, and this completion then abandons at fire time
         // instead of rolling the seam off a non-EOF `player.stop()` (wrong-song bug).
         player.scheduleFile(
-            file, at: nil, completionCallbackType: .dataPlayedBack,
+            file, at: nil, completionCallbackType: player.playedBackCallbackType,
             completionHandler: passthroughEndOfTrack(epoch: passthroughGeneration, player: player)
         )
     }
