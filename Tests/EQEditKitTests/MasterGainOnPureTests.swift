@@ -52,8 +52,12 @@ final class FakeVolumeDevice: DeviceVolumeControl {
         land(decibels, upTo: range.upperBound)
     }
 
+    /// Called the instant the device is asked to move, before it does — where a crash would strike.
+    var onSet: (() -> Void)?
+
     private func land(_ decibels: Float, upTo ceiling: Float) -> Bool {
         guard isPresent, hasVolume, decibels.isFinite else { return false }
+        onSet?()
         sets.append(decibels)
         level = min(max((decibels / step).rounded() * step, range.lowerBound), ceiling)
         return true
@@ -62,6 +66,20 @@ final class FakeVolumeDevice: DeviceVolumeControl {
     /// The listener's own change: the volume keys, Control Center, another app.
     func listenerSets(_ decibels: Float) {
         level = decibels
+    }
+}
+
+/// What the rule has written ahead (`MasterGainOnPure.writeAhead`): the kept loans, as a journal holds them.
+final class LoanJournal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var kept: [PureVolumeLoan] = []
+
+    var loans: [PureVolumeLoan] {
+        lock.withLock { kept }
+    }
+
+    var writer: @Sendable ([PureVolumeLoan]) -> Void {
+        { [self] loans in lock.withLock { kept = loans } }
     }
 }
 

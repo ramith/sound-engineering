@@ -29,9 +29,14 @@
 //   is given back with the volume), else Pure waits. While Pure already plays, the slider moved below the
 //   floor (or to Silent) mutes a device that has a mute; one without holds its floor, and the next start
 //   waits.
-// - CRASH-SAFE: every loan not yet settled (`allLoans`) is kept with the listener's settings. A loan a
-//   device couldn't take back (it went away) or that a crash left is put back when the device is seen
-//   again (`returnUnreturned`, at launch) — by the same rule: only if it still reads what Pure set.
+// - CRASH-SAFE: every loan not yet settled (`allLoans`) is kept — WRITTEN AHEAD (`writeAhead`, the
+//   engine's journal, `PureVolumeLoanJournal`): the level Pure is about to set (`pending`), or the mute
+//   it is about to make, is kept before the device is asked, and the record after every change — so a
+//   crash at any instant leaves the next launch a record that names Pure's level (H-2: it used to be kept
+//   only by a 20 Hz tick, which sleeps while paused). A loan a device couldn't take back (it went away)
+//   or that a crash left is put back when the device is seen again (`returnUnreturned`: at launch, at a
+//   transport event, when the device list changes) — by the same rule: only if it still reads what Pure
+//   set, or was setting.
 //
 // The HAL calls go through `DeviceVolumeControl` — a seam: the engine implements it with CoreAudio on its
 // device-volume queue (never the main thread); the tests with a fake device. A plain value, confined to
@@ -98,29 +103,36 @@ public struct PureVolumeLoan: Codable, Equatable, Sendable {
     /// Pure muted the device (Silent, or a cut below its range while playing — H-1): the mute is given
     /// back with the volume. A mute the listener made is never touched.
     public var mutedByPure: Bool
+    /// The level Pure is setting the device to right now — kept before the device is asked (H-2), so a
+    /// reading that matches it is Pure's own too, even if the app died before the set was read back.
+    public var pending: Float?
 
     /// Whether the record can be trusted (R1.1-A close-out break-it, SET-3 / SET-4): a device, three
     /// levels that are numbers, and an anchor no higher than the ceiling — what Pure itself writes. A
     /// damaged one (a kept value edited, a bug) is never put back: the device stays where it is, never
     /// louder than Pure left it.
     public var isSound: Bool {
-        !deviceUID.isEmpty && ceiling.isFinite && anchor.isFinite && lastSet.isFinite
-            && anchor <= ceiling + MasterGainOnPure.sameLevel
+        let pendingSound = pending.map { $0.isFinite && $0 <= ceiling + MasterGainOnPure.sameLevel } ?? true
+        return !deviceUID.isEmpty && ceiling.isFinite && anchor.isFinite && lastSet.isFinite
+            && anchor <= ceiling + MasterGainOnPure.sameLevel && pendingSound
     }
 
-    public init(deviceUID: String, ceiling: Float, anchor: Float, lastSet: Float, mutedByPure: Bool = false) {
+    public init(deviceUID: String, ceiling: Float, anchor: Float, lastSet: Float, mutedByPure: Bool = false,
+                pending: Float? = nil) {
         self.deviceUID = deviceUID
         self.ceiling = ceiling
         self.anchor = anchor
         self.lastSet = lastSet
         self.mutedByPure = mutedByPure
+        self.pending = pending
     }
 
     private enum CodingKeys: String, CodingKey {
-        case deviceUID, ceiling, anchor, lastSet, mutedByPure
+        case deviceUID, ceiling, anchor, lastSet, mutedByPure, pending
     }
 
-    /// A kept record, as written; one from before the mute (no `mutedByPure`) reads as no mute made.
+    /// A kept record, as written; one from before the mute or the write-ahead reads as none made, nothing
+    /// pending.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
@@ -128,7 +140,8 @@ public struct PureVolumeLoan: Codable, Equatable, Sendable {
             ceiling: container.decode(Float.self, forKey: .ceiling),
             anchor: container.decode(Float.self, forKey: .anchor),
             lastSet: container.decode(Float.self, forKey: .lastSet),
-            mutedByPure: container.decodeIfPresent(Bool.self, forKey: .mutedByPure) ?? false
+            mutedByPure: container.decodeIfPresent(Bool.self, forKey: .mutedByPure) ?? false,
+            pending: container.decodeIfPresent(Float.self, forKey: .pending)
         )
     }
 }
@@ -178,14 +191,26 @@ public struct MasterGainOnPure: Sendable {
         (loan.map { [$0] } ?? []) + unreturned
     }
 
+    /// Where every loan not yet settled is kept, synchronously (the engine's journal): called with
+    /// `allLoans` before each change Pure makes to a device and after every change to the record (H-2).
+    public var writeAhead: @Sendable ([PureVolumeLoan]) -> Void
+
     /// Start with the loans a previous run left (`allLoans`, as kept): all unreturned until put back.
-    public init(unreturned: [PureVolumeLoan] = []) {
+    public init(unreturned: [PureVolumeLoan] = [],
+                writeAhead: @escaping @Sendable ([PureVolumeLoan]) -> Void = { _ in }) {
         self.unreturned = unreturned
+        self.writeAhead = writeAhead
+    }
+
+    /// Keep the record as it stands now.
+    private func keep() {
+        writeAhead(allLoans)
     }
 
     /// Take in loans a previous run left (kept with the listener's settings) as unreturned — except
     /// for a device whose loan is held or already kept: what this run knows is newer.
     public mutating func adopt(_ kept: [PureVolumeLoan]) {
+        defer { keep() }
         for kept in kept where kept.isSound && !allLoans.contains(where: { $0.deviceUID == kept.deviceUID }) {
             unreturned.append(kept)
         }
@@ -193,6 +218,7 @@ public struct MasterGainOnPure: Sendable {
 
     /// Pure is about to play on the device `deviceUID` (`device`) with Master Gain at `gain` dB.
     public mutating func enter(deviceUID: String, gain: Float, device: some DeviceVolumeControl) -> Entry {
+        defer { keep() }
         if var held = loan, held.deviceUID == deviceUID {
             // Pure starts again on the device it already holds (a new song): the loan carries on — from a
             // change of the listener's, if they made one — unless Master Gain now asks for less than the
@@ -242,6 +268,7 @@ public struct MasterGainOnPure: Sendable {
 
     /// Master Gain moved to `gain` while Pure plays: the device follows.
     public mutating func gainChanged(to gain: Float, device: some DeviceVolumeControl) {
+        defer { keep() }
         guard var held = loan, let reading = device.read() else { return }
         // The device first: a change of the listener's that Pure hasn't been told of yet (its notice still
         // queued behind this move, or no notice at all) stands — the move is made from it, never over it
@@ -255,9 +282,14 @@ public struct MasterGainOnPure: Sendable {
         // Master Gain says (H-1). One without holds its floor (the next start waits).
         if !Self.reachesByLevel(gain, anchor: held.anchor, ceiling: held.ceiling, range: reading.range),
            device.isMuted() != nil {
-            if device.isMuted() == false, device.setMuted(true) {
-                held.mutedByPure = true
+            if device.isMuted() == false {
+                held.mutedByPure = true // written ahead: a crash leaves the mute to give back
                 loan = held
+                keep()
+                if !device.setMuted(true) {
+                    held.mutedByPure = false
+                    loan = held
+                }
             }
             return
         }
@@ -267,15 +299,20 @@ public struct MasterGainOnPure: Sendable {
         }
         let target = Self.level(anchor: held.anchor, ceiling: held.ceiling, gain: gain, range: reading.range)
         guard abs(target - reading.level) > Self.sameLevel else { return } // already there
+        held.pending = target // written ahead: a crash before the read-back still names Pure's level
+        loan = held
+        keep()
         if device.set(target), let answer = device.read() {
             held.lastSet = answer.level
-            loan = held
         }
+        held.pending = nil
+        loan = held
     }
 
     /// The device reports a change while Pure plays with Master Gain at `gain`. Pure's own set changes
     /// nothing; anything else is the listener's: their level stands, and the anchor follows it.
     public mutating func deviceChanged(gain: Float, device: some DeviceVolumeControl) {
+        defer { keep() }
         guard let held = loan, let reading = device.read(),
               abs(reading.level - held.lastSet) > Self.sameLevel else { return }
         loan = Self.reanchored(held, to: reading.level, gain: gain)
@@ -315,6 +352,7 @@ public struct MasterGainOnPure: Sendable {
 
     /// Pure stops on its device: put the anchor back.
     public mutating func leave(device: some DeviceVolumeControl) {
+        defer { keep() }
         guard let held = loan else { return }
         loan = nil
         if !settle(held, device: device) {
@@ -324,6 +362,7 @@ public struct MasterGainOnPure: Sendable {
 
     /// Put back every unreturned loan whose device is here (`device(uid)`, nil while it is absent).
     public mutating func returnUnreturned<Device: DeviceVolumeControl>(device: (String) -> Device?) {
+        defer { keep() }
         unreturned = unreturned.filter { loan in
             guard let control = device(loan.deviceUID) else { return true }
             return !settle(loan, device: control)
@@ -361,7 +400,11 @@ public struct MasterGainOnPure: Sendable {
         if held.mutedByPure, device.isMuted() == true { // the mute Pure made goes back with the volume
             _ = device.setMuted(false)
         }
-        guard reading.level.isFinite, abs(reading.level - held.lastSet) <= Self.sameLevel else { return true }
+        // Pure's own level: what it last set, or what it was setting when the app died (H-2).
+        let pureSet = [held.lastSet] + (held.pending.map { [$0] } ?? [])
+        guard reading.level.isFinite, pureSet.contains(where: { abs(reading.level - $0) <= Self.sameLevel }) else {
+            return true
+        }
         let target = min(max(min(held.anchor, held.ceiling), reading.range.lowerBound), reading.range.upperBound)
         guard target.isFinite else { return true }
         return abs(target - reading.level) <= Self.sameLevel || device.restore(target)

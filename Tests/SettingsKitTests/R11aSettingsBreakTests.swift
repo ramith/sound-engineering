@@ -62,15 +62,15 @@ struct R11aSettingsBreakTests {
         #expect(report.allSatisfy { $0.hasSuffix("-inf") })
     }
 
-    /// One malformed loan must not cost the others: each one is a device left turned down.
+    /// One malformed loan must not cost the others: each one is a device left turned down. (The loans moved
+    /// from `listeningSettingsV1` to their own journal — H-2 — which reads them one by one.)
     @Test("SET-3: one bad Pure volume loan doesn't drop the good ones")
     func oneBadLoan() {
         defer { cleanUp() }
-        let json = #"{"version":1,"masterGainDecibels":-10,"pureVolumeLoans":["#
-            + #"{"deviceUID":"DAC-A","ceiling":-20,"anchor":-20,"lastSet":-32},"#
-            + #"{"deviceUID":"DAC-B","ceiling":"oops","anchor":-20,"lastSet":-32}]}"#
-        defaults.set(Data(json.utf8), forKey: Self.key)
-        let loans = SettingsStore(defaults: defaults).load().pureVolumeLoans
+        let json = #"[{"deviceUID":"DAC-A","ceiling":-20,"anchor":-20,"lastSet":-32},"#
+            + #"{"deviceUID":"DAC-B","ceiling":"oops","anchor":-20,"lastSet":-32}]"#
+        defaults.set(Data(json.utf8), forKey: "pureVolumeLoansV1")
+        let loans = PureVolumeLoanJournal(defaults: defaults).loans()
         print("R11A SET-3 loans read: \(loans.map(\.deviceUID))")
         #expect(loans.map(\.deviceUID) == ["DAC-A"])
     }
