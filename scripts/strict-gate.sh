@@ -64,6 +64,14 @@ if [ "$actual_swiftlint" != "$SWIFTLINT_PIN" ]; then
   red "ERROR: swiftlint $actual_swiftlint != pinned $SWIFTLINT_PIN (tool-skew guard — bump the pin + relint in one commit, or install the pinned version)."
   exit 1
 fi
+# Periphery is pinned the same way (installed from its GitHub release in CI — its Homebrew tap no
+# longer installs): a major bump (3.x) changes what counts as unused, so a skew must fail loudly.
+PERIPHERY_PIN="2.21.2"
+actual_periphery="$(periphery version)"
+if [ "$actual_periphery" != "$PERIPHERY_PIN" ]; then
+  red "ERROR: periphery $actual_periphery != pinned $PERIPHERY_PIN (tool-skew guard — bump the pin + fix the new findings in one commit, or install the pinned version: see docs/development/DEVELOPMENT.md)."
+  exit 1
+fi
 
 # clang-tidy: resolved + MAJOR-pinned through the shared C++ analysis library (ONE resolver
 # for this gate and the pre-commit hook; the pin lives there as CXX_CLANG_TIDY_MAJOR_PIN).
