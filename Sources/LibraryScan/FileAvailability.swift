@@ -9,7 +9,11 @@
 //   • a song in a music folder — that folder passes the check a walk makes before it starts
 //     (`LibraryScanner.rootAtPath`: there, on its own drive; unbound, holding some of its songs);
 //   • a song in no music folder (a loose one, a relocated one, a removed folder's playlist song) — the
-//     folder it was in is there.
+//     folder it was in is there, ON THE STARTUP DISK. A loose song has no drive binding, and the startup
+//     disk is the one drive nothing can be mounted in place of: on any other drive, a same-named drive
+//     with that folder may be mounted where the song's own unplugged drive was, so its folder being
+//     there is no evidence (R1.1-A close-out break-it, AV-1). The drive is read as a walk reads it (the
+//     scanner's `rootIdentity` seam — `RootReachabilityProbe.identity`, `RootIdentity.startupDisk`).
 // Otherwise it is UNREACHABLE: unplayable now, and nothing offers to remove it.
 
 import Foundation
@@ -51,8 +55,9 @@ private extension LibraryScanner {
         guard FileSignature.isAbsent(url) else { return .unreachable }
         let key = PathNormalizer.normalizedString(for: url)
         guard let root = roots.first(where: { PathNormalizer.isComponentBoundaryDescendant(key, of: $0.path) }) else {
-            // In no music folder: gone only if the folder it was in is there.
-            return RootReachabilityProbe.isReachable(url.deletingLastPathComponent()) ? .missing : .unreachable
+            // In no music folder: gone only if the folder it was in is there, on the startup disk (AV-1).
+            let folder = rootIdentity(url.deletingLastPathComponent())
+            return folder?.volume == RootIdentity.startupDisk ? .missing : .unreachable
         }
         if rootIsThere[root.id] == nil {
             let found = try await rootAtPath(URL(fileURLWithPath: root.path), folderID: root.id, in: store)
