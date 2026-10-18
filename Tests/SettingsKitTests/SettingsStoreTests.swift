@@ -190,6 +190,29 @@ struct SettingsStoreTests {
         }
     }
 
+    /// Each kept loan is a device left turned down: one bad entry must not cost the others, and a damaged
+    /// one is not kept (SET-3, SET-4). Good loans read; one of a wrong type, with a field missing, a field
+    /// that is not a number, an empty device, or its anchor above its ceiling, is dropped on its own.
+    @Test("SETTINGS-12: Pure volume loans are read one by one — a bad one is dropped, the good ones kept")
+    func loansReadLeniently() {
+        let good = #"{"deviceUID":"DAC-A","ceiling":-20,"anchor":-20,"lastSet":-32}"#
+        let alsoGood = #"{"deviceUID":"DAC-G","ceiling":-10,"anchor":-15,"lastSet":-25}"#
+        let bad = [
+            #"{"deviceUID":"DAC-B","ceiling":"oops","anchor":-20,"lastSet":-32}"#,
+            #"{"deviceUID":"DAC-C","ceiling":-20,"lastSet":-32}"#,
+            #"{"deviceUID":"DAC-D","ceiling":-20,"anchor":"NaN","lastSet":-32}"#,
+            #"{"deviceUID":"DAC-E","ceiling":"+Infinity","anchor":-20,"lastSet":-32}"#,
+            #"{"deviceUID":"DAC-F","ceiling":-30,"anchor":0,"lastSet":-40}"#,
+            #"{"deviceUID":"","ceiling":-20,"anchor":-20,"lastSet":-32}"#,
+            #""a string""#, "7", "null",
+        ]
+        stored(#"{"version":1,"masterGainDecibels":-10,"pureVolumeLoans":["#
+            + ([good] + bad + [alsoGood]).joined(separator: ",") + "]}")
+        let settings = load()
+        #expect(settings.pureVolumeLoans.map(\.deviceUID) == ["DAC-A", "DAC-G"])
+        #expect(settings.masterGainDecibels == -10, "the rest of the value still reads")
+    }
+
     @Test("SETTINGS-06: Master Gain is never restored louder than it was left")
     func masterGainNeverLouder() {
         let silent = -Float.infinity
