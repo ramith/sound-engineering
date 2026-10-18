@@ -11,9 +11,11 @@
 // A BAD VALUE IS THE FAITHFUL DEFAULT, field by field: a value of the wrong type or out of range reads
 // as that field's default, and the rest still read (a later build's added fields are simply ignored).
 // The one exception is Master Gain, which is NEVER RESTORED LOUDER THAN IT WAS LEFT (C-102, hearing
-// safety): Master Gain resets to unity — the loudest — so a level that can't be read, or one above
-// unity (the law is turn-down only, so it was never left there), comes back Silent, the law's own safe
-// reading of a bad value. The listener sees "Silent" and turns it up.
+// safety): Master Gain resets to unity — the loudest — so a level that can't be read, one that isn't
+// there (version 1 always writes it, so its absence is damage), or one above unity (the law is turn-down
+// only, so it was never left there) comes back Silent, the law's own safe reading of a bad value. The
+// listener sees "Silent" and turns it up. A stored value that isn't readable settings at all reads
+// `.unreadable`, Silent too (`SettingsStore.load`).
 
 import EQEditKit
 import Foundation
@@ -109,9 +111,7 @@ extension ListeningSettings: Codable {
         let faithful = Self.faithful
         self.init(
             pureMode: container.field(.pureMode) ?? faithful.pureMode,
-            masterGainDecibels: container.contains(.masterGainDecibels)
-                ? Self.restoredLevel(container.field(.masterGainDecibels))
-                : faithful.masterGainDecibels,
+            masterGainDecibels: Self.restoredLevel(container.field(.masterGainDecibels)), // absent: Silent
             crossfeed: container.field(.crossfeed) ?? faithful.crossfeed,
             crossfeedStrength: container.field(.crossfeedStrength).flatMap(CrossfeedStrength.init(rawValue:))
                 ?? faithful.crossfeedStrength,
