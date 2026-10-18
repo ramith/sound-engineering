@@ -27,6 +27,10 @@ enum PureModeReason: Equatable, CaseIterable {
     /// Master Gain is turned down and the device has no volume the app can set: Pure would play
     /// louder, so it waits (the engine's own reason — `MasterGainOnPure`).
     case waitsForMasterGain
+    /// Master Gain asks for less than the device's own volume can give — a cut below its floor, or Silent
+    /// on a device with no mute the app can set: Pure would play louder than Master Gain says, so it waits
+    /// (the engine's own reason — `MasterGainOnPure`, H-1).
+    case masterGainBelowDeviceRange
 
     /// The reason a code from the engine names: nil for 0 and 1 (Pure plays bit-perfect) and for a
     /// code this build doesn't know.
@@ -58,6 +62,7 @@ enum PureModeReason: Equatable, CaseIterable {
         case .fileUnreadable: "Pure off: unreadable"
         case .needsFFmpeg: "Pure off: needs FFmpeg"
         case .waitsForMasterGain: "Pure waits: Master Gain"
+        case .masterGainBelowDeviceRange: "Pure waits: device range"
         }
     }
 
@@ -74,6 +79,9 @@ enum PureModeReason: Equatable, CaseIterable {
             "Master Gain is turned down (\(MasterGainLaw.text(masterGain))), and this device has no volume the app "
                 + "can set. Pure Mode plays at the device’s own volume, which would be louder, so it waits until "
                 + "Master Gain is back at 0 dB."
+        case .masterGainBelowDeviceRange:
+            "Master Gain (\(MasterGainLaw.text(masterGain))) turns your device down further than its own volume "
+                + "goes, so Pure Mode would play louder than Master Gain says. It waits, and Enhanced is playing."
         default:
             declined
         }
@@ -102,7 +110,7 @@ enum PureModeReason: Equatable, CaseIterable {
             "Pure Mode’s decoder can’t read this file, so Enhanced is playing it."
         case .needsFFmpeg:
             "macOS can’t read this file. With FFmpeg turned on (Settings ▸ Formats), Pure Mode may play it."
-        case .notBitPerfect, .waitsForMasterGain:
+        case .notBitPerfect, .waitsForMasterGain, .masterGainBelowDeviceRange:
             "" // they carry numbers: `detail`
         }
     }

@@ -11,6 +11,34 @@ import Testing
 struct BreakItMasterGainOnPureTests {
     private static let uid = "AppleUSBAudioEngine:DAC:1"
 
+    @Test("a cut deeper than the device's range: Pure must not play louder than Enhanced did")
+    func cutBelowTheDeviceFloor() {
+        let dac = FakeVolumeDevice(level: -10, range: -40 ... 0)
+        var rule = MasterGainOnPure()
+        let entry = rule.enter(deviceUID: Self.uid, gain: -50, device: dac)
+        // Enhanced played −10 − 50 = −60 dB. Either Pure waits, or the device reaches −60 dB.
+        #expect(entry == .waitsBelowDeviceRange || dac.level <= -60,
+                "Pure plays at \(dac.level) dB: 20 dB louder than Master Gain says")
+    }
+
+    @Test("Silent on Pure is silence, not the device's minimum")
+    func silentIsSilence() {
+        let dac = FakeVolumeDevice(level: -10, range: -40 ... 0)
+        var rule = MasterGainOnPure()
+        let entry = rule.enter(deviceUID: Self.uid, gain: -.infinity, device: dac)
+        #expect(entry == .waitsBelowDeviceRange, "Silent engages Pure at the device's minimum (\(dac.level) dB)")
+    }
+
+    @Test("the slider below the device's floor while Pure plays: never louder than it says")
+    func sliderBelowTheFloor() {
+        let dac = FakeVolumeDevice(level: -15, range: -50 ... 0)
+        dac.hasMute = true // a device without one holds its floor: MasterGainOnPureTests
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -10, device: dac)
+        rule.gainChanged(to: -45, device: dac)
+        #expect(dac.muted || dac.level <= -60, "Master Gain says −60 dB; Pure plays \(dac.level) dB")
+    }
+
     @Test("the listener's volume-down stands even when a slider step lands before the HAL's change notice")
     func sliderStepBeforeTheNotice() {
         let dac = FakeVolumeDevice(level: -20)
