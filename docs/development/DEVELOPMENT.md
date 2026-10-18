@@ -21,9 +21,17 @@ export PATH="/opt/homebrew/opt/llvm@23/bin:/opt/homebrew/opt/llvm/bin:$PATH"   #
 # C++ unsafe string funcs + thread detach, the UI design-system rules, …)
 brew install semgrep
 
-# Dead-code gate (REQUIRED by strict-gate) and FFmpeg (recommended: clang-tidy then also
-# analyses the FFmpeg decode branch; the app uses it at runtime for formats Apple can't open)
-brew install peripheryapp/periphery/periphery ffmpeg
+# Dead-code gate (REQUIRED by strict-gate) — Periphery VERSION-PINNED to 2.21.2 (strict-gate.sh
+# PERIPHERY_PIN), from its GitHub release: its Homebrew tap no longer installs on current Homebrew
+# ("depends_on macos: :catalina is disabled", 2026-10). Same binary + checksum CI uses:
+curl -fsSL -o /tmp/periphery.zip \
+  https://github.com/peripheryapp/periphery/releases/download/2.21.2/periphery-2.21.2.zip
+echo "e5b4e802f794df230a2e4b9d5bb176626b3a9fd74ea6cf7d0d42c20ebe57fd4a  /tmp/periphery.zip" | shasum -a 256 -c -
+unzip -o -q /tmp/periphery.zip periphery -d "$HOME/.local/bin"   # any directory on your PATH
+
+# FFmpeg (recommended: clang-tidy then also analyses the FFmpeg decode branch; the app can use it
+# at runtime for formats Apple can't open — opt-in, Settings ▸ Formats)
+brew install ffmpeg
 
 # Verify the whole set (leaks(1) comes with the Xcode Command Line Tools):
 swiftformat --version   # 0.63.0
@@ -31,7 +39,7 @@ swiftlint --version     # 0.65.1
 clang-format --version
 clang-tidy --version    # must report the pinned major (23)
 semgrep --version
-periphery version
+periphery version       # 2.21.2
 xcrun --find leaks
 cppcheck --version   # optional: strict-gate runs a supplementary pass if present
 ```
