@@ -284,7 +284,11 @@ namespace AdaptiveSound
                 }
                 sampleRate_ = fileFmt.mSampleRate;
                 channels_ = fileFmt.mChannelsPerFrame;
-                sourceBits_ = fileFmt.mBitsPerChannel; // 0 for compressed sources (informational)
+                // The source's own depth: PCM states it in its format; a compressed file states 0 there,
+                // and a lossless one (FLAC, ALAC) carries it elsewhere — read it, or the depth rule and the
+                // dither take a 24-bit FLAC for "bit-perfect" on a 16-bit word (D-1).
+                sourceBits_ = (fileFmt.mBitsPerChannel != 0U) ? fileFmt.mBitsPerChannel
+                                                              : compressedSourceBits(fileFmt);
                 sourceIsFloat_ = (fileFmt.mFormatID == kAudioFormatLinearPCM) &&
                                  ((fileFmt.mFormatFlags & kAudioFormatFlagIsFloat) != 0U);
                 if (sampleRate_ <= 0.0 || channels_ == 0U || channels_ > kMaxSourceChannels)
@@ -296,6 +300,40 @@ namespace AdaptiveSound
                     return false;
                 }
                 return true;
+            }
+
+            // A compressed file's source depth: the file's own source-bit-depth property (positive for
+            // integer samples), else — for ALAC and FLAC — the source-data flags in its format (1 → 16,
+            // 2 → 20, 3 → 24, 4 → 32; `afinfo`: "from 24-bit source"). 0 when neither says (a lossy file).
+            [[nodiscard]] uint32_t
+            compressedSourceBits(const AudioStreamBasicDescription& fileFmt) const
+            {
+                AudioFileID audioFile = nullptr;
+                UInt32 size = sizeof(AudioFileID);
+                if (ExtAudioFileGetProperty(file_,
+                                            kExtAudioFileProperty_AudioFile,
+                                            &size,
+                                            static_cast<void*>(&audioFile)) == noErr &&
+                    audioFile != nullptr)
+                {
+                    SInt32 depth = 0;
+                    size = sizeof(depth);
+                    if (AudioFileGetProperty(
+                            audioFile, kAudioFilePropertySourceBitDepth, &size, &depth) == noErr &&
+                        depth > 0)
+                    {
+                        return static_cast<uint32_t>(depth);
+                    }
+                }
+                if (fileFmt.mFormatID != kAudioFormatAppleLossless &&
+                    fileFmt.mFormatID != kAudioFormatFLAC)
+                {
+                    return 0U;
+                }
+                constexpr std::array<uint32_t, 5> kFlagDepth = {0U, 16U, 20U, 24U, 32U};
+                return (fileFmt.mFormatFlags < kFlagDepth.size())
+                           ? kFlagDepth.at(fileFmt.mFormatFlags)
+                           : 0U;
             }
 
             bool setClientFloatFormat()
