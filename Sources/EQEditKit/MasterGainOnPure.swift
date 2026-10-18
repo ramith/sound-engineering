@@ -116,6 +116,9 @@ public struct MasterGainOnPure: Sendable {
     public private(set) var loan: PureVolumeLoan?
     /// Loans not yet put back: the device went away first, or a crash left them.
     public private(set) var unreturned: [PureVolumeLoan]
+    /// The Master Gain the device was last steered to: what a listener's change it hasn't seen yet is read
+    /// against (H-5).
+    private var steeredGain: Float = MasterGainLaw.unity
 
     /// Every loan not yet settled — what the listener's settings keep.
     public var allLoans: [PureVolumeLoan] {
@@ -160,6 +163,14 @@ public struct MasterGainOnPure: Sendable {
     /// Master Gain moved to `gain` while Pure plays: the device follows.
     public mutating func gainChanged(to gain: Float, device: some DeviceVolumeControl) {
         guard var held = loan, let reading = device.read() else { return }
+        // The device first: a change of the listener's that Pure hasn't been told of yet (its notice still
+        // queued behind this move, or no notice at all) stands — the move is made from it, never over it
+        // (R1.1-A close-out break-it, H-5: a 1 dB step had put a −45 dB volume-down back to −29 dB).
+        if abs(reading.level - held.lastSet) > Self.sameLevel {
+            held = Self.reanchored(held, to: reading.level, gain: steeredGain)
+            loan = held
+        }
+        steeredGain = gain
         let target = Self.level(anchor: held.anchor, ceiling: held.ceiling, gain: gain, range: reading.range)
         guard abs(target - reading.level) > Self.sameLevel else { return } // already there
         if device.set(target), let answer = device.read() {
@@ -171,12 +182,19 @@ public struct MasterGainOnPure: Sendable {
     /// The device reports a change while Pure plays with Master Gain at `gain`. Pure's own set changes
     /// nothing; anything else is the listener's: their level stands, and the anchor follows it.
     public mutating func deviceChanged(gain: Float, device: some DeviceVolumeControl) {
-        guard var held = loan, let reading = device.read(),
+        guard let held = loan, let reading = device.read(),
               abs(reading.level - held.lastSet) > Self.sameLevel else { return }
-        let gain = Self.isAudible(gain) ? gain : MasterGainLaw.unity // Silent: no cut to keep on top
-        held.anchor = min(reading.level - min(gain, MasterGainLaw.unity), held.ceiling)
-        held.lastSet = reading.level
-        loan = held
+        loan = Self.reanchored(held, to: reading.level, gain: gain)
+    }
+
+    /// `held` after the listener set the device to `reading` with Master Gain at `gain`: their level stands,
+    /// read as the Mac's own volume with the cut on top — the anchor moves to it, never above the ceiling.
+    private static func reanchored(_ held: PureVolumeLoan, to reading: Float, gain: Float) -> PureVolumeLoan {
+        var moved = held
+        let cut = isAudible(gain) ? min(gain, MasterGainLaw.unity) : MasterGainLaw.unity // Silent: none on top
+        moved.anchor = min(reading - cut, held.ceiling)
+        moved.lastSet = reading
+        return moved
     }
 
     /// Whether `event` ends the hold Pure has on the device `heldUID`.
