@@ -55,9 +55,16 @@ jobs:
           # vs the then-pinned 0.61.1 — PR #61 run 1); strict-gate.sh asserts the pins, so a
           # skew fails loudly with instructions instead of red-herring style errors.
           brew install llvm@23 semgrep cppcheck ffmpeg || true
-          # Periphery (Swift dead-code detection) lives in a tap, not core Homebrew — install it
-          # separately so `make strict-gate`'s hostile `periphery scan` step has the binary.
-          brew install peripheryapp/periphery/periphery || true
+          # Periphery (Swift dead-code detection) — VERSION-PINNED like the style tools below
+          # (strict-gate.sh asserts PERIPHERY_PIN) and checksum-verified. It is NOT brewed: its
+          # tap (peripheryapp/periphery) no longer installs on current Homebrew ("depends_on
+          # macos: :catalina is disabled"), and the old `brew install … || true` swallowed that,
+          # so the gate died at its tool check with nothing of the PR tested (PR #91, 2026-10-18).
+          # The SHA-256 is the one the tap's own cask pins for this release.
+          curl -fsSL -o /tmp/periphery.zip \
+            https://github.com/peripheryapp/periphery/releases/download/2.21.2/periphery-2.21.2.zip
+          echo "e5b4e802f794df230a2e4b9d5bb176626b3a9fd74ea6cf7d0d42c20ebe57fd4a  /tmp/periphery.zip" \
+            | shasum -a 256 -c -
           # Pinned style tools (versions MUST match strict-gate.sh's SWIFTFORMAT_PIN /
           # SWIFTLINT_PIN; a deliberate upgrade bumps both places + reformats in one commit).
           mkdir -p "$HOME/pinned-tools"
@@ -67,13 +74,15 @@ jobs:
           curl -fsSL -o /tmp/swiftlint.zip \
             https://github.com/realm/SwiftLint/releases/download/0.65.1/portable_swiftlint.zip
           unzip -o -q /tmp/swiftlint.zip -d "$HOME/pinned-tools"
-          chmod +x "$HOME/pinned-tools/swiftformat" "$HOME/pinned-tools/swiftlint"
+          unzip -o -q /tmp/periphery.zip periphery -d "$HOME/pinned-tools"
+          chmod +x "$HOME/pinned-tools/swiftformat" "$HOME/pinned-tools/swiftlint" \
+            "$HOME/pinned-tools/periphery"
           # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the
           # runner default PATH (/usr/bin, where make lives). A step-level
           # `env: PATH: …:${{ env.PATH }}` does NOT work — the Actions env context has no PATH,
           # so it expanded to empty, dropped /usr/bin, and broke `make` (exit 127).
           # pinned-tools is written LAST so it lands FIRST on PATH (each write prepends),
-          # shadowing any preinstalled brew swiftformat/swiftlint on the runner image.
+          # shadowing any preinstalled brew swiftformat/swiftlint/periphery on the runner image.
           # llvm@23 is an alias of `llvm` while 23 is current (keg at opt/llvm) and becomes
           # a versioned keg (opt/llvm@23) once 24 ships — put both on PATH, versioned first.
           echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
