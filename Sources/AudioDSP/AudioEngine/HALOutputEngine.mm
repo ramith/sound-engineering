@@ -341,6 +341,7 @@ class HALOutputEngine::Impl
     {
         // A reconfigure tears the previous session down first (restores rate / releases hog).
         teardown();
+        declineReason_ = PureModeReason::DeviceWouldNotStart; // until a gate below names its own
 
         deviceID_ = cap.id;
         source_.store(source, std::memory_order_release);
@@ -399,6 +400,7 @@ class HALOutputEngine::Impl
                     "not achievable (e.g. HDMI 48 kHz lock); declining Pure so Enhanced resamples",
                     achieved_.achievedRate, eval.targetDeviceRate);
                 teardown();
+                declineReason_ = PureModeReason::RateUnsupportedResample;
                 return false;
             }
         }
@@ -430,6 +432,7 @@ class HALOutputEngine::Impl
                 "channels; declining Pure so Enhanced plays it",
                 renderFormat_.channels, eval.targetChannels);
             teardown();
+            declineReason_ = PureModeReason::ChannelCountMismatch;
             return false;
         }
 
@@ -497,6 +500,11 @@ class HALOutputEngine::Impl
     [[nodiscard]] AchievedOutputState achievedState() const
     {
         return achieved_;
+    }
+
+    [[nodiscard]] PureModeReason configureDeclineReason() const
+    {
+        return declineReason_;
     }
 
     void setDither(bool reducesBits)
@@ -959,6 +967,9 @@ class HALOutputEngine::Impl
     bool renderMayStillRun_ = false;
     NativePcmFormat renderFormat_;
 
+    // Why the last configure() declined (configureDeclineReason); reset at each configure().
+    PureModeReason declineReason_ = PureModeReason::DeviceWouldNotStart;
+
     // TPDF dither where the device's word holds fewer bits than the source (setDither, before start).
     // The flag is read by the render; the generator is the render thread's alone.
     std::atomic<bool> dithers_{false};
@@ -1009,6 +1020,11 @@ bool HALOutputEngine::renderMayStillRun() const
 AchievedOutputState HALOutputEngine::achievedState() const
 {
     return impl_->achievedState();
+}
+
+PureModeReason HALOutputEngine::configureDeclineReason() const
+{
+    return impl_->configureDeclineReason();
 }
 
 void HALOutputEngine::setDither(bool reducesBits)

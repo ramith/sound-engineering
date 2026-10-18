@@ -87,6 +87,12 @@ namespace AdaptiveSound
         // threads.
         [[nodiscard]] AchievedOutputState achievedState() const;
 
+        // Why the last configure() declined (it returned false): the device would not run at the file's
+        // rate (RateUnsupportedResample — e.g. HDMI's 48 kHz lock), its stream carries another channel
+        // count than the file (ChannelCountMismatch), or anything else (DeviceWouldNotStart). Read
+        // after a failed configure(), for the reason Pure names (C-34). Control-plane only.
+        [[nodiscard]] PureModeReason configureDeclineReason() const;
+
         // Whether the float → native step reduces bits the source has, and so adds TPDF dither
         // (convertFloatToNativeDithered — R1.1-A, founder decision 2026-10-16). Off by default: the
         // plain conversion is bit-exact. Set after configure() and before start(), from the depth rule
