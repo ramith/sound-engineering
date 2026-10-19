@@ -139,6 +139,18 @@ namespace AdaptiveSound
         return (causalTap_ != nullptr) ? causalTap_->fedFrames() : 0U;
     }
 
+    bool DSPKernel::analysisWorkersParked() const noexcept
+    {
+        return loudnessModule_ != nullptr && causalTap_ != nullptr &&
+               loudnessModule_->workerParked() && causalTap_->workerParked();
+    }
+
+    uint64_t DSPKernel::analysisWorkerWakes() const noexcept
+    {
+        return (loudnessModule_ != nullptr ? loudnessModule_->workerWakes() : 0U) +
+               (causalTap_ != nullptr ? causalTap_->workerWakes() : 0U);
+    }
+
     void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept
     {
         // Subnormals flush to zero while the kernel renders, on whichever thread calls it, and the

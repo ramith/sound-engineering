@@ -114,6 +114,15 @@ namespace AdaptiveSound
         [[nodiscard]] float measuredLufsShortTerm() const noexcept;
         [[nodiscard]] float measuredLufsMomentary() const noexcept;
         [[nodiscard]] float currentMakeupGainLinear() const noexcept;
+        // The measurement worker: parked (blocked until handed audio), and how often it has woken.
+        [[nodiscard]] bool workerParked() const noexcept
+        {
+            return parking_.isParked();
+        }
+        [[nodiscard]] uint64_t workerWakes() const noexcept
+        {
+            return parking_.wakeCount();
+        }
 
       private:
         // RT: apply the smoothed (and optionally contribution-weighted) makeup gain in place.
