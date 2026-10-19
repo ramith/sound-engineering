@@ -86,6 +86,10 @@ namespace AdaptiveSound
         void stopCausalLoudness() noexcept;
         // Diagnostics (any thread): the frames the current causal estimate has analysed.
         [[nodiscard]] uint64_t causalLoudnessFedFrames() const noexcept;
+        // Diagnostics (any thread): both analysis workers — the normaliser's meter and the causal
+        // estimate — are parked (blocked until handed work), and how often they have woken in all.
+        [[nodiscard]] bool analysisWorkersParked() const noexcept;
+        [[nodiscard]] uint64_t analysisWorkerWakes() const noexcept;
 
         // Read-only view of the EQ stage between process() calls (tests/diagnostics only).
         [[nodiscard]] const EQModule* eqModule() const noexcept

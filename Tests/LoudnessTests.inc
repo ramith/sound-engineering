@@ -10,7 +10,7 @@
 //        feedStereoSilence, kLufsTol.
 
 #include "../Sources/AudioDSP/Loudness/LoudnessModule.h"
-#include <sys/resource.h>
+#include "BoundedWait.h"
 
 // ===========================================================================
 // Loudness tests (Sprint 4 — BS.1770-5 LufsMeter). Driven synchronously; no
@@ -273,34 +273,42 @@ static auto testLoudnessMeterBridgeTruePeak() -> void
 // normaliser's meter (LoudnessModule) and the causal loudness estimate (CausalLoudnessTap) — sleep
 // while no audio reaches them, and wake for the next block. Nothing reaches them while playback is
 // paused (the engine stops); the normaliser is fed only while leveling is on and off the bit-perfect
-// path, the causal tap only while its estimate runs. Before R1.1 they polled: the normaliser every 5 ms (200 wake-ups a second), the causal tap
-// every 50 ms (10 ms with an estimate running), for the AU's whole life. Wake-ups are counted as the
-// process's context switches (getrusage), what the battery sees; the test thread's own sleep is one.
+// path, the causal tap only while its estimate runs. Before R1.1 they polled: the normaliser every
+// 5 ms (200 wake-ups a second), the causal tap every 50 ms (10 ms with an estimate running), for the
+// AU's whole life.
+//
+// The workers' own telemetry decides, never the clock (PR #91's CI: the process's context switches,
+// over a fixed settle, measured a busy runner, not the workers): the test waits — up to a hang cap
+// that fails, never carries on — until a worker is parked with nothing handed to it
+// (`WorkerParking::isParked`), then 300 ms of idle must leave its wake count where it was.
 // ---------------------------------------------------------------------------
 static auto testLoudnessWorkersSleepWhileIdle() -> void
 {
     static const char* const kName = "Loudness_WorkersSleepWhileIdle";
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
     constexpr uint32_t kBlock = TestConstants::kFrames512;
-    // A parked worker wakes for nothing; the margin is the sanitizers' own background threads.
-    constexpr long kMaxIdleWakes = 10;
-    const auto contextSwitches = []
+    constexpr auto kHangCap = std::chrono::seconds(30);
+    constexpr auto kIdle = std::chrono::milliseconds(300);
+
+    std::string fail;
+    // `who` parks (`parked()`), then sleeps through 300 ms of idle: its wake count (`wakes()`) stands.
+    const auto staysParked = [&](const char* who, const auto& parked, const auto& wakes)
     {
-        rusage usage{};
-        getrusage(RUSAGE_SELF, &usage);
-        return usage.ru_nvcsw + usage.ru_nivcsw;
+        if (!waitUntil(parked, kHangCap))
+        {
+            fail += std::format("\n  {} never parked (waited {} s)", who, kHangCap.count());
+            return;
+        }
+        const uint64_t before = wakes();
+        std::this_thread::sleep_for(kIdle);
+        const uint64_t woke = wakes() - before;
+        if (woke != 0U || !parked())
+        {
+            fail += std::format("\n  {} woke {} times in 300 ms of idle", who, woke);
+        }
     };
-    // Let the workers drain what they were handed and settle (a worker naps for 200 ms before it
-    // parks: longer than any render interval), then count 300 ms of idle.
-    const auto idleWakes = [&]
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(350));
-        const long before = contextSwitches();
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
-        return contextSwitches() - before;
-    };
-    // `seconds` of a 1 kHz tone at `amplitude`, block by block, about as fast as a render thread
-    // delivers it (the rings hold ~680 ms; a pause every 10 blocks lets the workers keep up).
+    // `seconds` of a 1 kHz tone at `amplitude`, block by block, at about twice real time (the rings
+    // hold ~680 ms, so the workers keep up even on a busy machine).
     const auto play =
         [](const std::function<void(TestABL&)>& process, double seconds, float amplitude)
     {
@@ -319,13 +327,11 @@ static auto testLoudnessWorkersSleepWhileIdle() -> void
             process(block);
             if (b % 10U == 9U)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
         }
     };
 
-    std::string fail;
-    std::string counts;
     {
         // The normaliser measuring, then paused, then playing again.
         LoudnessModule module;
@@ -335,22 +341,17 @@ static auto testLoudnessWorkersSleepWhileIdle() -> void
         const auto measure = [&](TestABL& block)
         { module.process(params, MultichannelView::fromABL(block.abl(), kBlock)); };
         play(measure, 0.5, 0.1F);
-        const long paused = idleWakes();
-        counts += std::format(" normaliser paused {};", paused);
-        if (paused > kMaxIdleWakes)
-        {
-            fail +=
-                std::format("\n  the normaliser's worker woke {} times in 300 ms of pause", paused);
-        }
+        staysParked(
+            "the normaliser's worker, paused",
+            [&] { return module.workerParked(); },
+            [&] { return module.workerWakes(); });
         play(measure, 1.0, 0.316F); // 10 dB louder: the worker must wake and measure it
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const float momentary = module.measuredLufsMomentary();
-        if (!(momentary > -14.0F))
+        if (!waitUntil([&] { return module.measuredLufsMomentary() > -14.0F; }, kHangCap))
         {
             fail += std::format(
                 "\n  after the pause the normaliser read {:.1f} LUFS momentary, not the louder "
                 "tone (≈ −10.7)",
-                momentary);
+                module.measuredLufsMomentary());
         }
     }
     {
@@ -360,32 +361,21 @@ static auto testLoudnessWorkersSleepWhileIdle() -> void
         kernel.initialize(kSR, kBlock);
         kernel.publishTargetState(makeIdentityState());
         const auto render = [&](TestABL& block) { kernel.process(block.abl(), kBlock); };
+        const auto parked = [&] { return kernel.analysisWorkersParked(); };
+        const auto wakes = [&] { return kernel.analysisWorkerWakes(); };
         play(render, 0.5, 0.1F);
-        const long bitPerfect = idleWakes();
-        counts += std::format(" kernel at rest {};", bitPerfect);
-        if (bitPerfect > kMaxIdleWakes)
-        {
-            fail += std::format("\n  a kernel at rest woke {} times in 300 ms", bitPerfect);
-        }
+        staysParked("a kernel at rest (both workers)", parked, wakes);
         // A causal estimate started while nothing plays waits for audio, then analyses it.
         kernel.startCausalLoudness([](const std::shared_ptr<const TrackLoudnessProfile>&) {});
-        const long waiting = idleWakes();
-        counts += std::format(" causal estimate waiting {}", waiting);
-        if (waiting > kMaxIdleWakes)
-        {
-            fail += std::format("\n  a causal estimate waiting for audio woke {} times in 300 ms",
-                                waiting);
-        }
+        staysParked("a causal estimate waiting for audio (both workers)", parked, wakes);
         play(render, 1.0, 0.1F);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const uint64_t fed = kernel.causalLoudnessFedFrames();
-        kernel.stopCausalLoudness();
-        if (fed < kSR / 2U)
+        if (!waitUntil([&] { return kernel.causalLoudnessFedFrames() >= kSR / 2U; }, kHangCap))
         {
-            fail += std::format("\n  the causal estimate analysed {} frames of 1 s of audio", fed);
+            fail += std::format("\n  the causal estimate analysed {} frames of 1 s of audio",
+                                kernel.causalLoudnessFedFrames());
         }
+        kernel.stopCausalLoudness();
     }
-    logInfo(std::format("[info] {}: context switches in 300 ms of idle —{}\n", kName, counts));
     if (!fail.empty())
     {
         logFail(kName, "the analysis workers do not sleep while idle:" + fail);

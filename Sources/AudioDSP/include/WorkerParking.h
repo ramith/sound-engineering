@@ -13,6 +13,11 @@
 // load, and a futex wake only while the worker is parked — once per resume, never in steady playback.
 // A control thread calls it after a change the worker must act on (an estimate started).
 //
+// For tests and diagnostics, any thread may ask whether the worker is parked with nothing handed to it
+// (`isParked`) and how many times it has come back from a nap or a park (`wakeCount`): a parked worker's
+// count stands still until it is handed work. Only the worker writes these; the render thread never
+// touches them.
+//
 // No lost wake-up, carried on named sequentially consistent atomics (no standalone fence, so
 // ThreadSanitizer models every edge): the worker sets `parked_`, reads `wakes_`, then checks for work
 // once more; the producer publishes its work, bumps `wakes_`, then reads `parked_`. In their single
@@ -49,6 +54,7 @@ namespace AdaptiveSound
             {
                 ++idleNaps_;
                 std::this_thread::sleep_for(nap_);
+                countWake();
                 return;
             }
             park(stopToken, hasWork);
@@ -62,9 +68,13 @@ namespace AdaptiveSound
             const uint32_t seen = wakes_.load(std::memory_order_seq_cst);
             if (!hasWork() && !stopToken.stop_requested())
             {
+                waitingAt_.store(seen, std::memory_order_relaxed);
+                waiting_.store(true, std::memory_order_release);
                 wakes_.wait(seen, std::memory_order_seq_cst);
+                waiting_.store(false, std::memory_order_relaxed);
             }
             parked_.store(false, std::memory_order_relaxed);
+            countWake();
         }
 
         // Worker: it found work — the next idle stretch naps again before it parks.
@@ -84,9 +94,33 @@ namespace AdaptiveSound
             }
         }
 
+        // Any thread (tests, diagnostics): whether the worker is parked — blocked with nothing handed to
+        // it since it began to wait, so it stays parked until something is.
+        [[nodiscard]] bool isParked() const noexcept
+        {
+            return waiting_.load(std::memory_order_acquire) &&
+                   wakes_.load(std::memory_order_acquire) ==
+                       waitingAt_.load(std::memory_order_relaxed);
+        }
+
+        // Any thread (tests, diagnostics): how many times the worker has come back from a nap or a park.
+        [[nodiscard]] uint64_t wakeCount() const noexcept
+        {
+            return wakeCount_.load(std::memory_order_relaxed);
+        }
+
       private:
+        // Worker only: it is back from a nap or a park.
+        void countWake() noexcept
+        {
+            wakeCount_.fetch_add(1U, std::memory_order_relaxed);
+        }
+
+        std::atomic<uint64_t> wakeCount_{0U}; // diagnostics, written by the worker alone
         std::atomic<uint32_t> wakes_{0U};
+        std::atomic<uint32_t> waitingAt_{0U}; // diagnostics: `wakes_` when the worker began to wait
         std::atomic<bool> parked_{false};
+        std::atomic<bool> waiting_{false}; // diagnostics: the worker is in (or entering) the wait
         std::chrono::milliseconds nap_;
         uint32_t napsBeforeParking_;
         uint32_t idleNaps_ = 0U; // worker-only
