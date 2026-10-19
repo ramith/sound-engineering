@@ -73,7 +73,7 @@ struct TrackLoudnessAnalyzerTests {
         analyzer.analyze(short, identity: shortIdentity, as: .current, sink: sink)
         _ = await sink.wait(keeping: analyzer) { $0.contains { $0.isWhole && $0.token == shortIdentity.token } }
         // Had the long job survived, it could finish in this time.
-        _ = await sink.wait(keeping: analyzer, for: .milliseconds(500)) { _ in false }
+        await sink.idle(keeping: analyzer, for: .milliseconds(500))
         #expect(!sink.events.contains { $0.isWhole && $0.token == longIdentity.token })
     }
 
@@ -186,16 +186,30 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
         gate.unlock()
     }
 
-    /// The events once `done` holds for them (or after `limit`), keeping `analyzer` alive meanwhile
-    /// (dropping it cancels its jobs).
+    /// The events once `done` holds for them, keeping `analyzer` alive meanwhile (dropping it cancels
+    /// its jobs). It waits as long as the analyzer needs: on a CI runner busy with the whole suite the
+    /// analyzer's utility-QoS work can be starved past any short deadline, and a wait that gave up and
+    /// returned would let the test assert on a half-finished state (ANALYZER-05 on PR #91 run
+    /// 39166938434: a 30 s wait timed out, the hold was released early, two profiles came). If the
+    /// state truly never comes, the test fails here, saying so — it never carries on.
     func wait(keeping _: TrackLoudnessAnalyzer,
-              for limit: Duration = .seconds(30),
+              sourceLocation: SourceLocation = #_sourceLocation,
               until done: ([Event]) -> Bool) async -> [Event] {
-        let deadline = ContinuousClock.now + limit
-        while !done(events), ContinuousClock.now < deadline {
+        let hangLimit = ContinuousClock.now + .seconds(300)
+        while !done(events) {
+            if ContinuousClock.now >= hangLimit {
+                Issue.record("the analyzer never reached the awaited state in 300 s", sourceLocation: sourceLocation)
+                break
+            }
             try? await Task.sleep(for: .milliseconds(10))
         }
         return events
+    }
+
+    /// Keep `analyzer` alive and let it run for `duration`: a negative test's window, in which anything
+    /// that should not happen could. A longer window can only hide a failure, never invent one.
+    func idle(keeping _: TrackLoudnessAnalyzer, for duration: Duration) async {
+        try? await Task.sleep(for: duration)
     }
 }
 
