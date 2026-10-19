@@ -94,6 +94,16 @@ namespace AdaptiveSound
         {
             return fedFrames_.load(std::memory_order_acquire);
         }
+        // Diagnostics (any thread): the worker is parked (blocked until handed work), and how often it
+        // has woken.
+        [[nodiscard]] bool workerParked() const noexcept
+        {
+            return parking_.isParked();
+        }
+        [[nodiscard]] uint64_t workerWakes() const noexcept
+        {
+            return parking_.wakeCount();
+        }
 
       private:
         // The worker's estimate in progress.
