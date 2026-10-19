@@ -98,6 +98,7 @@ struct TrackLoudnessAnalyzerTests {
         _ = await sink.wait(keeping: analyzer) { $0.count(whole: otherIdentity.token) == 2 }
         sink.release()
         let events = await sink.wait(keeping: analyzer) { $0.count(whole: identity.token) >= 1 }
+        #expect(!sink.holdExpired, "the prefetch's hold expired before the test released it")
         #expect(log.count(containing: "analysing '\(url.lastPathComponent)'") == 1)
         #expect(events.count(whole: identity.token) == 1)
     }
@@ -149,6 +150,7 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
     private var recorded: [Event] = []
     private let gate = NSCondition()
     private var held: UInt64? // the token whose prefix waits for `release()`; nil once released
+    private var expired = false // the hold gave up before `release()` — the test's premise broke
 
     /// `holdingPrefixOf`: a token whose job waits, after publishing its prefix, until `release()`.
     init(holdingPrefixOf held: UInt64? = nil) {
@@ -165,11 +167,27 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
         lock.withLock { recorded.append(event) }
         guard !event.isWhole else { return }
         // This is the job's own thread (it decodes synchronously there); the coordinator stays
-        // free. Bounded, so a broken test fails instead of hanging.
-        let deadline = Date().addingTimeInterval(30)
+        // free. The hold lasts until `release()`: on a CI runner busy with the whole suite, the
+        // requests the test sends meanwhile can take longer than any short deadline to be handled,
+        // and a hold that quietly gave up let the prefetch finish early (ANALYZER-05, PR #91 run
+        // 39208624633: two whole profiles). Bounded only against a real hang, and then recorded —
+        // `holdExpired` fails the test instead of letting it count a broken interleaving.
+        let hangLimit = Date().addingTimeInterval(300)
         gate.lock()
-        while held == token, gate.wait(until: deadline) {}
+        while held == token {
+            if !gate.wait(until: hangLimit) {
+                expired = held == token
+                break
+            }
+        }
         gate.unlock()
+    }
+
+    /// Whether a held prefix gave up waiting before `release()` (only on a real hang).
+    var holdExpired: Bool {
+        gate.lock()
+        defer { gate.unlock() }
+        return expired
     }
 
     func reportLoudnessAnalysisFailure(token: UInt64) {
