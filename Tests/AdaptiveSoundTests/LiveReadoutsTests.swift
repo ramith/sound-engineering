@@ -24,16 +24,32 @@ struct LiveReadoutsTests {
         defaults.removePersistentDomain(forName: Self.suiteName)
     }
 
-    /// Let the view model's tasks run: a start, a device read.
-    private func settle() async {
-        for _ in 0 ..< 50 {
+    /// Run the main run loop, where the view model's timers fire, and let its tasks run, until `done`
+    /// holds. Time only breaks a hang: a busy runner may take its time, so this waits for the state,
+    /// never for a fixed while, and fails naming `what` if a minute passes without it (main CI run
+    /// 39477694633: a pause that landed after a fixed 0.1 s left the tick running).
+    private func runMainLoop(until what: String, sourceLocation: SourceLocation = #_sourceLocation,
+                             _ done: () -> Bool) async {
+        let deadline = ContinuousClock.now + .seconds(60)
+        while !done() {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("\(what): still not so after a minute", sourceLocation: sourceLocation)
+                return
+            }
+            runMainLoop(0.01)
             await Task.yield()
         }
     }
 
-    /// Run the main run loop, where the view model's timers fire, for `seconds`.
+    /// Run the main run loop for `seconds`: a window in which something must NOT happen, opened only
+    /// once the state it guards has been seen.
     private func runMainLoop(_ seconds: TimeInterval) {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
+    }
+
+    /// Whether a start or a pause has landed: nothing is on its way to the engine.
+    private func landed(_ viewModel: AudioViewModel, playing: Bool) -> Bool {
+        viewModel.isPlaying == playing && viewModel.transportCommand == nil
     }
 
     /// One frame with every band at `level`.
@@ -45,7 +61,8 @@ struct LiveReadoutsTests {
     private func readyViewModel(_ engine: DeviceTestEngine) async -> AudioViewModel {
         let viewModel = AudioViewModel(defaults: defaults, engine: engine)
         viewModel.initializeEngine()
-        await settle()
+        await runMainLoop(until: "the engine to come up") { viewModel.isEngineReady || viewModel.errorMessage != nil }
+        #expect(viewModel.isEngineReady, "the engine did not come up: \(viewModel.errorMessage ?? "")")
         let url = URL(fileURLWithPath: "/nonexistent/live-readouts.flac") // never opened
         let song = AudioFile(name: "Song", relativePath: "", absoluteURL: url, format: "FLAC", durationSeconds: 240)
         viewModel.queue = [QueueItem(file: song)]
@@ -98,12 +115,15 @@ struct LiveReadoutsTests {
         let engine = DeviceTestEngine()
         let viewModel = await readyViewModel(engine)
         viewModel.playTrack(at: 0)
-        await settle()
-        #expect(viewModel.isPlaying)
+        await runMainLoop(until: "the song to start") { landed(viewModel, playing: true) }
         let before = engine.state.withLock { $0.spectrumReads }
-        runMainLoop(0.35)
+        // Seven ticks of the transport (0.35 s of playing), counted rather than timed.
+        let ticksFrom = engine.state.withLock { $0.snapshotReads }
+        await runMainLoop(until: "seven transport ticks") {
+            engine.state.withLock { $0.snapshotReads } >= ticksFrom + 7
+        }
         let reads = engine.state.withLock { $0.spectrumReads } - before
-        #expect(reads == 0, "playing, with no view showing it, the spectrum was read \(reads) times in 0.35 s")
+        #expect(reads == 0, "playing, with no view showing it, the spectrum was read \(reads) times in seven ticks")
         viewModel.disarmTransportTick()
     }
 
@@ -112,15 +132,16 @@ struct LiveReadoutsTests {
         let engine = DeviceTestEngine()
         let viewModel = await readyViewModel(engine)
         viewModel.playTrack(at: 0)
-        await settle()
+        await runMainLoop(until: "the song to start") { landed(viewModel, playing: true) }
         let playingFrom = engine.state.withLock { $0.snapshotReads }
-        runMainLoop(0.35)
-        #expect(engine.state.withLock { $0.snapshotReads } > playingFrom, "playing, the tick reads the engine")
+        await runMainLoop(until: "playing, the tick to read the engine") {
+            engine.state.withLock { $0.snapshotReads } > playingFrom
+        }
 
         viewModel.pause()
-        await settle()
-        #expect(!viewModel.isPlaying)
-        runMainLoop(0.1) // the tick that finds nothing playing is the last
+        // The tick that finds nothing playing and nothing on its way is the last.
+        await runMainLoop(until: "paused, the tick to stop") { viewModel.transportTimer == nil }
+        #expect(landed(viewModel, playing: false))
         let pausedFrom = engine.state.withLock { $0.snapshotReads }
         runMainLoop(0.35)
         let reads = engine.state.withLock { $0.snapshotReads } - pausedFrom
@@ -137,12 +158,12 @@ struct LiveReadoutsTests {
                                                          format: "FLAC", durationSeconds: 200)))
         viewModel.duration = 240
         viewModel.playTrack(at: 0)
-        await settle()
+        await runMainLoop(until: "the song to start") { landed(viewModel, playing: true) }
         viewModel.seek(to: 81)
         viewModel.pause()
-        await settle()
-        runMainLoop(0.1) // the tick that finds nothing playing is the last
-        #expect(viewModel.transportTimer == nil, "paused, the tick sleeps")
+        // The tick that finds nothing playing and nothing on its way is the last.
+        await runMainLoop(until: "paused, the tick to sleep") { viewModel.transportTimer == nil }
+        #expect(landed(viewModel, playing: false))
         viewModel.seek(to: 120) // a scrub while paused moves the resume point
         #expect(viewModel.playbackPosition == 120)
         viewModel.selectedTrackIndex = 1 // another song selected: the paused place is not its place
