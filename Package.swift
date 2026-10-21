@@ -14,6 +14,11 @@ let package = Package(
         // swift-syntax macro plugin, so the toolchain-skew class that broke `swift test` does not
         // apply. Pinned to 7.x (Swift 6 / strict-concurrency support).
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+        // swift-clocks (Point-Free) — TEST TARGETS ONLY (founder decision 5, test-rig redesign): the
+        // `TestClock` / `ImmediateClock` that drive the view models' debounces. The product takes the
+        // stdlib `Clock` (default `ContinuousClock`) and links nothing of it. No macro plugin anywhere in
+        // its tree (swift-concurrency-extras, swift-issue-reporting). Pinned exactly.
+        .package(url: "https://github.com/pointfreeco/swift-clocks.git", exact: "1.1.1"),
     ],
     targets: [
         .executableTarget(
@@ -201,10 +206,24 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
             ]
         ),
+        // The Swift test rig (test-rig redesign): the ONE way a test here waits, holds a producer and keeps
+        // blocking work off the cooperative pool (`until`, `blocking`, `Hold`, `TestPoints`). A plain library
+        // target that `import Testing`s, so a failure it records lands on the CALLER'S line; depended on
+        // by test targets only (no product target links it, and Periphery excludes `**/Tests/**`).
+        .target(
+            name: "RigKit",
+            path: "Tests/RigKit"
+        ),
+        // The rig's own proof: every primitive is shown to FAIL LOUDLY (the plant-a-leak idea applied to the rig).
+        .testTarget(
+            name: "RigKitTests",
+            dependencies: ["RigKit"],
+            path: "Tests/RigKitTests"
+        ),
         // Pure-Swift view-model tests (swift-testing, not XCTest): every file in the folder.
         .testTarget(
             name: "AudioViewModelTests",
-            dependencies: ["PlaybackQueueKit"],
+            dependencies: ["PlaybackQueueKit", "RigKit"],
             path: "Tests/AudioViewModelTests"
             // swift-testing is provided natively by the toolchain under swift-tools 6.2;
             // no manual Testing.framework linkage. (The former -F/-framework hack pointed
@@ -225,7 +244,8 @@ let package = Package(
             name: "AdaptiveSoundTests",
             dependencies: [
                 "AdaptiveSound", "AudioDSP", "AudioFormatKit", "PlaybackQueueKit", "SettingsKit", "LibraryStore",
-                "LibraryScan", "LibraryBrowseKit",
+                "LibraryScan", "LibraryBrowseKit", "RigKit",
+                .product(name: "Clocks", package: "swift-clocks"),
             ],
             path: "Tests/AdaptiveSoundTests"
         ),
@@ -235,7 +255,7 @@ let package = Package(
         // UI-glue in the app target).
         .testTarget(
             name: "LibraryBrowseKitTests",
-            dependencies: ["LibraryBrowseKit", "LibraryStore", "LibraryScan"],
+            dependencies: ["LibraryBrowseKit", "LibraryStore", "LibraryScan", "RigKit"],
             path: "Tests/LibraryBrowseKitTests"
         ),
         // EQ0: the kit's contract — band grid, Tone partition of unity, the base/tone -> points
@@ -256,14 +276,14 @@ let package = Package(
         // its default, Master Gain never louder, R1's shuffle / repeat taken in, coalesced writes.
         .testTarget(
             name: "SettingsKitTests",
-            dependencies: ["SettingsKit", "EQEditKit"],
+            dependencies: ["SettingsKit", "EQEditKit", "RigKit"],
             path: "Tests/SettingsKitTests"
         ),
         // EQ1c part 2: the analyzer end to end on generated WAVs — prefix then whole, the cache,
         // latest-wins and promotion, failure reported once and never re-decoded.
         .testTarget(
             name: "TrackLoudnessKitTests",
-            dependencies: ["TrackLoudnessKit"],
+            dependencies: ["TrackLoudnessKit", "RigKit"],
             path: "Tests/TrackLoudnessKitTests"
         ),
         // S10.7 rig (design §7): RES resolver cube, TOK palette invariants, the PERMANENT R4
