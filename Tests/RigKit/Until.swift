@@ -22,6 +22,9 @@ public struct RigTimeout: Error, CustomStringConvertible, Sendable {
     }
 }
 
+// The caps run on `SuspendingClock`: it does not count the time the Mac sleeps, so a nap in the middle of a run
+// (a closed lid, an idle display) cannot make a wait give up on a state it had every chance to reach.
+
 /// How many times a wait yields to the other tasks before it starts to nap between looks.
 private let yieldsBeforeNapping = 64
 
@@ -39,10 +42,10 @@ public func until(
     sourceLocation: SourceLocation = #_sourceLocation,
     _ condition: () async throws -> Bool
 ) async throws {
-    let deadline = ContinuousClock.now + cap
+    let deadline = SuspendingClock.now + cap
     var looks = 0
     while try await !condition() {
-        guard ContinuousClock.now < deadline else {
+        guard SuspendingClock.now < deadline else {
             throw RigTimeout(what: what, cap: cap, location: sourceLocation)
         }
         looks += 1
@@ -68,9 +71,9 @@ public func untilOnMainRunLoop(
     sourceLocation: SourceLocation = #_sourceLocation,
     _ condition: () -> Bool
 ) async throws {
-    let deadline = ContinuousClock.now + cap
+    let deadline = SuspendingClock.now + cap
     while !condition() {
-        guard ContinuousClock.now < deadline else {
+        guard SuspendingClock.now < deadline else {
             throw RigTimeout(what: what, cap: cap, location: sourceLocation)
         }
         spinMainRunLoop()

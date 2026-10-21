@@ -34,10 +34,10 @@ public func untilBlocking(
     sourceLocation: SourceLocation = #_sourceLocation,
     _ condition: () throws -> Bool
 ) throws {
-    let deadline = ContinuousClock.now + cap
+    let deadline = SuspendingClock.now + cap
     var naps = 0
     while try !condition() {
-        guard ContinuousClock.now < deadline else {
+        guard SuspendingClock.now < deadline else {
             throw RigTimeout(what: what, cap: cap, location: sourceLocation)
         }
         // Stay hot for a moment (a completion is ~150 µs away), then nap longer.
