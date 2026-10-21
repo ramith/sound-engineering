@@ -43,7 +43,6 @@ namespace
     constexpr uint32_t kArmShortFrames = 960U;  // 20 ms: a short middle track
     constexpr uint32_t kArmChunk = 256U;        // one render callback (deterministic tests)
     constexpr uint32_t kArmRaceChunk = 64U;     // one render callback (race tests)
-    constexpr int kArmBufferPolls = 20000;      // decoder-finished budget, 100 us naps (2 s)
     constexpr int kArmRaceTrials = 2000;
     constexpr uint32_t kArmRaceTrackFrames = 1024U; // the race tests' A: short, so a trial is quick
     constexpr uint32_t kArmRaceJitterFrames = 64U;  // how far before A's end the control plane acts
@@ -86,15 +85,17 @@ namespace
     };
 
     // Open a fixture and wait until it is fully decoded: the tracks fit the decode ring, so from
-    // then on every pull is served from memory and a short fill can only mean the true end.
+    // then on every pull is served from memory and a short fill can only mean the true end. A
+    // decoder that never finishes fails the test (naming the state) and returns nullptr, which
+    // every caller treats as "could not open" — never a half-decoded source.
     auto openArmTrack(const char* path) -> std::unique_ptr<FileDecodeSource>
     {
         auto source = openPureGaplessSource(path);
-        for (int poll = 0;
-             source != nullptr && !source->decoderFinished() && poll < kArmBufferPolls;
-             ++poll)
+        if (source == nullptr ||
+            !rig::waitUntil("an arm-contract fixture fully decoded (decoderFinished())",
+                            [&source] { return source->decoderFinished(); }))
         {
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            return nullptr;
         }
         return source;
     }
@@ -431,6 +432,13 @@ namespace
     // until the control plane has acted and kArmRaceTailCallbacks more callbacks rendered. The
     // control plane (this thread) waits until `when` says it is time — or the render thread ran out
     // of callbacks — then runs `act`.
+    //
+    // A designed race, kept (test-rig redesign, hazard N19): the render runs free against the
+    // control plane, and EITHER outcome is a pass (seam won, or clear / end won), so no outcome rests
+    // on the scheduler — what a trial must never show is a third, broken one. Load only shifts which
+    // side wins how often (both counts are reported); the ordered cases are pinned deterministically
+    // by the seam-window tests below. The control plane's spin is bounded by the render, which always
+    // ends (kMaxCallbacks); the watchdog's ceiling covers a render that hangs.
     template <typename When, typename Act>
     auto runArmRace(GaplessSource& gapless, When when, Act act) -> ArmRaceOutcome
     {
@@ -641,11 +649,12 @@ namespace
     // A render paused inside its first seam, at `pauseAt`, through GaplessSource's test hook.
     //
     // Deterministic by construction: every hand-off between the render and the control plane is a
-    // wait with NO deadline, on a flag or on the source's own seam count, so no outcome depends on
-    // how the scheduler runs the two threads.
-    //   * The render stops at `pauseAt` until `resume`.
-    //   * When tryArmNext starts waiting for that seam's publish (ArmWaitsForSeam), the hook lets
-    //     the render go and waits until the seam is published (the render counts a seam after it
+    // wait for a STATE — the seam's arrival, a release, the source's own seam count — so no outcome
+    // depends on how the scheduler runs the two threads. Each wait is bounded (rig::Rendezvous,
+    // rig::waitUntil): a regression fails the test naming the hand-off, never hangs the suite.
+    //   * The render stops at `pauseAt` (the `seam` rendezvous) until the test releases it.
+    //   * When tryArmNext starts waiting for that seam's publish (ArmWaitsForSeam), the hook releases
+    //     the render and waits until the seam is published (the render counts a seam after it
     //     published the adopted track), so the arm's bounded wait sees the publish on its first
     //     look — its deadline never decides. Unless `holdThroughArmWait`: then the render stays
     //     paused, and the deadline has to pass (SeamPublishBounded).
@@ -660,8 +669,7 @@ namespace
         TestPoint pauseAt = TestPoint::SeamClaimed;
         bool holdThroughArmWait = false;
         const GaplessSource* source = nullptr;
-        std::atomic<bool> paused{false};
-        std::atomic<bool> resume{false};
+        rig::Rendezvous seam{"the render inside its first seam"};
         std::atomic<bool> armWaited{false};
         std::atomic<bool> armDone{false};
         std::atomic<bool> renderDone{false};
@@ -675,22 +683,16 @@ namespace
             pause->armWaited.store(true, std::memory_order_release);
             if (!pause->holdThroughArmWait)
             {
-                pause->resume.store(true, std::memory_order_release);
-                while (pause->source->transitionCount() == 0U)
-                {
-                    std::this_thread::yield();
-                }
+                pause->seam.release();
+                (void)rig::waitUntil("the render published the claimed seam (transitionCount 1)",
+                                     [pause] { return pause->source->transitionCount() > 0U; });
             }
             return;
         }
         // The render thread: pause the first time it reaches `pauseAt`.
-        if (point != pause->pauseAt || pause->paused.exchange(true, std::memory_order_acq_rel))
+        if (point == pause->pauseAt)
         {
-            return;
-        }
-        while (!pause->resume.load(std::memory_order_acquire))
-        {
-            std::this_thread::yield();
+            (void)pause->seam.arriveAndWait();
         }
     }
 
@@ -743,28 +745,26 @@ namespace
                 {
                     renderCallback(gapless, block, kArmRaceChunk, run.codes);
                     // Past the seam: hold until the control plane's arm is done (see SeamPause).
-                    while (gapless.transitionCount() > 0U &&
-                           !pause.armDone.load(std::memory_order_acquire))
+                    if (gapless.transitionCount() > 0U &&
+                        !rig::waitUntil("the control plane finished its arm (armDone)",
+                                        [&pause]
+                                        { return pause.armDone.load(std::memory_order_acquire); }))
                     {
-                        std::this_thread::yield();
+                        break;
                     }
                     std::this_thread::yield(); // let a starved decoder catch up on an underrun
                 }
                 pause.renderDone.store(true, std::memory_order_release);
             });
-        while (!pause.paused.load(std::memory_order_acquire) &&
-               !pause.renderDone.load(std::memory_order_acquire))
-        {
-            std::this_thread::yield();
-        }
-        if (!pause.paused.load(std::memory_order_acquire))
+        if (!pause.seam.awaitArrival([&pause]
+                                     { return pause.renderDone.load(std::memory_order_acquire); }))
         {
             err += "the render never reached the seam point; ";
         }
         gapless.clearNext(); // the render already claimed B: nothing to take off
         run.outcome = gapless.tryArmNext(std::move(trackC));
         pause.armDone.store(true, std::memory_order_release);
-        pause.resume.store(true, std::memory_order_release);
+        pause.seam.release();
         render.join();
         gapless.setTestHook(nullptr, nullptr);
         run.armWaited = pause.armWaited.load(std::memory_order_acquire);

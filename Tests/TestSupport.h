@@ -1,12 +1,14 @@
 // TestSupport.h
 //
 // Shared infrastructure for DSPKernelNullTest.cpp and all *Tests.inc area files.
-// This header is #included ONCE at the top of DSPKernelNullTest.cpp (which is the
-// single translation unit). It must not be included from anywhere else.
+// This header is #included at the top of DSPKernelNullTest.cpp (the single translation unit) and of
+// the measurement harness EqEngineBreakItMeasure.cpp; NullTestRunner.h includes it too, so it reads
+// on its own (#pragma once: one copy per TU).
 //
-// Contents: all system/project #includes, TestConstants, the results/logging layer,
-// the generic test runner (TestEntry/runOneTest/runAllTests/printSummary), and any
-// helpers that are used by two or more area files.
+// Contents: all system/project #includes, TestConstants, the verdict/logging layer (each verdict
+// is a GoogleTest result; the runner itself is NullTestRunner.h), the test-rig primitives (rig::
+// waitUntil, rig::Rendezvous, the thread-CPU meter, min-of-N timing), and any helpers that are
+// used by two or more area files.
 
 #pragma once
 
@@ -22,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <format>
 #include <functional>
 #include <limits>
@@ -30,6 +33,7 @@
 #include <numbers>
 #include <optional>
 #include <random>
+#include <source_location>
 #include <span>
 #include <sstream>
 #include <string>
@@ -44,6 +48,10 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+// GoogleTest 1.18.0 (the third_party/googletest submodule, pinned in toolchain/toolchain.env) runs
+// the null test: every test body's verdict below is a GoogleTest result.
+#include <gtest/gtest.h>
 
 #include "DeviceCapability.h"
 #include "DSPKernel.h"
@@ -157,94 +165,55 @@ namespace TestConstants
 } // namespace TestConstants
 
 // ---------------------------------------------------------------------------
-// Test result counter — pass/fail tallies for the harness (single-TU internal-linkage state).
+// Verdicts — every test body ends in exactly one of logPass / logFail / logPending, and each is a
+// GoogleTest result for the test that is running (NullTestRunner.h registers the bodies). std::fputs
+// avoids cppcoreguidelines-pro-type-vararg.
 // ---------------------------------------------------------------------------
 
 namespace
 {
-    struct Results
-    {
-        std::atomic<int> passed{0};
-        std::atomic<int> failed{0};
-    };
-
-    Results gResults;
-
-    // Per-thread output buffer for parallel mode: each test accumulates its
-    // stdout/stderr lines here, then flushes them atomically under gOutputMutex.
-    // In serial mode this buffer is unused (logPass/logFail write directly).
-    thread_local std::string tlOutputBuf;
-    thread_local bool tlTestPassed{true};
-    // tlTestPending: set by logPending so runOneTest does not count the test as pass or fail.
-    thread_local bool tlTestPending{false};
-
-    std::mutex gOutputMutex;
-
-    // When non-null, output goes to tlOutputBuf instead of directly to the stream.
-    thread_local bool tlBuffering{false};
+    // Set by a verdict, cleared by the runner before each body: a body that returns without one
+    // (a forgotten logPass on some path) fails instead of passing silently. Atomic: a verdict may
+    // come from a thread the test started.
+    std::atomic<bool> gVerdictGiven{false};
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Logging helpers — std::fputs avoids cppcoreguidelines-pro-type-vararg
-// ---------------------------------------------------------------------------
-
+// The test passed. GoogleTest's "[       OK ]" line reports it, with the time it took. The name must
+// be the running test's own (a copied kName would otherwise report a pass for the wrong test).
 static auto logPass(const char* testName) -> void
 {
-    std::string line = std::string("[PASS] ") + testName + "\n";
-    if (tlBuffering)
+    gVerdictGiven.store(true, std::memory_order_relaxed);
+    const testing::TestInfo* running = testing::UnitTest::GetInstance()->current_test_info();
+    if (running != nullptr && std::string_view(running->name()) != testName)
     {
-        tlOutputBuf += line;
-        tlTestPassed = true;
-    }
-    else
-    {
-        std::fputs(line.c_str(), stdout);
-        ++gResults.passed;
+        ADD_FAILURE() << "[FAIL] " << running->name() << " -- its body passed as '" << testName
+                      << "'";
     }
 }
 
-static auto logFail(const char* testName, std::string_view reason) -> void
+// The test failed: a GoogleTest failure at the call site (file:line), naming the test and why. A
+// test may fail more than once; any failure fails it.
+static auto logFail(const char* testName,
+                    std::string_view reason,
+                    std::source_location where = std::source_location::current()) -> void
 {
-    std::string line = std::format("[FAIL] {} -- {}\n", testName, reason);
-    if (tlBuffering)
-    {
-        tlOutputBuf += line;
-        tlTestPassed = false;
-    }
-    else
-    {
-        std::fputs(line.c_str(), stderr);
-        ++gResults.failed;
-    }
+    gVerdictGiven.store(true, std::memory_order_relaxed);
+    ADD_FAILURE_AT(where.file_name(), static_cast<int>(where.line()))
+        << "[FAIL] " << testName << " -- " << reason;
 }
 
-// A test that is intentionally not yet implemented (lands in a later epic milestone). Prints a
-// PENDING line but does NOT count as pass or fail, so the suite gate stays green.
+// A test that is intentionally not yet implemented (lands in a later epic milestone): reported as
+// SKIPPED, neither a pass nor a failure, so the suite gate stays green.
 static auto logPending(const char* testName, const char* note) -> void
 {
-    std::string line = std::string("[PENDING] ") + testName + " -- " + note + "\n";
-    if (tlBuffering)
-    {
-        tlOutputBuf += line;
-        tlTestPending = true; // signal runOneTest: do not count as pass or fail
-    }
-    else
-    {
-        std::fputs(line.c_str(), stdout);
-    }
+    gVerdictGiven.store(true, std::memory_order_relaxed);
+    GTEST_SKIP() << "[PENDING] " << testName << " -- " << note;
 }
 
-// Emit an [info] line. Goes to stdout (serial) or the thread buffer (parallel).
+// Emit an [info] line (stdout, line-buffered by the runner).
 static auto logInfo(const std::string& line) -> void
 {
-    if (tlBuffering)
-    {
-        tlOutputBuf += line;
-    }
-    else
-    {
-        std::fputs(line.c_str(), stdout);
-    }
+    std::fputs(line.c_str(), stdout);
 }
 
 // FNV-1a 64-bit over the raw float bytes of a buffer — a compact bit-exact signature. bit_cast
@@ -615,157 +584,291 @@ static auto eqSwapNoClickBody(uint32_t numCh, const char* kName) -> std::string
 }
 
 // ---------------------------------------------------------------------------
-// Generic test runner
+// The test rig — the primitives every timing-sensitive test is built from (the four rules of the
+// test-rig redesign, docs/development/testing.md):
+//   1. Time only ever breaks hangs. A wait waits for a STATE (rig::waitUntil, rig::pumpUntil); its
+//      generous cap fails the test, naming the state, and the caller returns — it never carries on
+//      past a deadline. A thread held at a point is released by the test (rig::Rendezvous).
+//   2. Measure the component, never the machine: the component's own counters, or the CPU time of
+//      the thread doing the work (rig::threadCpuTime), the least of N runs (rig::minThreadCpu).
+//      Wall time is a hang guard and an [info] figure, never a budget: steady_clock counts the
+//      time a thread was descheduled, and on Apple platforms the time the Mac slept.
+//   3. Each test owns its world.
+//   4. Every run has a ceiling (NullTestRunner.h's watchdog) and reports everything.
 // ---------------------------------------------------------------------------
 
-namespace
+namespace rig
 {
-    struct TestEntry
+    // The time the Mac has been AWAKE (CLOCK_UPTIME_RAW: it "does not increment while the system
+    // is asleep"). The hang caps and the watchdog's ceilings use it: steady_clock on Apple
+    // platforms counts sleep, so a laptop that slept through a run would trip them all on waking.
+    struct AwakeClock
     {
-        const char* name;
-        void (*fn)();
-        bool parallelSafe;
+        using duration = std::chrono::nanoseconds;
+        using time_point = std::chrono::time_point<AwakeClock>;
+        static auto now() noexcept -> time_point
+        {
+            return time_point{
+                duration{static_cast<duration::rep>(clock_gettime_nsec_np(CLOCK_UPTIME_RAW))}};
+        }
     };
-} // namespace
 
-// Thread-safe test runner. In serial mode (parallelN<=1) each test writes directly.
-// In parallel mode the test body writes to tlOutputBuf; runOneTest then flushes
-// the buffer and updates the counters under gOutputMutex.
-static auto runOneTest(const TestEntry& entry) -> void
-{
-    // Activate buffering so logPass/logFail/logPending/logInfo accumulate to tlOutputBuf.
-    tlBuffering = true;
-    tlOutputBuf.clear();
-    tlTestPassed = true;   // may be overwritten by logFail
-    tlTestPending = false; // may be set by logPending
+    // What the running test is doing (a string literal, or a string that outlives the step: no
+    // allocation, so a test may set it inside an RT-allocation guard). The watchdog prints it when
+    // a test overruns its ceiling; the runner resets it before each test.
+    inline std::atomic<const char*> gProgress{"started"};
 
-    entry.fn();
-
-    // Flush the accumulated output and update the global counters atomically.
+    // Names what the test is doing until the scope ends, then restores the previous note.
+    class Progress
     {
-        const std::scoped_lock lock(gOutputMutex);
-        if (tlTestPending)
+      public:
+        explicit Progress(const char* note) noexcept
+            : previous_(gProgress.exchange(note, std::memory_order_acq_rel))
         {
-            // PENDING: not pass, not fail — print to stdout, no counter update.
-            std::fputs(tlOutputBuf.c_str(), stdout);
         }
-        else if (tlTestPassed)
+        ~Progress()
         {
-            std::fputs(tlOutputBuf.c_str(), stdout);
-            ++gResults.passed;
+            gProgress.store(previous_, std::memory_order_release);
         }
-        else
-        {
-            // Write non-FAIL lines to stdout, FAIL lines to stderr.
-            std::istringstream ss(tlOutputBuf);
-            std::string ln;
-            while (std::getline(ss, ln))
-            {
-                ln += '\n';
-                if (ln.contains("[FAIL]"))
-                {
-                    std::fputs(ln.c_str(), stderr);
-                }
-                else
-                {
-                    std::fputs(ln.c_str(), stdout);
-                }
-            }
-            ++gResults.failed;
-        }
-    }
+        Progress(const Progress&) = delete;
+        Progress(Progress&&) = delete;
+        auto operator=(const Progress&) -> Progress& = delete;
+        auto operator=(Progress&&) -> Progress& = delete;
 
-    tlBuffering = false;
-}
+      private:
+        const char* previous_;
+    };
 
-// Print the results summary and return the process exit code.
-static auto printSummary() -> int
-{
-    std::ostringstream summary;
-    summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed
-            << " failed ===\n";
-    std::fputs(summary.str().c_str(), stdout);
+    // One wait's hang cap. Generous: a passing run never comes near it, so only a hang reaches it
+    // (and under the per-test ceiling, so the wait names its state before the watchdog fires).
+    inline constexpr std::chrono::seconds kHangCap{60};
 
-    if (gResults.failed > 0)
+    // What one step of a pump did (rig::pumpUntil).
+    enum class Pump : uint8_t
     {
-        std::ostringstream err;
-        err << "\nNULL TEST FAILED: " << gResults.failed << " test(s) failed.\n"
-            << "The identity/bypass path is broken -- do NOT merge this change.\n";
-        std::fputs(err.str().c_str(), stderr);
-        return 1;
-    }
+        Done,       // the state is reached
+        Progressed, // moved on (pulled frames): step again at once
+        Idle,       // nothing to do yet (a decoder still filling): nap, then step again
+    };
 
-    std::fputs("All null tests passed. Identity and bypass paths are intact.\n", stdout);
-    return 0;
-}
-
-// Run all registered tests. parallelN<=1 → serial (default). parallelN>1 → parallel-safe
-// entries run on a pool of parallelN workers (atomic work-stealing), then serial-only entries run
-// sequentially in registration order.
-template <std::size_t N>
-static auto runAllTests(int parallelN, const std::array<TestEntry, N>& kTests) -> void
-{
-    if (parallelN <= 1)
+    // Step until `step()` says Pump::Done; true once it does, false if `cap` passed first. Naps
+    // only after an Idle step. NOT reported: the caller reports and returns (an RT-allocation soak
+    // calls this inside its guard, where a report would allocate). Prefer pumpUntil.
+    template <typename Step>
+    [[nodiscard]] auto pumped(const char* state, Step step, std::chrono::seconds cap = kHangCap)
+        -> bool
     {
-        // Serial path: run every test in registration order, writing directly to streams.
-        for (const auto& entry : kTests)
-        {
-            entry.fn();
-        }
-        return;
-    }
-
-    // Parallel path: split into safe (parallelisable) and serial-only (env/tmp side-effects).
-    // Run parallel-safe entries first on a worker pool, then serial-only in order.
-
-    // Collect indices of parallel-safe and serial-only entries.
-    std::vector<std::size_t> parallelIdx;
-    std::vector<std::size_t> serialIdx;
-    parallelIdx.reserve(kTests.size());
-    serialIdx.reserve(kTests.size());
-    for (std::size_t idx = 0U; idx < kTests.size(); ++idx)
-    {
-        if (kTests[idx].parallelSafe)
-        {
-            parallelIdx.push_back(idx);
-        }
-        else
-        {
-            serialIdx.push_back(idx);
-        }
-    }
-
-    // Atomic work-steal index for the parallel pool.
-    std::atomic<std::size_t> workIdx{0U};
-    const auto workerBody = [&]
-    {
+        using namespace std::chrono_literals;
+        constexpr int kYieldSpins = 64;
+        const Progress progress(state);
+        const AwakeClock::time_point deadline = AwakeClock::now() + cap;
+        int idleSpins = 0;
         for (;;)
         {
-            const std::size_t myIdx = workIdx.fetch_add(1U, std::memory_order_relaxed);
-            if (myIdx >= parallelIdx.size())
+            const Pump result = step();
+            if (result == Pump::Done)
             {
-                break;
+                return true;
             }
-            runOneTest(kTests[parallelIdx[myIdx]]);
+            if (AwakeClock::now() >= deadline)
+            {
+                return false;
+            }
+            if (result == Pump::Progressed)
+            {
+                idleSpins = 0;
+            }
+            else if (++idleSpins < kYieldSpins)
+            {
+                std::this_thread::yield();
+            }
+            else
+            {
+                std::this_thread::sleep_for(200us);
+            }
         }
+    }
+
+    // Wait until `done()` holds (polled: yield, then short naps); true once it does, false if `cap`
+    // passed first. NOT reported — prefer waitUntil.
+    template <typename Done>
+    [[nodiscard]] auto reached(const char* state, Done done, std::chrono::seconds cap = kHangCap)
+        -> bool
+    {
+        return pumped(state, [&done] { return done() ? Pump::Done : Pump::Idle; }, cap);
+    }
+
+    // The failure for a state never reached: at the waiter's call site, naming the state.
+    inline auto failNeverReached(const char* state,
+                                 std::chrono::seconds cap,
+                                 const std::source_location& where) -> void
+    {
+        gVerdictGiven.store(true, std::memory_order_relaxed); // a failure is a verdict
+        ADD_FAILURE_AT(where.file_name(), static_cast<int>(where.line()))
+            << "[FAIL] never reached: " << state << " (hang cap " << cap.count() << " s)";
+    }
+
+    // Wait until `done()` holds. If the cap passes first the test FAILS, naming `state`, and this
+    // returns false: the caller returns (nodiscard) — it never carries on past the cap.
+    template <typename Done>
+    [[nodiscard]] auto waitUntil(const char* state,
+                                 Done done,
+                                 std::chrono::seconds cap = kHangCap,
+                                 std::source_location where = std::source_location::current())
+        -> bool
+    {
+        if (reached(state, std::move(done), cap))
+        {
+            return true;
+        }
+        failNeverReached(state, cap, where);
+        return false;
+    }
+
+    // Step until `step()` says Pump::Done (a drain that pulls as it waits). If the cap passes first
+    // the test FAILS, naming `state`, and this returns false.
+    template <typename Step>
+    [[nodiscard]] auto pumpUntil(const char* state,
+                                 Step step,
+                                 std::chrono::seconds cap = kHangCap,
+                                 std::source_location where = std::source_location::current())
+        -> bool
+    {
+        if (pumped(state, std::move(step), cap))
+        {
+            return true;
+        }
+        failNeverReached(state, cap, where);
+        return false;
+    }
+
+    // A thread held at a point until the test lets it go — GaplessArmContract's seam pause,
+    // generalised. The thread that reaches the point (from a product test hook) arrives and waits
+    // for the release; the test waits for the arrival, acts while the thread is held, then releases.
+    // Only the first arrival stops; later ones pass. Every wait is bounded and names the point, so a
+    // regression fails the test instead of hanging the suite.
+    class Rendezvous
+    {
+      public:
+        explicit Rendezvous(std::string_view point)
+            : arrivedState_(std::format("{}: the held thread arrived", point)),
+              releasedState_(std::format("{}: the test released the held thread", point))
+        {
+        }
+
+        // The held thread: the first arrival waits for release(). False if the release never came
+        // (the test has failed); the thread then goes on.
+        auto arriveAndWait() -> bool
+        {
+            if (arrived_.exchange(true, std::memory_order_acq_rel))
+            {
+                return true;
+            }
+            return waitUntil(releasedState_.c_str(),
+                             [this] { return released_.load(std::memory_order_acquire); });
+        }
+
+        // The test: wait until the thread arrived — or `cannotArrive()` says it never will (it
+        // finished without reaching the point), which fails the test at once.
+        template <typename CannotArrive>
+        [[nodiscard]] auto
+        awaitArrival(CannotArrive cannotArrive,
+                     std::source_location where = std::source_location::current()) -> bool
+        {
+            const bool settled = waitUntil(
+                arrivedState_.c_str(),
+                [&] { return arrived() || cannotArrive(); },
+                kHangCap,
+                where);
+            if (settled && !arrived())
+            {
+                gVerdictGiven.store(true, std::memory_order_relaxed);
+                ADD_FAILURE_AT(where.file_name(), static_cast<int>(where.line()))
+                    << "[FAIL] " << arrivedState_ << " — no: it finished without reaching it";
+                return false;
+            }
+            return settled;
+        }
+
+        // The test: let the held thread go (also a thread that has not arrived yet: it then passes).
+        void release() noexcept
+        {
+            released_.store(true, std::memory_order_release);
+        }
+
+        [[nodiscard]] auto arrived() const noexcept -> bool
+        {
+            return arrived_.load(std::memory_order_acquire);
+        }
+
+      private:
+        std::string arrivedState_;
+        std::string releasedState_;
+        std::atomic<bool> arrived_{false};
+        std::atomic<bool> released_{false};
     };
 
-    // Cap to hardware concurrency (minimum 2).
-    const int numWorkers = std::max(2, parallelN);
-    std::vector<std::thread> workers;
-    workers.reserve(static_cast<std::size_t>(numWorkers));
-    for (int wk = 0; wk < numWorkers; ++wk)
+    // The CPU time the CALLING thread has used (CLOCK_THREAD_CPUTIME_ID, as SRCQualityMeasure
+    // measures). Unlike steady_clock it does not advance while the thread waits, is descheduled or
+    // the Mac sleeps — so a busy machine cannot inflate it. Allocation-free.
+    [[nodiscard]] inline auto threadCpuTime() noexcept -> std::chrono::nanoseconds
     {
-        workers.emplace_back(workerBody);
-    }
-    for (auto& thr : workers)
-    {
-        thr.join();
+        return std::chrono::nanoseconds{static_cast<std::chrono::nanoseconds::rep>(
+            clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID))};
     }
 
-    // Serial-only entries run in registration order after the parallel phase completes.
-    for (const std::size_t idx : serialIdx)
+    // The thread CPU time `run()` takes, the least of `runs` runs: noise (a cold cache, an
+    // efficiency core, an interrupt) only ever adds time, so the minimum is the code's own cost.
+    template <typename Run>
+    [[nodiscard]] auto minThreadCpu(int runs, Run run) -> std::chrono::nanoseconds
     {
-        kTests[idx].fn();
+        auto best = std::chrono::nanoseconds::max();
+        for (int index = 0; index < std::max(1, runs); ++index)
+        {
+            const std::chrono::nanoseconds before = threadCpuTime();
+            run();
+            best = std::min(best, threadCpuTime() - before);
+        }
+        return best;
     }
-}
+
+    // Which timing budgets this build enforces (rule 2). The real budgets hold for an optimised,
+    // uninstrumented build: the -O2 timing run (scripts/build-null-test.sh --opt-run), on the least
+    // of kTimingRuns runs of thread CPU time. A debug or sanitizer build only trips a catastrophic
+    // regression, ≥ 10× above what that build measures, on one run.
+#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
+    inline constexpr bool kStrictBudgets = true;
+    inline constexpr const char* kBuild = "optimised";
+#elif __has_feature(thread_sanitizer)
+    inline constexpr bool kStrictBudgets = false;
+    inline constexpr const char* kBuild = "tsan";
+#elif __has_feature(address_sanitizer)
+    inline constexpr bool kStrictBudgets = false;
+    inline constexpr const char* kBuild = "asan";
+#else
+    inline constexpr bool kStrictBudgets = false;
+    inline constexpr const char* kBuild = "debug -O0";
+#endif
+    inline constexpr int kTimingRuns = kStrictBudgets ? 5 : 1;
+
+    // One timing budget: the real one, and each instrumented build's catastrophic tripwire.
+    struct Budget
+    {
+        double strict;
+        double debug;
+        double asan;
+        double tsan;
+    };
+
+    // The bound this build enforces for `budget`.
+    [[nodiscard]] constexpr auto limit(const Budget& budget) noexcept -> double
+    {
+#if __has_feature(thread_sanitizer)
+        return budget.tsan;
+#elif __has_feature(address_sanitizer)
+        return budget.asan;
+#else
+        return kStrictBudgets ? budget.strict : budget.debug;
+#endif
+    }
+} // namespace rig

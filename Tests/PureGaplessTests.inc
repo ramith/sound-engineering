@@ -42,11 +42,6 @@ namespace
     // Pull-chunk granularity for the offline seam drains. Small enough that the seam straddle is
     // exercised inside a single pullFloat call, large enough to drain quickly.
     constexpr uint32_t kPureGaplessPullChunk = 256U;
-    // Poll budget: the decode thread fills the ring on a background thread; cap total spins.
-    constexpr int kPureGaplessMaxSpins = 4000;
-    constexpr int kPureGaplessSpinNapMs = 1;
-    // ended() can lag the final pull by the poll plane; give it a short budget.
-    constexpr int kPureGaplessEndedPollAttempts = 200;
 
     // Open a FileDecodeSource at `path`; returns nullptr on open failure (caller logs).
     auto openPureGaplessSource(const char* path) -> std::unique_ptr<FileDecodeSource>
@@ -59,11 +54,12 @@ namespace
         return src;
     }
 
-    // Drain a GaplessSource into `out` (interleaved L,R,...), polling the background decoders, and
-    // KEEP pulling past `expectedFrames` until ended() — the final pull that discovers the last
+    // Drain a GaplessSource into `out` (interleaved L,R,...), pulling from the background decoders,
+    // and KEEP pulling past `expectedFrames` until ended() — the final pull that discovers the last
     // track's true EOF is what sets ended() (a drain that stops exactly at the frame count would
     // never trigger it). `out` must hold expectedFrames + one extra chunk. Returns the total
-    // NON-ZERO frames produced (real audio, before the trailing zero-fill pulls).
+    // NON-ZERO frames produced (real audio, before the trailing zero-fill pulls). A session that
+    // never ends fails the test at the hang cap, naming the state.
     auto drainGapless(GaplessSource& gapless,
                       std::vector<float>& out,
                       uint32_t expectedFrames,
@@ -71,46 +67,33 @@ namespace
     {
         const std::size_t capFrames = out.size() / channels;
         uint32_t total = 0U;
-        int idleSpins = 0;
-        while (idleSpins < kPureGaplessMaxSpins && !gapless.ended())
-        {
-            const std::size_t room = (total < capFrames) ? (capFrames - total) : 0U;
-            if (room == 0U)
+        (void)rig::pumpUntil(
+            "the gapless session ended (ended())",
+            [&]
             {
-                break; // buffer exhausted (should not happen — capacity > expectedFrames)
-            }
-            const uint32_t want =
-                static_cast<uint32_t>(std::min<std::size_t>(kPureGaplessPullChunk, room));
-            const uint32_t produced = gapless.pullFloat(
-                out.data() + (static_cast<std::size_t>(total) * channels), want, channels);
-            total += produced;
-            if (produced == 0U)
-            {
-                ++idleSpins;
-                std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-            }
-            else
-            {
-                idleSpins = 0;
-            }
-        }
+                const std::size_t room = (total < capFrames) ? (capFrames - total) : 0U;
+                if (gapless.ended() || room == 0U) // room: should not run out (capacity > expected)
+                {
+                    return rig::Pump::Done;
+                }
+                const uint32_t want =
+                    static_cast<uint32_t>(std::min<std::size_t>(kPureGaplessPullChunk, room));
+                const uint32_t produced = gapless.pullFloat(
+                    out.data() + (static_cast<std::size_t>(total) * channels), want, channels);
+                total += produced;
+                return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+            });
         // Clamp the reported count to the expected real-audio frames (trailing zero-fill pulls
         // after the last track's EOF do not count as produced audio).
         return std::min(total, expectedFrames);
     }
 
-    // Poll ended() for a short budget (the poll plane can lag the final RT pull).
+    // Wait for ended() (the poll plane can lag the final RT pull). False — the test has failed,
+    // naming the state — only if it never comes.
     auto pollGaplessEnded(GaplessSource& gapless) -> bool
     {
-        for (int attempt = 0; attempt < kPureGaplessEndedPollAttempts; ++attempt)
-        {
-            if (gapless.ended())
-            {
-                return true;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-        }
-        return gapless.ended();
+        return rig::waitUntil("the gapless session reported ended()",
+                              [&gapless] { return gapless.ended(); });
     }
 } // namespace
 
@@ -256,19 +239,20 @@ static auto testPureGaplessExhaustedPredicate() -> void
     uint32_t drained = kPureGaplessPullChunk;
     drained += drainFrames(src, rest, kGaplessSegmentFrames - kPureGaplessPullChunk, kB2bChannels2);
 
-    bool exhausted = false;
-    for (int attempt = 0; attempt < kPureGaplessEndedPollAttempts && !exhausted; ++attempt)
-    {
-        // Keep pulling (returns 0 once drained) so the ring empties and the carry clears.
-        std::vector<float> tail(static_cast<std::size_t>(kPureGaplessPullChunk) * kB2bChannels2,
-                                0.0F);
-        static_cast<void>(src.pullFloat(tail.data(), kPureGaplessPullChunk, kB2bChannels2));
-        exhausted = src.exhausted();
-        if (!exhausted)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-        }
-    }
+    // Keep pulling (returns 0 once drained) so the ring empties and the carry clears.
+    std::vector<float> tail(static_cast<std::size_t>(kPureGaplessPullChunk) * kB2bChannels2, 0.0F);
+    const bool exhausted = rig::pumpUntil("the source reported exhausted() after its last frame",
+                                          [&]
+                                          {
+                                              const uint32_t produced = src.pullFloat(
+                                                  tail.data(), kPureGaplessPullChunk, kB2bChannels2);
+                                              if (src.exhausted())
+                                              {
+                                                  return rig::Pump::Done;
+                                              }
+                                              return produced > 0U ? rig::Pump::Progressed
+                                                                   : rig::Pump::Idle;
+                                          });
     src.close();
     std::remove(kPathPureGaplessA);
 

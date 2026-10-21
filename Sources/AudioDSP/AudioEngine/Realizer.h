@@ -179,6 +179,18 @@ namespace AdaptiveSound
         [[nodiscard]] TargetState canonicalState();
         [[nodiscard]] TrackLoudnessGain loudnessGain();
 
+        // Tests/diagnostics (any thread): drains posted to the queue, and drains that have started.
+        // Read the posted count FIRST: posted − started then never overstates the drains waiting in
+        // the queue — at most one by construction (drainPosted_), however fast intents arrive.
+        [[nodiscard]] uint64_t drainsPosted() const noexcept
+        {
+            return drainsPosted_.load(std::memory_order_acquire);
+        }
+        [[nodiscard]] uint64_t drainsStarted() const noexcept
+        {
+            return drainsStarted_.load(std::memory_order_acquire);
+        }
+
       private:
         void drain();
         void reinitializeOnQueue(uint32_t sampleRate, uint32_t maxFrames);
@@ -225,6 +237,8 @@ namespace AdaptiveSound
         PendingSlot<IntensityIntent> pendingIntensity_;
         PendingSlot<CrossfeedIntent> pendingCrossfeed_;
         bool drainPosted_ = false; // a drain is queued and has not yet taken the slots
+        std::atomic<uint64_t> drainsPosted_{0U};  // telemetry: every postDrain
+        std::atomic<uint64_t> drainsStarted_{0U}; // telemetry: every drain that ran (queue)
         bool shutdown_ = false;
     };
 

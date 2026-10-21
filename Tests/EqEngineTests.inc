@@ -151,6 +151,31 @@ namespace
         return static_cast<uint32_t>(std::ceil(seconds * kEngineFs / kEngineBlock));
     }
 
+    // How often a measured render (engineRunSineMeasured) waits for the normaliser's meter: every
+    // 8 blocks, 85 ms of audio — under one 100 ms gated block, so the makeup the render applies
+    // never trails the programme by more than a block, and the 2.7 s ring never fills.
+    constexpr uint32_t kMeterCatchUpBlocks = 8U;
+
+    // engineRunSine, with the normaliser's meter keeping up: every kMeterCatchUpBlocks the render
+    // waits until the meter has measured everything rendered (the state the old 1 ms-per-block
+    // pacing only hoped for). False if the hang cap passed: the test has failed, the caller returns.
+    [[nodiscard]] auto engineRunSineMeasured(DSPKernel& kernel,
+                                             EngineSine& sine,
+                                             uint32_t blocks,
+                                             std::vector<float>& outLeft) -> bool
+    {
+        for (uint32_t done = 0U; done < blocks; done += kMeterCatchUpBlocks)
+        {
+            engineRunSine(kernel, sine, std::min(kMeterCatchUpBlocks, blocks - done), outLeft);
+            if (!rig::waitUntil("the normaliser's meter measured everything rendered",
+                                [&kernel] { return kernel.loudnessMeterCaughtUp(); }))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // The largest |y[n] − y[n−1]| over [begin, end).
     auto engineMaxStep(const std::vector<float>& y, size_t begin, size_t end) -> double
     {
@@ -444,7 +469,7 @@ static auto testKernelPathSwitchNoGlitch() -> void
 // normaliser holds a large cut; leaving the blend for the normaliser-free EQ-only path (and coming
 // back) must glide, not step. The breaker measured +13.4 / −15.5 dB in one block before the fade.
 // Level steps are read per sample from the tone's exact amplitude (y[n], y[n−1] of a known ω).
-// Serial-only: paced so the measurement worker keeps up.
+// The normaliser's meter keeps up with the render by state, not by pacing (engineRunSineMeasured).
 // ---------------------------------------------------------------------------
 static auto testPathSwitchAfterNormaliserAdapted() -> void
 {
@@ -459,11 +484,10 @@ static auto testPathSwitchAfterNormaliserAdapted() -> void
     kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
     EngineSine sine; // 1 kHz at −6 dBFS: ≈ −4 LUFS through the r = 0.3 blend
     std::vector<float> out;
-    // ≥ 10 s of programme, paced (the worker drains its ring between blocks).
-    for (uint32_t b = 0U; b < engineBlocksFor(12.0); ++b)
+    // ≥ 10 s of programme, the meter measuring all of it.
+    if (!engineRunSineMeasured(kernel, sine, engineBlocksFor(12.0), out))
     {
-        engineRunSine(kernel, sine, 1U, out);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return;
     }
     const auto amplitudeAt = [&](size_t n)
     {
@@ -1020,22 +1044,35 @@ static auto testCrossfeedRederivedOnRateChange() -> void
 
 // Realizer_ReinitDuringDrain — architect F3: re-allocation and a burst of intents race through the
 // Realizer's queue without a data race (run under tsan), the last intent wins, and a
-// re-allocation never waits behind a growing queue. The bound is relative to an idle
-// re-allocation, so it holds at -O0, -O2 and under the sanitizers: with at most one untaken drain
-// queued, a re-allocation waits for at most one drain (one design) plus its own work, about 2×
-// idle. Per-slot drain posting let every real drain re-arm all three slots, so the queue grew for
-// as long as the burst lasted — 2–9 s per re-allocation before the fix.
+// re-allocation never waits behind a growing queue. Per-slot drain posting let every real drain
+// re-arm all three slots, so the queue grew for as long as the burst lasted — 2–9 s per
+// re-allocation before the fix. The property is the queue's own: at most ONE drain waits in it at
+// any time, read from the Realizer's counters (drains posted, drains started) on both threads
+// throughout the burst — never a wall-clock ratio, which a single preemption could break. The
+// re-allocation times stay in the report as [info].
 static auto testRealizerReinitDuringDrain() -> void
 {
     static const char* const kName = "Realizer_ReinitDuringDrain";
     constexpr int kRounds = 40;
     constexpr int kIdleRounds = 4;
-    constexpr double kBoundFactor = 4.0; // ~2× expected; headroom for scheduler noise
-    constexpr double kBoundSlackMs = 10.0;
+    constexpr uint64_t kMaxQueuedDrains = 1U;
     auto kernel = std::make_shared<DSPKernel>();
     kernel->initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
     auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
-    const auto timedReinit = [&](int round) -> double
+    // The most drains seen waiting in the queue at once (posted read first: never overstated).
+    std::atomic<uint64_t> worstQueued{0U};
+    const auto sampleQueue = [&]
+    {
+        const uint64_t posted = realizer->drainsPosted();
+        const uint64_t started = realizer->drainsStarted();
+        const uint64_t queued = (posted > started) ? posted - started : 0U;
+        uint64_t seen = worstQueued.load(std::memory_order_relaxed);
+        while (queued > seen &&
+               !worstQueued.compare_exchange_weak(seen, queued, std::memory_order_relaxed))
+        {
+        }
+    };
+    const auto timedReinit = [&](int round) -> double // wall ms: [info] only
     {
         const auto started = std::chrono::steady_clock::now();
         realizer->reinitializeKernel((round % 2 == 0) ? TestConstants::kSampleRate44k : 48000U,
@@ -1048,6 +1085,8 @@ static auto testRealizerReinitDuringDrain() -> void
     {
         idleWorstMs = std::max(idleWorstMs, timedReinit(round));
     }
+    const uint64_t postedBeforeBurst = realizer->drainsPosted();
+    const uint64_t startedBeforeBurst = realizer->drainsStarted();
     std::atomic<bool> stop{false};
     std::thread control(
         [&]
@@ -1060,37 +1099,48 @@ static auto testRealizerReinitDuringDrain() -> void
                 (void)realizer->setPendingEq(curve.data(), 31U, true);
                 realizer->setPendingIntensity(static_cast<float>(i % 10U) / 10.0F);
                 realizer->setPendingCrossfeed(i % 2U, i % 3U);
+                sampleQueue();
                 ++i;
                 std::this_thread::sleep_for(std::chrono::microseconds(50)); // a fast UI, not a spin
             }
         });
+    // The race needs the burst running: wait for its first drain (a positive witness).
+    const bool burstRunning = rig::waitUntil("the intent burst posted a drain", [&]
+                                             { return realizer->drainsPosted() > postedBeforeBurst; });
     double burstWorstMs = 0.0;
     double burstTotalMs = 0.0;
-    for (int round = 0; round < kRounds; ++round)
+    for (int round = 0; round < kRounds && burstRunning; ++round)
     {
+        sampleQueue();
         const double ms = timedReinit(round);
+        sampleQueue();
         burstWorstMs = std::max(burstWorstMs, ms);
         burstTotalMs += ms;
     }
     stop.store(true, std::memory_order_relaxed);
     control.join();
-    const double boundMs = (kBoundFactor * idleWorstMs) + kBoundSlackMs;
+    if (!burstRunning)
+    {
+        return; // waitUntil failed the test, naming the state
+    }
+    const uint64_t burstDrains = realizer->drainsStarted() - startedBeforeBurst;
     logInfo(std::format(
-        "[info] {}: re-allocation idle worst {:.2f} ms; under an intent burst mean {:.2f} ms, "
-        "worst {:.2f} ms (bound {:.2f} ms)\n",
+        "[info] {}: {} drains during the burst, at most {} queued at once (≤ {}); re-allocation "
+        "wall time idle worst {:.2f} ms, under the burst mean {:.2f} ms, worst {:.2f} ms\n",
         kName,
+        burstDrains,
+        worstQueued.load(),
+        kMaxQueuedDrains,
         idleWorstMs,
         burstTotalMs / kRounds,
-        burstWorstMs,
-        boundMs));
-    if (burstWorstMs > boundMs)
+        burstWorstMs));
+    if (worstQueued.load() > kMaxQueuedDrains)
     {
         logFail(kName,
-                std::format(
-                    "a re-allocation waited {:.2f} ms behind the intent burst (bound {:.2f} ms) — "
-                    "the drain queue is growing",
-                    burstWorstMs,
-                    boundMs));
+                std::format("{} drains waited in the Realizer's queue at once (≤ {}) — the drain "
+                            "queue grows, and a re-allocation waits behind it",
+                            worstQueued.load(),
+                            kMaxQueuedDrains));
         return;
     }
     // The last intents win once the queue drains.

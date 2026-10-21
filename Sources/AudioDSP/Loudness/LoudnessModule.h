@@ -123,6 +123,16 @@ namespace AdaptiveSound
         {
             return parking_.wakeCount();
         }
+        // The measurement worker has measured everything process() pushed so far: its ring is empty
+        // and it is back at its idle point, so no chunk is mid-measurement. For tests, on the thread
+        // that calls process() (they wait for this instead of pacing the render with sleeps). The
+        // worker alone writes the idle flag; the render thread is untouched.
+        [[nodiscard]] bool meterCaughtUp() const noexcept
+        {
+            // The ring first: a pop the worker made before it (release) also orders the worker's
+            // "not idle" before this thread's read of the flag below.
+            return sampleRing_.isEmpty() && workerIdle_.load(std::memory_order_seq_cst);
+        }
 
       private:
         // RT: apply the smoothed (and optionally contribution-weighted) makeup gain in place.
@@ -182,8 +192,9 @@ namespace AdaptiveSound
         ParameterRamp makeupGainRamp_{};                     // RT-owned (3 floats)
         std::array<float, kWorkerChunkElems> workerChunk_{}; // worker-owned drain scratch
 
-        // --- 1-byte-aligned member ---
-        std::atomic<uint8_t> enabled_{1U}; // RT→worker (control)
+        // --- 1-byte-aligned members ---
+        std::atomic<uint8_t> enabled_{1U};    // RT→worker (control)
+        std::atomic<bool> workerIdle_{false}; // worker→tests: at its idle point (meterCaughtUp)
 
         // --- RAII: MUST be the last member (destroyed first; see constraint 2 above) ---
         std::jthread measurementThread_;

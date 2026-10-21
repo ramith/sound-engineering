@@ -2051,54 +2051,17 @@ static auto testLoudnessProfileSharedAcrossThreads() -> void
     logPass(kName);
 }
 
-// ---------------------------------------------------------------------------
-// Profiler_Timing — the worst supported format, 192 kHz × 8 channels (every channel weighted, so
-// every channel costs an FFT per block), and the predictor on a full 6000-block profile.
-// Measured optimised on an M4 Pro: 16.5 ms of CPU per second of audio (≈ 60× real time) and
-// 1.37 ms per prediction (0.44 ms on every 4th block). Budgets, with the M1 Pro floor's ×1.4–1.8
-// in hand: ≤ 40 ms per second of audio (≥ 25× real time: a 25 s prefix of the worst format in
-// ≤ 1 s) and ≤ 4 ms per prediction. The null test builds -O0 (and the sanitizers slow it further),
-// so those bounds only catch a gross regression. The common 44.1 kHz stereo case is logged.
-// Serial-only: the pool would skew the clock.
-// ---------------------------------------------------------------------------
-static auto testProfilerTiming() -> void
+namespace
 {
-    static const char* const kName = "Profiler_Timing";
-#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
-    constexpr double kFeedBudgetMsPerSecond = 40.0;
-    constexpr double kPredictBudgetMs = 4.0;
-    constexpr const char* kBuild = "optimised";
-#elif __has_feature(thread_sanitizer)
-    // TSan instruments every load: measured 328 ms/s and 184 ms per prediction.
-    constexpr double kFeedBudgetMsPerSecond = 1500.0;
-    constexpr double kPredictBudgetMs = 600.0;
-    constexpr const char* kBuild = "tsan";
-#elif __has_feature(address_sanitizer)
-    // Measured 75 ms/s and 35 ms per prediction.
-    constexpr double kFeedBudgetMsPerSecond = 400.0;
-    constexpr double kPredictBudgetMs = 150.0;
-    constexpr const char* kBuild = "asan";
-#else
-    // Measured 35 ms/s (the vDSP FFTs stay optimised) and 11 ms per prediction.
-    constexpr double kFeedBudgetMsPerSecond = 250.0;
-    constexpr double kPredictBudgetMs = 40.0;
-    constexpr const char* kBuild = "debug -O0";
-#endif
-    constexpr double kAudioSeconds = 6.0;
-    static constexpr size_t kChunk = 4096U; // static: the timing lambda reads it uncaptured
-    constexpr int kPredictions = 20;
-    std::minstd_rand cheap(61U);
-    // CPU ms per second of audio to profile `seconds` of noise in `format` (0 blocks on failure).
-    // One second of noise per channel is generated first and looped, so generation stays out of
-    // the clock.
-    const auto timeFeed = [&cheap](const TrackLoudnessProfiler::Format& format, double seconds)
+    // Profiler_Timing's feed: CPU ms per second of audio to profile `seconds` of noise in
+    // `format` — the profiling thread's own CPU time, the least of rig::kTimingRuns fresh
+    // profilers — and the profile's block count (0 on failure). One second of noise per channel is
+    // generated first and looped, and each profiler is made before its clock starts.
+    auto tlTimeFeed(const TrackLoudnessProfiler::Format& format,
+                    double seconds,
+                    std::minstd_rand& cheap) -> std::pair<double, uint32_t>
     {
-        std::pair<double, uint32_t> result{0.0, 0U};
-        auto profiler = TrackLoudnessProfiler::create(format);
-        if (!profiler)
-        {
-            return result;
-        }
+        constexpr size_t kChunk = 4096U;
         const auto second = static_cast<size_t>(format.sampleRate);
         std::uniform_real_distribution<float> uniform(-0.5F, 0.5F);
         std::vector<std::vector<float>> noise(format.channelCount,
@@ -2112,29 +2075,69 @@ static auto testProfilerTiming() -> void
         }
         std::vector<const float*> pointers(format.channelCount);
         const auto total = static_cast<size_t>(seconds * format.sampleRate);
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t done = 0U; done < total; done += kChunk)
+        auto best = std::chrono::nanoseconds::max();
+        uint32_t blocks = 0U;
+        for (int run = 0; run < rig::kTimingRuns; ++run)
         {
-            for (size_t ch = 0U; ch < pointers.size(); ++ch)
+            auto profiler = TrackLoudnessProfiler::create(format);
+            if (!profiler)
             {
-                pointers[ch] = noise[ch].data() + (done % second);
+                return {0.0, 0U};
             }
-            if (!profiler->feed(pointers, std::min(kChunk, total - done)))
+            const std::chrono::nanoseconds start = rig::threadCpuTime();
+            for (size_t done = 0U; done < total; done += kChunk)
             {
-                return result;
+                for (size_t ch = 0U; ch < pointers.size(); ++ch)
+                {
+                    pointers[ch] = noise[ch].data() + (done % second);
+                }
+                if (!profiler->feed(pointers, std::min(kChunk, total - done)))
+                {
+                    return {0.0, 0U};
+                }
             }
+            const std::shared_ptr<const TrackLoudnessProfile> profile = profiler->finish();
+            best = std::min(best, rig::threadCpuTime() - start);
+            blocks = profile ? profile->blockCount : 0U;
         }
-        const std::shared_ptr<const TrackLoudnessProfile> profile = profiler->finish();
-        const auto end = std::chrono::steady_clock::now();
-        result.first = std::chrono::duration<double, std::milli>(end - start).count() / seconds;
-        result.second = profile ? profile->blockCount : 0U;
-        return result;
+        return {std::chrono::duration<double, std::milli>(best).count() / seconds, blocks};
+    }
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Profiler_Timing — the worst supported format, 192 kHz × 8 channels (every channel weighted, so
+// every channel costs an FFT per block), and the predictor on a full 6000-block profile.
+// Measured optimised on an M4 Pro: 16.5 ms of CPU per second of audio (≈ 60× real time) and
+// 1.37 ms per prediction (0.44 ms on every 4th block). Budgets, with the M1 Pro floor's ×1.4–1.8
+// in hand: ≤ 40 ms per second of audio (≥ 25× real time: a 25 s prefix of the worst format in
+// ≤ 1 s) and ≤ 4 ms per prediction. Measured as the working thread's own CPU time, the least of
+// rig::kTimingRuns runs; the budgets hold in the -O2 timing run, and the debug and sanitizer builds
+// only trip a catastrophic regression (≥ 10× what they measure — debug: 38 ms/s and 11 ms here, 85
+// and 21 ms wall on CI). The common 44.1 kHz stereo case is logged.
+// ---------------------------------------------------------------------------
+static auto testProfilerTiming() -> void
+{
+    static const char* const kName = "Profiler_Timing";
+    constexpr rig::Budget kFeedBudgetMsPerSecond{
+        .strict = 40.0,
+        .debug = 1000.0,
+        .asan = 1000.0,
+        .tsan = 4000.0,
     };
+    constexpr rig::Budget kPredictBudgetMs{
+        .strict = 4.0,
+        .debug = 250.0,
+        .asan = 400.0,
+        .tsan = 2000.0,
+    };
+    constexpr double kAudioSeconds = 6.0;
+    constexpr int kPredictions = 20;
+    std::minstd_rand cheap(61U);
     TrackLoudnessProfiler::Format worstFormat{kTlRate192k, kMaxChannels, {}};
     worstFormat.channelWeights.fill(1.0);
-    const auto [feedMsPerSecond, worstBlocks] = timeFeed(worstFormat, kAudioSeconds);
+    const auto [feedMsPerSecond, worstBlocks] = tlTimeFeed(worstFormat, kAudioSeconds, cheap);
     const auto [commonMsPerSecond, commonBlocks] =
-        timeFeed({kTlRate44k, 2U, tlStereoWeights()}, kAudioSeconds);
+        tlTimeFeed({kTlRate44k, 2U, tlStereoWeights()}, kAudioSeconds, cheap);
     if (worstBlocks == 0U || commonBlocks == 0U)
     {
         logFail(kName, "a timed profile failed");
@@ -2158,46 +2161,52 @@ static auto testProfilerTiming() -> void
     GraphicEQDesign warm{};
     (void)designer->design(kEqPresetCurves[kEqPresetWarm], kTlRate48k, warm);
     double sink = 0.0;
-    const auto predictStart = std::chrono::steady_clock::now();
-    for (int round = 0; round < kPredictions; ++round)
+    const auto timePredictions = [&](uint32_t blockStep)
     {
-        double change = 0.0;
-        (void)predictLoudnessChangeDb(capped, warm, 1U, change);
-        sink += change;
-    }
-    const auto predicted = std::chrono::steady_clock::now();
-    for (int round = 0; round < kPredictions; ++round)
-    {
-        double change = 0.0;
-        (void)predictLoudnessChangeDb(capped, warm, 4U, change);
-        sink += change;
-    }
-    const auto stepped = std::chrono::steady_clock::now();
-    const double predictMs =
-        std::chrono::duration<double, std::milli>(predicted - predictStart).count() / kPredictions;
-    const double steppedMs =
-        std::chrono::duration<double, std::milli>(stepped - predicted).count() / kPredictions;
+        const std::chrono::nanoseconds cpu = rig::minThreadCpu(
+            rig::kTimingRuns,
+            [&]
+            {
+                for (int round = 0; round < kPredictions; ++round)
+                {
+                    double change = 0.0;
+                    (void)predictLoudnessChangeDb(capped, warm, blockStep, change);
+                    sink += change;
+                }
+            });
+        return std::chrono::duration<double, std::milli>(cpu).count() / kPredictions;
+    };
+    const double predictMs = timePredictions(1U);
+    const double steppedMs = timePredictions(4U);
+    const double feedBound = rig::limit(kFeedBudgetMsPerSecond);
+    const double predictBound = rig::limit(kPredictBudgetMs);
     logInfo(
-        std::format("[info] {} ({} build): 192 kHz × 8 ch {:.1f} ms per second of audio "
-                    "({:.0f}× real time; budget {:.0f}; {} blocks); 44.1 kHz stereo {:.2f} ms "
-                    "per second ({:.0f}× real time); predict 6000 × {} bands {:.3f} ms, every "
-                    "4th block {:.3f} ms (budget {:.1f}) [{:.1f}]\n",
+        std::format("[info] {} ({} build, thread CPU, least of {}): 192 kHz × 8 ch {:.1f} ms per "
+                    "second of audio ({:.0f}× real time; bound {:.0f}; {} blocks); 44.1 kHz stereo "
+                    "{:.2f} ms per second ({:.0f}× real time); predict 6000 × {} bands {:.3f} ms, "
+                    "every 4th block {:.3f} ms (bound {:.1f}) [{:.1f}]\n",
                     kName,
-                    kBuild,
+                    rig::kBuild,
+                    rig::kTimingRuns,
                     feedMsPerSecond,
                     1000.0 / feedMsPerSecond,
-                    kFeedBudgetMsPerSecond,
+                    feedBound,
                     worstBlocks,
                     commonMsPerSecond,
                     1000.0 / commonMsPerSecond,
                     capped.bandCount,
                     predictMs,
                     steppedMs,
-                    kPredictBudgetMs,
+                    predictBound,
                     sink));
-    if (!(feedMsPerSecond <= kFeedBudgetMsPerSecond) || !(predictMs <= kPredictBudgetMs))
+    if (!(feedMsPerSecond <= feedBound) || !(predictMs <= predictBound))
     {
-        logFail(kName, "over budget");
+        logFail(kName,
+                std::format("over budget: feed {:.1f} ms/s (≤ {:.0f}), predict {:.3f} ms (≤ {:.1f})",
+                            feedMsPerSecond,
+                            feedBound,
+                            predictMs,
+                            predictBound));
         return;
     }
     logPass(kName);

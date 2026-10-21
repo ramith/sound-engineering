@@ -342,21 +342,22 @@ namespace
     };
 
     // The EQ's CPU (EQ_Cpu_*): % of one core for 8 channels at `fs`, settled on Warm and then
-    // gliding to Vocal, over `seconds` of audio each. A fresh noise block every time — copied (a
-    // 16 KB copy, inside the timing, so the figure errs high), not re-generated (the RNG stays out
-    // of it). Processing the same buffer in place would compound the curve block after block until
-    // the samples overflow, and time arithmetic on infinities rather than music.
+    // gliding to Vocal, over `seconds` of audio each — the processing thread's own CPU time (never
+    // steady_clock, which counts the time the thread was descheduled and the time the Mac slept:
+    // it once read 90 600 % across a sleep), the least of rig::kTimingRuns fresh modules. A fresh
+    // noise block every time — copied (a 16 KB copy, inside the timing, so the figure errs high),
+    // not re-generated (the RNG stays out of it). Processing the same buffer in place would compound
+    // the curve block after block until the samples overflow, and time arithmetic on infinities
+    // rather than music.
     struct TdCpu
     {
-        double settled = 0.0;
-        double gliding = 0.0;
+        double settled = std::numeric_limits<double>::max();
+        double gliding = std::numeric_limits<double>::max();
     };
 
     auto tdEqCpuPercent(uint32_t fs, uint32_t seconds) -> TdCpu
     {
         constexpr uint32_t kChannels = 8U;
-        auto module = std::make_unique<EQModule>();
-        module->initialize(fs, kTdBlockFrames);
         TestABLN abl(kChannels, kTdBlockFrames);
         std::vector<std::vector<float>> source(kChannels, std::vector<float>(kTdBlockFrames));
         std::mt19937 rng(7U);
@@ -379,53 +380,50 @@ namespace
         // A glide slow enough (τ 0.64 s) to keep every band's coefficients moving for the run.
         constexpr float kGlideSeconds = 0.64F;
         const EQParams vocalParams = makeEqParams(kEqPresetCurves[4], fs, kGlideSeconds);
-        const auto run = [&](const EQParams& target)
-        {
-            module->update(target);
-            const auto start = std::chrono::steady_clock::now();
-            for (uint32_t done = 0U; done < fs * seconds; done += kTdBlockFrames)
-            {
-                fill();
-                module->process(MultichannelView::fromABL(abl.abl(), kTdBlockFrames));
-            }
-            const auto elapsed = std::chrono::steady_clock::now() - start;
-            return 100.0 * std::chrono::duration<double>(elapsed).count() /
-                   static_cast<double>(seconds);
-        };
-        (void)run(warmParams); // snap to Warm, then settle
         TdCpu cpu;
-        cpu.settled = run(warmParams);
-        cpu.gliding = run(vocalParams);
+        for (int repeat = 0; repeat < rig::kTimingRuns; ++repeat)
+        {
+            auto module = std::make_unique<EQModule>();
+            module->initialize(fs, kTdBlockFrames);
+            const auto run = [&](const EQParams& target)
+            {
+                module->update(target);
+                const std::chrono::nanoseconds start = rig::threadCpuTime();
+                for (uint32_t done = 0U; done < fs * seconds; done += kTdBlockFrames)
+                {
+                    fill();
+                    module->process(MultichannelView::fromABL(abl.abl(), kTdBlockFrames));
+                }
+                return 100.0 *
+                       std::chrono::duration<double>(rig::threadCpuTime() - start).count() /
+                       static_cast<double>(seconds);
+            };
+            (void)run(warmParams); // snap to Warm, then settle
+            cpu.settled = std::min(cpu.settled, run(warmParams));
+            cpu.gliding = std::min(cpu.gliding, run(vocalParams));
+        }
         return cpu;
     }
 
     // The EQ's CPU budget at `fs` (% of one core, 8 channels; engine-plan §7, amendment 18): 5 % at
     // the pipeline's worst supported format, 192 kHz — and above it, where the EQ still plays (its
     // designer goes to 768 kHz) but the pipeline's supported range ends, the same work per sample:
-    // 5 % × fs / 192 kHz. The bound applies to an optimised, uninstrumented build; -O0 and the
-    // sanitizers get only a catastrophic-regression tripwire, scaled the same way.
-#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
-    constexpr const char* kTdCpuBuild = "optimised";
+    // 5 % × fs / 192 kHz. The 5 % holds in the -O2 timing run; the debug and sanitizer builds only
+    // trip a catastrophic regression (≥ 10× what they measure; debug ~25 % at 192 kHz), scaled per
+    // rate the same way.
+    constexpr const char* kTdCpuBuild = rig::kBuild;
     auto tdEqCpuBudgetPercent(uint32_t fs) -> double
     {
-        constexpr double kBudgetAt192kPercent = 5.0;
-        return kBudgetAt192kPercent *
+        constexpr rig::Budget kBudgetAt192kPercent{
+            .strict = 5.0,
+            .debug = 1000.0,
+            .asan = 2000.0,
+            .tsan = 4000.0,
+        };
+        return rig::limit(kBudgetAt192kPercent) *
                std::max(1.0,
                         static_cast<double>(fs) / static_cast<double>(kMaxSupportedSampleRate));
     }
-#else
-    constexpr const char* kTdCpuBuild = "unoptimised";
-    // -O0 and the sanitizers run 10–100× slower, so they get no budget, only a tripwire for a
-    // catastrophic regression. It scales per rate like the real budget (the same work per
-    // sample): a fixed 1000 % was crossed by TSan at 768 kHz under ordinary machine load.
-    auto tdEqCpuBudgetPercent(uint32_t fs) -> double
-    {
-        constexpr double kTripwireAt192kPercent = 1000.0;
-        return kTripwireAt192kPercent *
-               std::max(1.0,
-                        static_cast<double>(fs) / static_cast<double>(kMaxSupportedSampleRate));
-    }
-#endif
 
     // The research's realistic drag (trans_td3.py): Warm's 125 Hz band (index 8) raised to +12 in
     // 0.5 dB steps at 120 Hz, the neighbours following by the stroke-start rule (±1: 75 %,
@@ -631,8 +629,8 @@ static auto testEqTransitionsAdversarial() -> void
 // ---------------------------------------------------------------------------
 // EQ_Cpu_7_1_192k — the EQ's real-time cost at the worst supported format (engine-plan §7: the
 // SOTA review measured 2.66 % gliding / 2.00 % settled of one core at 192 kHz × 8). The bound
-// (≤ 5 %) applies to an optimised, uninstrumented build; -O0 and the sanitizers only report.
-// Serial-only: the pool would skew the clock.
+// (≤ 5 %, thread CPU time, the least of rig::kTimingRuns runs) holds in the -O2 timing run; -O0 and
+// the sanitizers only trip a catastrophic regression (tdEqCpuBudgetPercent).
 // ---------------------------------------------------------------------------
 static auto testEqCpu71At192k() -> void
 {

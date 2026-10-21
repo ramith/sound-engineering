@@ -98,20 +98,17 @@ static auto testGaplessContractTransitionCountPerSeam() -> void
     std::vector<float> buf(static_cast<std::size_t>(kPureGaplessPullChunk) * kB2bChannels2, 0.0F);
     const auto pumpToTransition = [&](uint64_t targetCount) -> bool
     {
-        for (int spin = 0; spin < kPureGaplessMaxSpins; ++spin)
-        {
-            if (gapless.transitionCount() >= targetCount)
-            {
-                return true;
-            }
-            const uint32_t produced =
-                gapless.pullFloat(buf.data(), kPureGaplessPullChunk, kB2bChannels2);
-            if (produced == 0U)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-            }
-        }
-        return gapless.transitionCount() >= targetCount;
+        return rig::pumpUntil("the render crossed the next seam (transitionCount())",
+                              [&]
+                              {
+                                  if (gapless.transitionCount() >= targetCount)
+                                  {
+                                      return rig::Pump::Done;
+                                  }
+                                  const uint32_t produced = gapless.pullFloat(
+                                      buf.data(), kPureGaplessPullChunk, kB2bChannels2);
+                                  return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+                              });
     };
 
     if (!pumpToTransition(1U))
@@ -336,24 +333,21 @@ static auto testGaplessContractPositionRezeroesAtSeam() -> void
     std::vector<float> buf(static_cast<std::size_t>(kPureGaplessPullChunk) * kB2bChannels2, 0.0F);
     uint64_t preSeamRendered = 0U;  // active-track frames just before the seam crossing
     uint64_t postSeamRendered = 0U; // active-track frames right after the seam crossing
-    bool sawSeam = false;
-    for (int spin = 0; spin < kPureGaplessMaxSpins && !sawSeam; ++spin)
-    {
-        const uint64_t before = gapless.renderedFramesCurrent();
-        const uint32_t produced =
-            gapless.pullFloat(buf.data(), kPureGaplessPullChunk, kB2bChannels2);
-        if (gapless.transitionCount() >= 1U)
+    const bool sawSeam = rig::pumpUntil(
+        "the render crossed the A→B seam (transitionCount() 1)",
+        [&]
         {
-            preSeamRendered = before; // A's counter just before it swapped out
-            postSeamRendered = gapless.renderedFramesCurrent(); // B's freshly-zeroed counter
-            sawSeam = true;
-            break;
-        }
-        if (produced == 0U)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-        }
-    }
+            const uint64_t before = gapless.renderedFramesCurrent();
+            const uint32_t produced =
+                gapless.pullFloat(buf.data(), kPureGaplessPullChunk, kB2bChannels2);
+            if (gapless.transitionCount() >= 1U)
+            {
+                preSeamRendered = before; // A's counter just before it swapped out
+                postSeamRendered = gapless.renderedFramesCurrent(); // B's freshly-zeroed counter
+                return rig::Pump::Done;
+            }
+            return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+        });
     gapless.reapRetired();
     cleanup();
 
@@ -441,21 +435,18 @@ static auto testGaplessContractPollReapsRetiredSource() -> void
 
     // Drain across the A->B seam WITHOUT reaping, so the retired slot stays parked.
     std::vector<float> buf(static_cast<std::size_t>(kPureGaplessPullChunk) * kB2bChannels2, 0.0F);
-    bool sawSeam = false;
-    for (int spin = 0; spin < kPureGaplessMaxSpins && !sawSeam; ++spin)
-    {
-        const uint32_t produced =
-            gapless.pullFloat(buf.data(), kPureGaplessPullChunk, kB2bChannels2);
-        if (gapless.transitionCount() >= 1U)
+    const bool sawSeam = rig::pumpUntil(
+        "the render crossed the A→B seam (transitionCount() 1)",
+        [&]
         {
-            sawSeam = true;
-            break;
-        }
-        if (produced == 0U)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-        }
-    }
+            const uint32_t produced =
+                gapless.pullFloat(buf.data(), kPureGaplessPullChunk, kB2bChannels2);
+            if (gapless.transitionCount() >= 1U)
+            {
+                return rig::Pump::Done;
+            }
+            return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+        });
     if (!sawSeam)
     {
         cleanup();

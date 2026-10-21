@@ -90,6 +90,9 @@ namespace AdaptiveSound
         // estimate — are parked (blocked until handed work), and how often they have woken in all.
         [[nodiscard]] bool analysisWorkersParked() const noexcept;
         [[nodiscard]] uint64_t analysisWorkerWakes() const noexcept;
+        // Tests, on the render thread between process() calls: the normaliser's meter has measured
+        // everything rendered so far (LoudnessModule::meterCaughtUp).
+        [[nodiscard]] bool loudnessMeterCaughtUp() const noexcept;
 
         // Read-only view of the EQ stage between process() calls (tests/diagnostics only).
         [[nodiscard]] const EQModule* eqModule() const noexcept

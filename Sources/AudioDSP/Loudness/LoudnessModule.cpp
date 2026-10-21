@@ -206,6 +206,14 @@ namespace AdaptiveSound
         // process() push wakes it, and so does a stop.
         const auto hasSamples = [this] { return !sampleRing_.isEmpty(); };
         const std::stop_callback wakeToStop(stopToken, [this] noexcept { parking_.notify(); });
+        // Idle with nothing in hand: what meterCaughtUp() reads (tests). Flagged only around the
+        // wait, so a chunk being measured never reads as caught up.
+        const auto idle = [this, &stopToken, &hasSamples]
+        {
+            workerIdle_.store(true, std::memory_order_seq_cst);
+            parking_.idle(stopToken, hasSamples);
+            workerIdle_.store(false, std::memory_order_seq_cst);
+        };
 
         while (!stopToken.stop_requested())
         {
@@ -213,7 +221,7 @@ namespace AdaptiveSound
             const uint32_t nowCh = channelCount_.load(std::memory_order_acquire);
             if (nowCh == 0U)
             {
-                parking_.idle(stopToken, hasSamples);
+                idle();
                 continue;
             }
 
@@ -242,7 +250,7 @@ namespace AdaptiveSound
             const std::size_t got = sampleRing_.popBlock(workerChunk_.data(), cap);
             if (got == 0U)
             {
-                parking_.idle(stopToken, hasSamples);
+                idle();
                 continue;
             }
             parking_.worked();

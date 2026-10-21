@@ -561,20 +561,22 @@ static auto testLoudnessAnalysisFailsCausalFallback() -> void
     const bool running = engine.realizer->loudnessGain().wantsCausalEstimate();
 
     // Render a second at a time, then wait until that second's snapshot has reached the
-    // Realizer (the tap's worker and the queue run on their own threads).
+    // Realizer (the tap's worker and the queue run on their own threads). The ring holds 2.7 s, so
+    // nothing rendered is ever dropped, and the estimate reaches every second — a cap that passes
+    // fails the test (never a gain read off a half-analysed second).
     std::vector<double> perSecond;
     const auto second = static_cast<size_t>(kEngineFs);
     for (size_t start = 0U; start + second <= programme.frames(); start += second)
     {
         (void)lnRender(*engine.kernel, programme, start, second);
         const double covered = static_cast<double>(start + second) / kEngineFs;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        engine.realizer->barrier();
-        while (engine.realizer->loudnessGain().causalSeconds() < covered - 1e-6 &&
-               std::chrono::steady_clock::now() < deadline)
+        if (!rig::waitUntil("the causal estimate's snapshot covered the second just rendered",
+                            [&] {
+                                return engine.realizer->loudnessGain().causalSeconds() >=
+                                       covered - 1e-6;
+                            }))
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            engine.realizer->barrier();
+            return;
         }
         perSecond.push_back(engine.realizer->loudnessGain().gainDb());
     }
@@ -647,8 +649,14 @@ static auto testLoudnessEditDebounce() -> void
     }
     const double decimated = engine.realizer->canonicalState().eq.outputGainDb;
     const bool pending = engine.realizer->loudnessGain().needsRefresh();
-    std::this_thread::sleep_for(std::chrono::milliseconds(400));
-    engine.realizer->barrier();
+    // The idle refresh: the Realizer's own 150 ms debounce fires it (dispatch_after on its queue).
+    // Wait for its effect — the refresh no longer pending, read on the queue — not a fixed 400 ms:
+    // a starved queue only delays it, and a refresh that never comes fails at the cap.
+    if (pending && !rig::waitUntil("the idle refresh ran (needsRefresh() false)",
+                                   [&] { return !engine.realizer->loudnessGain().needsRefresh(); }))
+    {
+        return; // waitUntil failed the test, naming the state
+    }
     const double refreshed = engine.realizer->canonicalState().eq.outputGainDb;
     const double full = lnOwnGainDb(*profile, drag.back());
     const uint32_t step = (profile->blockCount + TrackLoudnessGain::kEditBlockBudget - 1U) /
@@ -800,13 +808,16 @@ static auto testSoakDspKernelZeroRtAllocCausalTap() -> void
         }
         allocs = RtGuardScope::count();
     }
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (kernel.causalLoudnessFedFrames() < static_cast<uint64_t>(kBlocks) * kEngineBlock / 2U &&
-           std::chrono::steady_clock::now() < deadline)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
+    // The witness that the tap path ran: its worker fed the profiler. (The render outpaces the
+    // worker on purpose — 21 s pushed at full speed — so the ring may drop; what reached it is
+    // analysed. A cap that passes fails the test, never a verdict on a tap that fed nothing yet.)
+    const bool fed = rig::waitUntil("the causal tap's worker fed the profiler",
+                                    [&] { return kernel.causalLoudnessFedFrames() > 0U; });
     kernel.stopCausalLoudness();
+    if (!fed)
+    {
+        return;
+    }
     logInfo(std::format("[info] {}: rtAllocs={} fed {} frames, {} snapshots\n",
                         kName,
                         allocs,
@@ -824,29 +835,27 @@ static auto testSoakDspKernelZeroRtAllocCausalTap() -> void
 // Realizer_LoudnessCost — the cost bound (amendments item 3): the worst profile the Realizer can
 // hold — a 10-minute-capped track at 192 kHz, 6000 blocks × 295 bands, 7.1 MB — under a design at
 // 192 kHz. An edit pays the design plus a decimated gain (≤ 300 blocks); the idle refresh pays the
-// full prediction. Budgets, with the M1 Pro floor in hand: edit ≤ 1 ms, refresh ≤ 5 ms. The
-// Realizer keeps at most kTrackSlots profiles (≤ 4 × 7.1 MB). Serial: the pool would skew the clock.
+// full prediction. Budgets, with the M1 Pro floor in hand: edit ≤ 1 ms, refresh ≤ 5 ms — as the
+// working thread's own CPU time, the least of rig::kTimingRuns runs, in the -O2 timing run; the
+// debug and sanitizer builds only trip a catastrophic regression (≥ 10× what they measure — debug:
+// 1.4 and 12 ms here, 2.0 and 16.3 ms wall on CI). The Realizer keeps at most kTrackSlots profiles
+// (≤ 4 × 7.1 MB).
 // ---------------------------------------------------------------------------
 static auto testRealizerLoudnessCost() -> void
 {
     static const char* const kName = "Realizer_LoudnessCost";
-#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
-    constexpr double kEditBudgetMs = 1.0;
-    constexpr double kRefreshBudgetMs = 5.0;
-    constexpr const char* kBuild = "optimised";
-#elif __has_feature(thread_sanitizer)
-    constexpr double kEditBudgetMs = 200.0;
-    constexpr double kRefreshBudgetMs = 1500.0;
-    constexpr const char* kBuild = "tsan";
-#elif __has_feature(address_sanitizer)
-    constexpr double kEditBudgetMs = 50.0;
-    constexpr double kRefreshBudgetMs = 400.0;
-    constexpr const char* kBuild = "asan";
-#else
-    constexpr double kEditBudgetMs = 15.0;
-    constexpr double kRefreshBudgetMs = 100.0;
-    constexpr const char* kBuild = "debug -O0";
-#endif
+    constexpr rig::Budget kEditBudgetMs{
+        .strict = 1.0,
+        .debug = 25.0,
+        .asan = 60.0,
+        .tsan = 250.0,
+    };
+    constexpr rig::Budget kRefreshBudgetMs{
+        .strict = 5.0,
+        .debug = 200.0,
+        .asan = 500.0,
+        .tsan = 2000.0,
+    };
     constexpr double kRate = 192000.0;
     constexpr int kRounds = 20;
     const std::shared_ptr<TrackLoudnessProfile> profile =
@@ -859,48 +868,63 @@ static auto testRealizerLoudnessCost() -> void
     (void)designer->design(kEqPresetCurves[kEqPresetWarm], kRate, designs[0]);
     (void)designer->design(kEqPresetCurves[kEqPresetVocal], kRate, designs[1]);
     double sink = 0.0;
-    const auto editStart = std::chrono::steady_clock::now();
-    for (int round = 0; round < kRounds; ++round)
-    {
-        GraphicEQDesign design{};
-        (void)designer->design(
-            kEqPresetCurves[static_cast<size_t>(round) % kEqPresetCurves.size()], kRate, design);
-        sink += gain.onDesign(design, true);
-    }
-    const auto editEnd = std::chrono::steady_clock::now();
-    for (int round = 0; round < kRounds; ++round)
-    {
-        (void)gain.onDesign(designs[static_cast<size_t>(round) % 2U], true);
-        if (const auto change = gain.onRefresh())
+    const std::chrono::nanoseconds editCpu = rig::minThreadCpu(
+        rig::kTimingRuns,
+        [&]
         {
-            sink += change->gainDb;
-        }
-    }
-    const auto refreshEnd = std::chrono::steady_clock::now();
-    const double editMs =
-        std::chrono::duration<double, std::milli>(editEnd - editStart).count() / kRounds;
+            for (int round = 0; round < kRounds; ++round)
+            {
+                GraphicEQDesign design{};
+                (void)designer->design(
+                    kEqPresetCurves[static_cast<size_t>(round) % kEqPresetCurves.size()],
+                    kRate,
+                    design);
+                sink += gain.onDesign(design, true);
+            }
+        });
+    const std::chrono::nanoseconds editAndRefreshCpu = rig::minThreadCpu(
+        rig::kTimingRuns,
+        [&]
+        {
+            for (int round = 0; round < kRounds; ++round)
+            {
+                (void)gain.onDesign(designs[static_cast<size_t>(round) % 2U], true);
+                if (const auto change = gain.onRefresh())
+                {
+                    sink += change->gainDb;
+                }
+            }
+        });
+    const double editMs = std::chrono::duration<double, std::milli>(editCpu).count() / kRounds;
     // The refresh loop also paid an edit per round: take it back out.
     const double refreshMs =
-        (std::chrono::duration<double, std::milli>(refreshEnd - editEnd).count() / kRounds) -
-        editMs;
+        (std::chrono::duration<double, std::milli>(editAndRefreshCpu).count() / kRounds) - editMs;
+    const double editBound = rig::limit(kEditBudgetMs);
+    const double refreshBound = rig::limit(kRefreshBudgetMs);
     const double profileMb = static_cast<double>(profile->memoryBytes()) / 1e6;
     logInfo(std::format(
-        "[info] {} ({} build): 6000 × {} bands at 192 kHz ({:.1f} MB; ≤ {} kept): "
-        "edit (design + decimated gain) {:.3f} ms (budget {:.1f}), full refresh {:.3f} ms "
-        "(budget {:.1f}) [{:.1f}]\n",
+        "[info] {} ({} build, thread CPU, least of {}): 6000 × {} bands at 192 kHz ({:.1f} MB; "
+        "≤ {} kept): edit (design + decimated gain) {:.3f} ms (bound {:.1f}), full refresh "
+        "{:.3f} ms (bound {:.1f}) [{:.1f}]\n",
         kName,
-        kBuild,
+        rig::kBuild,
+        rig::kTimingRuns,
         profile->bandCount,
         profileMb,
         TrackLoudnessGain::kTrackSlots,
         editMs,
-        kEditBudgetMs,
+        editBound,
         std::max(0.0, refreshMs),
-        kRefreshBudgetMs,
+        refreshBound,
         sink));
-    if (!(editMs <= kEditBudgetMs) || !(refreshMs <= kRefreshBudgetMs))
+    if (!(editMs <= editBound) || !(refreshMs <= refreshBound))
     {
-        logFail(kName, "over budget");
+        logFail(kName,
+                std::format("over budget: edit {:.3f} ms (≤ {:.1f}), refresh {:.3f} ms (≤ {:.1f})",
+                            editMs,
+                            editBound,
+                            refreshMs,
+                            refreshBound));
         return;
     }
     logPass(kName);

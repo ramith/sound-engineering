@@ -252,26 +252,28 @@ namespace
             kernel.process(abl.abl(), kSoakFrames);
         }
 
-        // Timing sample (off-guard arithmetic is fine; the guard is thread_local and only set
-        // inside the armed region — std::chrono::now() does not allocate).
+        // Per-buffer cost: the render thread's own CPU time (rig::threadCpuTime — allocation-free,
+        // and blind to the time the thread was descheduled, unlike steady_clock).
         double minNs = 0.0;
         double maxNs = 0.0;
         double lastNs = 0.0;
         std::vector<double> sample;            // sparse timing sample for the median
         sample.reserve(1024U);                 // reserved BEFORE arming → no alloc under guard
         const uint64_t sampleEvery = std::max<uint64_t>(1U, buffers / 1000U);
+        // The last kDriftWindow buffers' costs, in a ring (no allocation under the guard).
+        constexpr std::size_t kDriftWindow = 64U;
+        std::array<double, kDriftWindow> lastWindow{};
 
         {
             const RtGuardScope guard; // arms this thread; resets the counter
             for (uint64_t b = 0U; b < buffers; ++b)
             {
                 fillSoakBlock(abl, kSoakFrames, phase);
-                const auto t0 = std::chrono::steady_clock::now();
+                const std::chrono::nanoseconds t0 = rig::threadCpuTime();
                 kernel.process(abl.abl(), kSoakFrames);
-                const auto t1 = std::chrono::steady_clock::now();
-                const double ns =
-                    std::chrono::duration<double, std::nano>(t1 - t0).count();
+                const auto ns = static_cast<double>((rig::threadCpuTime() - t0).count());
                 lastNs = ns;
+                lastWindow[b % kDriftWindow] = ns;
                 if (b == 0U || ns < minNs) { minNs = ns; }
                 if (ns > maxNs) { maxNs = ns; }
                 if ((b % sampleEvery) == 0U && sample.size() < sample.capacity())
@@ -286,12 +288,17 @@ namespace
             static_cast<double>(buffers) * static_cast<double>(kSoakFrames) /
             static_cast<double>(kSoakSampleRate);
         const double median = medianOf(sample);
+        // Growth raises EVERY buffer of the last window; noise (an interrupt, a cold cache) only
+        // ever adds to single buffers — so the window's least cost is the drift signal.
+        const std::size_t windowSize = std::min<std::size_t>(kDriftWindow, buffers);
+        const double lastWindowMinNs =
+            *std::min_element(lastWindow.begin(), lastWindow.begin() + static_cast<long>(windowSize));
 
         std::ostringstream oss;
         oss << "  [info] intensity=" << intensity << " buffers=" << buffers
             << " (~" << seconds << " s @ " << kSoakFrames << "/" << kSoakSampleRate << ")"
-            << " rtAllocs=" << allocs << " perBuf_ns[min/med/max/last]=" << minNs << "/" << median
-            << "/" << maxNs << "/" << lastNs << "\n";
+            << " rtAllocs=" << allocs << " perBuf_cpu_ns[min/med/max/last/lastWindowMin]=" << minNs
+            << "/" << median << "/" << maxNs << "/" << lastNs << "/" << lastWindowMinNs << "\n";
         info = oss.str();
 
         if (allocs != 0U)
@@ -303,16 +310,17 @@ namespace
             return err.str();
         }
 
-        // Bounded-timing guard (LENIENT — timing is noisy in a test; the alloc assertion is the
-        // primary gate). The LAST buffer must not be pathologically slower than the median (a
-        // growth/leak symptom). Only enforced when the median is meaningfully above the clock floor.
+        // Bounded-timing guard (the alloc assertion is the primary gate): the last window's
+        // CHEAPEST buffer must not be pathologically slower than the median — a growth/leak
+        // symptom. Only enforced when the median is meaningfully above the clock floor.
         constexpr double kTimingFloorNs = 200.0; // below this the ratio is pure clock noise
         constexpr double kMaxLastOverMedian = 50.0;
-        if (median > kTimingFloorNs && lastNs > kMaxLastOverMedian * median)
+        if (median > kTimingFloorNs && lastWindowMinNs > kMaxLastOverMedian * median)
         {
             std::ostringstream err;
-            err << "per-buffer time DRIFT: last=" << lastNs << " ns > " << kMaxLastOverMedian
-                << "x median=" << median << " ns (possible unbounded growth)";
+            err << "per-buffer CPU DRIFT: the last " << windowSize << " buffers' least cost "
+                << lastWindowMinNs << " ns > " << kMaxLastOverMedian << "x median=" << median
+                << " ns (possible unbounded growth)";
             return err.str();
         }
         return {};
@@ -438,25 +446,23 @@ static auto testSoakGaplessSourceZeroRtAllocPull() -> void
         }
 
         // --- RT pull region (ARMED): drain to ended(), straddling the A→B seam under the guard. ---
+        // rig::pumped (not pumpUntil): it neither allocates nor reports, so a hang is reported
+        // below, after the guard is off — never counted as an RT allocation.
+        bool ended = false;
         {
             const RtGuardScope guard;
-            int idleSpins = 0;
-            while (idleSpins < kPureGaplessMaxSpins && !gapless.ended())
-            {
-                const uint32_t produced =
-                    gapless.pullFloat(out.data(), kPureGaplessPullChunk, kSoakChannels);
-                ++totalPulls;
-                if (produced == 0U)
-                {
-                    ++idleSpins;
-                    // sleep_for does not allocate; it is the only place the armed thread blocks.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(kPureGaplessSpinNapMs));
-                }
-                else
-                {
-                    idleSpins = 0;
-                }
-            }
+            ended = rig::pumped("the soak's gapless session ended (ended())",
+                                [&]
+                                {
+                                    if (gapless.ended())
+                                    {
+                                        return rig::Pump::Done;
+                                    }
+                                    const uint32_t produced = gapless.pullFloat(
+                                        out.data(), kPureGaplessPullChunk, kSoakChannels);
+                                    ++totalPulls;
+                                    return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+                                });
             const uint64_t allocs = RtGuardScope::count();
             if (allocs != 0U)
             {
@@ -470,6 +476,17 @@ static auto testSoakGaplessSourceZeroRtAllocPull() -> void
                 return;
             }
         } // guard disarmed
+        if (!ended)
+        {
+            gapless.reapRetired();
+            cleanup();
+            logFail(kName,
+                    std::format("never reached: the gapless session ended (iteration {}, hang cap "
+                                "{} s)",
+                                iter,
+                                rig::kHangCap.count()));
+            return;
+        }
 
         totalSeams += gapless.transitionCount();
         gapless.reapRetired(); // off-RT: join the seam-retired source (poll-plane contract)
