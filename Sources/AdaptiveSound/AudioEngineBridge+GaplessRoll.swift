@@ -277,7 +277,10 @@ extension AudioEngineBridge {
         // instead of rolling the seam off a non-EOF `player.stop()` (wrong-song bug).
         player.scheduleFile(
             file, at: nil, completionCallbackType: player.playedBackCallbackType,
-            completionHandler: passthroughEndOfTrack(epoch: passthroughGeneration, player: player)
+            completionHandler: observed(
+                frames: file.length - file.framePosition,
+                passthroughEndOfTrack(epoch: passthroughGeneration, player: player)
+            )
         )
     }
 

@@ -121,7 +121,8 @@ extension AudioEngineBridge {
         case .passthrough, .playerConversion:
             player.scheduleSegment(file, startingFrame: frame, frameCount: AVAudioFrameCount(file.length - frame),
                                    at: nil, completionCallbackType: player.playedBackCallbackType,
-                                   completionHandler: passthroughEndOfTrack(epoch: epoch, player: player))
+                                   completionHandler: observed(frames: file.length - frame,
+                                                               passthroughEndOfTrack(epoch: epoch, player: player)))
         case let .resampler(session):
             let primed = resampleQueue.sync {
                 primeEnhancedResamplerLocked(session: session, player: player, startFrame: frame)

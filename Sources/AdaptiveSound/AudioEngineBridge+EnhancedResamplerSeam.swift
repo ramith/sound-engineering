@@ -69,7 +69,8 @@ extension AudioEngineBridge {
         // silent frame carries the end its last buffer would have, so the end is never lost.
         if session.reachedEnd, let marker = AVAudioPCMBuffer.silence(format: session.resampler.outputFormat) {
             let end = streamEnd(session: session, player: player, generation: generation)
-            player.scheduleBuffer(marker, completionCallbackType: player.playedBackCallbackType, completionHandler: end)
+            player.scheduleBuffer(marker, completionCallbackType: player.playedBackCallbackType,
+                                  completionHandler: observed(frames: 1, end))
         }
         return false
     }
@@ -100,7 +101,8 @@ extension AudioEngineBridge {
         let chunkEnd = session.resampler.outputFrames
         let chunkStart = chunkEnd - Int64(buffer.frameLength)
         guard let join = session.pendingJoin, join.outputFrame <= chunkEnd || session.reachedEnd else {
-            player.scheduleBuffer(buffer, completionCallbackType: lastType, completionHandler: last)
+            player.scheduleBuffer(buffer, completionCallbackType: lastType,
+                                  completionHandler: observed(frames: Int64(buffer.frameLength), last))
             return
         }
         let commit: Completion = { [weak self, weak player] _ in
@@ -115,14 +117,18 @@ extension AudioEngineBridge {
         if endingFrames > 0, endingFrames < Int64(buffer.frameLength),
            let ending = buffer.copy(frames: 0 ..< AVAudioFrameCount(endingFrames)),
            let next = buffer.copy(frames: AVAudioFrameCount(endingFrames) ..< buffer.frameLength) {
-            player.scheduleBuffer(ending, completionCallbackType: .dataConsumed, completionHandler: commit)
-            player.scheduleBuffer(next, completionCallbackType: lastType, completionHandler: last)
+            player.scheduleBuffer(ending, completionCallbackType: .dataConsumed,
+                                  completionHandler: observed(frames: Int64(ending.frameLength), commit))
+            player.scheduleBuffer(next, completionCallbackType: lastType,
+                                  completionHandler: observed(frames: Int64(next.frameLength), last))
             return
         }
-        player.scheduleBuffer(buffer, completionCallbackType: lastType) { type in
+        player.scheduleBuffer(buffer, completionCallbackType: lastType, completionHandler: observed(
+            frames: Int64(buffer.frameLength)
+        ) { type in
             commit(type)
             last(type)
-        }
+        })
     }
 
     /// The completion that chains the next read → convert → schedule iteration.
