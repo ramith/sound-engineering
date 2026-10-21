@@ -61,6 +61,7 @@ cxx_analysis_core_flags() {
 #     defined for the app: there every test point compiles to nothing.
 cxx_test_extra_flags() {
     local flags=(
+        -I "$_cxx_repo_root/third_party/googletest/googletest/include"
         -I "$_cxx_repo_root/third_party/libebur128/ebur128"
         "-DADAPTIVESOUND_TEST_DATA_DIR=\"$_cxx_repo_root/test-data\""
         "-DADAPTIVE_FIXTURES_DIR=\"$_cxx_repo_root/Tests/Fixtures/artwork-audio\""

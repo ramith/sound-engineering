@@ -1559,23 +1559,20 @@ static auto testDesignerTwoThreads() -> void
 // ---------------------------------------------------------------------------
 // Designer_Timing — one full design (5 refinement passes, warm per-rate cache) plus the UI's
 // read-back (256 + 31 points). The plan measured ~95–135 µs per design in optimised C++; the M1
-// budget is 0.25 ms (architect §2). The null test builds -O0 (and the sanitizers slow it
-// further), so the 0.25 ms bound applies only to an optimised, uninstrumented build; the debug
-// and sanitizer bounds only catch a gross regression. Serial-only: the pool would skew the clock.
+// budget is 0.25 ms (architect §2). Measured as the designing thread's own CPU time, the least of
+// rig::kTimingRuns batches (a busy or sleeping machine cannot inflate it); the 0.25 ms bound holds
+// in the -O2 timing run, and the debug and sanitizer builds only trip a catastrophic regression
+// (≥ 10× what they measure: debug ~0.7 ms here, 1.2 ms wall on CI).
 // ---------------------------------------------------------------------------
 static auto testDesignerTiming() -> void
 {
     static const char* const kName = "Designer_Timing";
-#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
-    constexpr double kBudgetMicros = 250.0;
-    constexpr const char* kBuild = "optimised";
-#elif __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
-    constexpr double kBudgetMicros = 20000.0;
-    constexpr const char* kBuild = "sanitizer";
-#else
-    constexpr double kBudgetMicros = 3000.0;
-    constexpr const char* kBuild = "debug -O0";
-#endif
+    constexpr rig::Budget kBudgetMicros{
+        .strict = 250.0,
+        .debug = 15000.0,
+        .asan = 20000.0,
+        .tsan = 40000.0,
+    };
     constexpr int kRounds = 200;
     const std::vector<EqCurve> curves = eqHardSet();
     const std::vector<double> uiGrid = eqUiGrid();
@@ -1584,41 +1581,51 @@ static auto testDesignerTiming() -> void
     GraphicEQDesign design{};
     (void)designer->design(curves.front(), 48000.0, design); // warm the 48 kHz tables
     double sink = 0.0;
-    const auto start = std::chrono::steady_clock::now();
-    for (int round = 0; round < kRounds; ++round)
-    {
-        (void)designer->design(curves[static_cast<size_t>(round) % curves.size()], 48000.0, design);
-        sink += design.filterGainDb[3];
-    }
-    const auto designed = std::chrono::steady_clock::now();
-    for (int round = 0; round < kRounds; ++round)
-    {
-        (void)GraphicEQDesigner::playedResponseDb(design, uiGrid, responseDb);
-        for (int band = 0; band < GraphicEQ::kBandCount; ++band)
+    const std::chrono::nanoseconds designCpu = rig::minThreadCpu(
+        rig::kTimingRuns,
+        [&]
         {
-            sink += GraphicEQDesigner::playedDb(design, GraphicEQ::centreHz(band));
-        }
-    }
-    const auto readBack = std::chrono::steady_clock::now();
+            for (int round = 0; round < kRounds; ++round)
+            {
+                (void)designer->design(
+                    curves[static_cast<size_t>(round) % curves.size()], 48000.0, design);
+                sink += design.filterGainDb[3];
+            }
+        });
+    const std::chrono::nanoseconds readBackCpu = rig::minThreadCpu(
+        rig::kTimingRuns,
+        [&]
+        {
+            for (int round = 0; round < kRounds; ++round)
+            {
+                (void)GraphicEQDesigner::playedResponseDb(design, uiGrid, responseDb);
+                for (int band = 0; band < GraphicEQ::kBandCount; ++band)
+                {
+                    sink += GraphicEQDesigner::playedDb(design, GraphicEQ::centreHz(band));
+                }
+            }
+        });
     const double designMicros =
-        std::chrono::duration<double, std::micro>(designed - start).count() / kRounds;
+        std::chrono::duration<double, std::micro>(designCpu).count() / kRounds;
     const double readBackMicros =
-        std::chrono::duration<double, std::micro>(readBack - designed).count() / kRounds;
-    logInfo(
-        std::format("[info] {} ({} build): design {:.1f} µs + read-back (256 + 31) {:.1f} µs "
-                    "per call at 48 kHz (budget {:.0f} µs) [{:.1f}]\n",
-                    kName,
-                    kBuild,
-                    designMicros,
-                    readBackMicros,
-                    kBudgetMicros,
-                    sink));
-    if (!(designMicros + readBackMicros <= kBudgetMicros))
+        std::chrono::duration<double, std::micro>(readBackCpu).count() / kRounds;
+    const double budget = rig::limit(kBudgetMicros);
+    logInfo(std::format("[info] {} ({} build, thread CPU, least of {}): design {:.1f} µs + "
+                        "read-back (256 + 31) {:.1f} µs per call at 48 kHz (bound {:.0f} µs) "
+                        "[{:.1f}]\n",
+                        kName,
+                        rig::kBuild,
+                        rig::kTimingRuns,
+                        designMicros,
+                        readBackMicros,
+                        budget,
+                        sink));
+    if (!(designMicros + readBackMicros <= budget))
     {
         logFail(kName,
-                std::format("{:.1f} µs per design + read-back exceeds {:.0f} µs",
+                std::format("{:.1f} µs of CPU per design + read-back exceeds {:.0f} µs",
                             designMicros + readBackMicros,
-                            kBudgetMicros));
+                            budget));
         return;
     }
     logPass(kName);

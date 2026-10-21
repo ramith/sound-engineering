@@ -145,6 +145,11 @@ namespace AdaptiveSound
                loudnessModule_->workerParked() && causalTap_->workerParked();
     }
 
+    bool DSPKernel::loudnessMeterCaughtUp() const noexcept
+    {
+        return loudnessModule_ == nullptr || loudnessModule_->meterCaughtUp();
+    }
+
     uint64_t DSPKernel::analysisWorkerWakes() const noexcept
     {
         return (loudnessModule_ != nullptr ? loudnessModule_->workerWakes() : 0U) +

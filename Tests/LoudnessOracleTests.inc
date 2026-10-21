@@ -623,6 +623,12 @@ static auto testLoudnessMeterBridgeIntegratedPerTrack() -> void
 // bumps atomics; the tap applies it at its next buffer, so the two never touch the meter at once
 // (run under `make tsan`). A last announcement made while the tap is idle is applied on the next
 // buffer: after it, Integrated is that track's alone.
+//
+// A designed race, kept (test-rig redesign, hazard N14): the bridge's 200 µs nap only spreads the
+// announcements over the tap's run, so TSan sees them interleave with the buffers. Nothing is
+// asserted on the interleaving — no wait, no deadline: under load the race may simply overlap less
+// (a weaker TSan probe, never a red run), and the verdict rests on the deterministic tail after both
+// threads joined.
 static auto testLoudnessMeterBridgeBeginTrackConcurrent() -> void
 {
     static const char* const kName = "Loudness_MeterBridge_BeginTrack_Concurrent";

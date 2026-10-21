@@ -174,6 +174,7 @@ void Realizer::barrier()
 
 void Realizer::postDrain()
 {
+    drainsPosted_.fetch_add(1U, std::memory_order_acq_rel);
     std::shared_ptr<Realizer> self = shared_from_this();
     dispatch_async(queue_, ^{
         self->drain();
@@ -349,6 +350,7 @@ void Realizer::reinitializeOnQueue(uint32_t sampleRate, uint32_t maxFrames)
 void Realizer::drain()
 {
     dispatch_assert_queue_debug(queue_);
+    drainsStarted_.fetch_add(1U, std::memory_order_acq_rel);
 
     // Take the dirty slots and clear drainPosted_ under the lock, then realise and publish without
     // it. A write after the take finds no drain pending and posts a fresh one, so no intent is

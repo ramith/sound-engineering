@@ -550,7 +550,7 @@ namespace
 //     equal-power blend's own change (wet == dry here: up to 2.6 dB for r 0.3) + 1.5 dB (the
 //     glide's own share of those 200 ms is 0.1 × a makeup of up to 12 dB);
 //   - after that, no 50 ms moves it by more than 0.5 dB (a 12 dB glide over 2 s is 0.3).
-// Serial-only: paced so the measurement worker keeps up.
+// The normaliser's meter keeps up with the render by state, not by pacing (engineRunSineMeasured).
 // ---------------------------------------------------------------------------
 static auto testIntensityZeroLevelGlide() -> void
 {
@@ -578,10 +578,9 @@ static auto testIntensityZeroLevelGlide() -> void
         EngineSine sine;
         sine.amplitude = amplitude;
         std::vector<float> out;
-        for (uint32_t b = 0U; b < engineBlocksFor(12.0); ++b)
+        if (!engineRunSineMeasured(kernel, sine, engineBlocksFor(12.0), out))
         {
-            engineRunSine(kernel, sine, 1U, out);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return;
         }
         for (const float to : {0.0F, kStartIntensity})
         {
@@ -919,14 +918,15 @@ static auto testKernelP0FadeKeepsPower() -> void
 // 192 kHz budget. The work per sample is the same at every rate (31 bells per channel), so the
 // budget is stated per rate: 5 % × fs / 192 kHz — 10 % at 384 kHz, 20 % at 768 kHz (a margin for
 // the M1 Pro floor's ×1.4–1.8). Holding the EQ off above a cap was rejected: the graph would no
-// longer be what plays. Optimised builds only; -O0 and the sanitizers report. Serial-only.
+// longer be what plays. The budget holds in the -O2 timing run (thread CPU time, the least of
+// rig::kTimingRuns runs); -O0 and the sanitizers only trip a catastrophic regression.
 // ---------------------------------------------------------------------------
 static auto testEqCpu71AboveSupportedRates() -> void
 {
     static const char* const kName = "EQ_Cpu_7_1_AboveSupportedRates";
     constexpr uint32_t kSeconds = 1U;
     std::string report =
-        std::format("[info] {} ({} build): 8 ch, % of one core\n", kName, kTdCpuBuild);
+        std::format("[info] {} ({} build): 8 ch, % of one core (thread CPU)\n", kName, kTdCpuBuild);
     std::string failures;
     for (const uint32_t fs : {384000U, 768000U})
     {

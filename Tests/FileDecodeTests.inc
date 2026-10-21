@@ -82,6 +82,46 @@ namespace
         ExtAudioFileDispose(out);
         return status == noErr;
     }
+
+    // Drain up to `frameCount` frames into `out` (sized frameCount*channels) from the background
+    // decoder: pull until they all came or the source is exhausted (decoder finished, ring drained
+    // — a short file's true end). Returns the frames produced; the caller compares. A decoder that
+    // stalls fails the test at the hang cap, naming the state — the old 100 × 2 ms budget (also
+    // under ASan and TSan) counted productive pulls too.
+    auto drainFrames(FileDecodeSource& src,
+                     std::vector<float>& out,
+                     uint32_t frameCount,
+                     uint32_t channels) -> uint32_t
+    {
+        uint32_t total = 0U;
+        (void)rig::pumpUntil("the decoder delivered the frames asked for, or reached its end",
+                             [&]
+                             {
+                                 if (total >= frameCount)
+                                 {
+                                     return rig::Pump::Done;
+                                 }
+                                 const uint32_t produced = src.pullFloat(
+                                     out.data() + (static_cast<std::size_t>(total) * channels),
+                                     frameCount - total,
+                                     channels);
+                                 total += produced;
+                                 if (total >= frameCount || src.exhausted())
+                                 {
+                                     return rig::Pump::Done;
+                                 }
+                                 return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+                             });
+        return total;
+    }
+
+    // Wait until the decode thread has read the whole file (decoderFinished). False — and the test
+    // has failed, naming the state — only if it never does.
+    auto pollFinished(FileDecodeSource& src) -> bool
+    {
+        return rig::waitUntil("the decoder finished reading the file",
+                              [&src] { return src.decoderFinished(); });
+    }
 } // namespace
 
 // Core bit-exact decode check, run once per backend (selected by ADAPTIVESOUND_DECODER in callers).
@@ -91,7 +131,6 @@ static auto decodeBitExactCase(const char* kName) -> void
     constexpr double kRate = 48000.0;
     constexpr double kI16Scale = 32768.0;
     constexpr float kTolerance = 1.0F / 32768.0F; // within one 16-bit LSB
-    constexpr int kMaxPollAttempts = 100;
     constexpr std::size_t kKnownCount = 16U; // 8 stereo frames
 
     // Known mid-range samples (avoid full scale so the check is robust to ExtAudioFile's exact
@@ -143,21 +182,10 @@ static auto decodeBitExactCase(const char* kName) -> void
         return;
     }
 
-    // Drain the decoded frames (decode runs on a background thread; poll briefly).
+    // Drain the decoded frames (decode runs on a background thread): until every frame came or
+    // the source ended (drainFrames; a decoder that stalls fails the test at the hang cap).
     std::vector<float> got(static_cast<std::size_t>(frameCount) * kChannels, 0.0F);
-    uint32_t total = 0U;
-    for (int attempt = 0; attempt < kMaxPollAttempts && total < frameCount; ++attempt)
-    {
-        const uint32_t produced =
-            src.pullFloat(got.data() + (static_cast<std::size_t>(total) * kChannels),
-                          frameCount - total,
-                          kChannels);
-        total += produced;
-        if (produced == 0U)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-    }
+    const uint32_t total = drainFrames(src, got, frameCount, kChannels);
     src.close();
     std::remove(path);
 
@@ -228,9 +256,6 @@ namespace
     constexpr double kB2bI24Scale = 8388608.0; // 2^23
     constexpr float kB2bTol16 = 1.0F / 32768.0F;
     constexpr float kB2bTol24 = 1.0F / 8388608.0F;
-    constexpr int kB2bMaxPollAttempts = 100;
-    constexpr int kB2bPollNapMs = 2;
-    constexpr int kB2bFinishedPollAttempts = 60; // ~120 ms at 2 ms naps
     constexpr uint32_t kBytesPerSample24 = 3U;
     constexpr uint32_t kWavHeaderBytes = 44U;
     constexpr uint32_t kPullChunk32 = 32U; // small pull for mismatch tests
@@ -430,44 +455,6 @@ namespace
         const std::size_t written = std::fwrite(bytes.data(), 1U, bytes.size(), handle);
         const int closed = std::fclose(handle);
         return (written == bytes.size()) && (closed == 0);
-    }
-
-    // Drain `frameCount` frames into `out` (sized frameCount*channels), polling the background
-    // decoder. Returns the total frames produced. Shared collect helper (keeps each test's
-    // cognitive complexity low; mirrors the existing decodeBitExactCase poll-drain loop).
-    auto drainFrames(FileDecodeSource& src,
-                     std::vector<float>& out,
-                     uint32_t frameCount,
-                     uint32_t channels) -> uint32_t
-    {
-        uint32_t total = 0U;
-        for (int attempt = 0; attempt < kB2bMaxPollAttempts && total < frameCount; ++attempt)
-        {
-            const uint32_t produced =
-                src.pullFloat(out.data() + (static_cast<std::size_t>(total) * channels),
-                              frameCount - total,
-                              channels);
-            total += produced;
-            if (produced == 0U)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(kB2bPollNapMs));
-            }
-        }
-        return total;
-    }
-
-    // Poll decoderFinished() up to ~120 ms. Returns true once the decode thread sets the flag.
-    auto pollFinished(FileDecodeSource& src) -> bool
-    {
-        for (int attempt = 0; attempt < kB2bFinishedPollAttempts; ++attempt)
-        {
-            if (src.decoderFinished())
-            {
-                return true;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(kB2bPollNapMs));
-        }
-        return src.decoderFinished();
     }
 
     // True if forcing FFmpeg fails to open this fixture (FFmpeg absent / not loadable). Used by
@@ -1606,18 +1593,22 @@ static auto testFileDecodeRingWraparound() -> void
     // Drain all frames in 4096-frame chunks (concurrent drain prevents permanent ring-full stall).
     std::vector<float> got(static_cast<std::size_t>(kWraparoundFrames) * kB2bChannels2, 0.0F);
     uint32_t total = 0U;
-    constexpr int kWrapMaxAttempts = 4000; // generous bound for the large drain
-    for (int attempt = 0; attempt < kWrapMaxAttempts && total < kWraparoundFrames; ++attempt)
-    {
-        const uint32_t want = std::min(kWraparoundChunk, kWraparoundFrames - total);
-        const uint32_t produced = src.pullFloat(
-            got.data() + (static_cast<std::size_t>(total) * kB2bChannels2), want, kB2bChannels2);
-        total += produced;
-        if (produced == 0U)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(kB2bPollNapMs));
-        }
-    }
+    (void)rig::pumpUntil("the wraparound file drained in 4096-frame chunks",
+                         [&]
+                         {
+                             const uint32_t want =
+                                 std::min(kWraparoundChunk, kWraparoundFrames - total);
+                             const uint32_t produced = src.pullFloat(
+                                 got.data() + (static_cast<std::size_t>(total) * kB2bChannels2),
+                                 want,
+                                 kB2bChannels2);
+                             total += produced;
+                             if (total >= kWraparoundFrames || src.exhausted())
+                             {
+                                 return rig::Pump::Done;
+                             }
+                             return produced > 0U ? rig::Pump::Progressed : rig::Pump::Idle;
+                         });
     src.close();
     std::remove(kPathWrap);
 
