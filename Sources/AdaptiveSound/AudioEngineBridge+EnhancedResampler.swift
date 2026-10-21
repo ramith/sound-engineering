@@ -97,6 +97,7 @@ extension AudioEngineBridge {
         resampleGeneration &+= 1
         passthroughGeneration &+= 1
         resampleSession = nil
+        supersedeObservedSchedule() // before the stop: the completions it fires are not owed
         return passthroughGeneration
     }
 

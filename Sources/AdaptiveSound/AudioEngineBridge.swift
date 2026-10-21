@@ -245,6 +245,10 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// track change, or reconfigure cleanly abandons every queued-but-not-yet-played buffer.
     var resampleGeneration: UInt64 = 0
 
+    /// A test rig's view of what the Enhanced path schedules and when its completions are handed on
+    /// (`StreamObserver`); `nil` in the app.
+    let streamObserver = Mutex<(any StreamObserver)?>(nil)
+
     // MARK: - Master Gain (methods in AudioEngineBridge+MasterGain.swift)
 
     /// The app's Master Gain in dB, which the player plays (`applyMasterGain`). Confined to
