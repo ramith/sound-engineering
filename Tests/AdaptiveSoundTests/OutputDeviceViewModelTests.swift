@@ -6,10 +6,11 @@
 @testable import AdaptiveSound
 import EQEditKit
 import Foundation
+import RigKit
 import Testing
 
 @MainActor
-@Suite("AudioViewModel — the output the engine moved to", .serialized)
+@Suite("AudioViewModel — the output the engine moved to", .timeLimit(.minutes(3)), .attachingLogTail)
 struct OutputDeviceViewModelTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
@@ -27,14 +28,13 @@ struct OutputDeviceViewModelTests {
 
     private let engine = DeviceTestEngine()
     private let viewModel: AudioViewModel
+    /// This test's own defaults suite, never the app's, removed with it: the view model keeps the
+    /// listener's settings there (a pick is remembered).
+    private let world = IsolatedDefaults("OutputDevice")
 
-    init() throws {
-        // This suite's own defaults, never the app's, emptied before each test: the view model keeps
-        // the listener's settings there (a pick is remembered), and one fixed name leaves one file.
-        let suiteName = "AdaptiveSoundTests.OutputDevice"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        viewModel = AudioViewModel(defaults: defaults, engine: engine)
+    init() {
+        QuietLog.install()
+        viewModel = AudioViewModel(defaults: world.defaults, engine: engine)
         viewModel.isEngineReady = true
         viewModel.selectedDevice = Self.headphones
     }
@@ -48,55 +48,53 @@ struct OutputDeviceViewModelTests {
     }
 
     /// The engine moved (or lost) its device and calls back: the view model re-reads.
-    private func engineMoves(to device: UInt32, listing devices: [AudioDeviceModel]) async {
+    private func engineMoves(to device: UInt32, listing devices: [AudioDeviceModel]) async throws {
         engine.state.withLock {
             $0.devices = devices
             $0.engineDevice = device
         }
         viewModel.refreshDevices()
-        await settle()
+        try await settle()
     }
 
-    /// Let the view model's tasks (refresh, start) run.
-    private func settle() async {
-        for _ in 0 ..< 50 {
-            await Task.yield()
-        }
+    /// Wait until the view model's tasks (refresh, start) have finished.
+    private func settle() async throws {
+        try await viewModel.settled()
     }
 
     @Test("a lost device is never replaced by a pick: the fallback is the engine's, not the user's")
-    func lostDeviceIsNeverPicked() async {
+    func lostDeviceIsNeverPicked() async throws {
         // The headphones are gone and the engine has not moved yet: no device shows, none is picked.
-        await engineMoves(to: Self.headphones.id, listing: [Self.speakers])
+        try await engineMoves(to: Self.headphones.id, listing: [Self.speakers])
         #expect(viewModel.selectedDevice == nil)
         // The engine falls back to the speakers: the pill follows it, still without a pick.
-        await engineMoves(to: Self.speakers.id, listing: [Self.speakers])
+        try await engineMoves(to: Self.speakers.id, listing: [Self.speakers])
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
         #expect(engine.state.withLock { $0.picks }.isEmpty, "a pick would move the pin to the fallback")
     }
 
     @Test("Play on the fallback is not a pick")
-    func playOnFallbackIsNotAPick() async {
-        await engineMoves(to: Self.speakers.id, listing: [Self.speakers])
+    func playOnFallbackIsNotAPick() async throws {
+        try await engineMoves(to: Self.speakers.id, listing: [Self.speakers])
         queueOneSong()
         viewModel.startPlayback()
-        await settle()
+        try await settle()
         #expect(engine.state.withLock { $0.starts } == [0])
         #expect(engine.state.withLock { $0.picks }.isEmpty)
     }
 
     @Test("the chosen headphones come back under a new id while Pure plays on the fallback: playback moves")
-    func pureMovesBackToReturningDevice() async {
+    func pureMovesBackToReturningDevice() async throws {
         var identities: [EQOutputKey?] = []
         viewModel.onOutputIdentityChanged = { identities.append($0) }
-        await engineMoves(to: Self.speakers.id, listing: [Self.speakers])
+        try await engineMoves(to: Self.speakers.id, listing: [Self.speakers])
         // Resumed on the speakers, on Pure, 1:30 in.
         queueOneSong()
         viewModel.isPlaying = true
         viewModel.playbackPosition = 90
         engine.state.withLock { $0.signalPath.path = .pure }
         // The engine's rule adopts the headphones back (same UID, new id).
-        await engineMoves(to: Self.headphonesBack.id, listing: [Self.speakers, Self.headphonesBack])
+        try await engineMoves(to: Self.headphonesBack.id, listing: [Self.speakers, Self.headphonesBack])
         #expect(viewModel.selectedDevice?.id == Self.headphonesBack.id)
         #expect(identities.last??.uid == Self.headphones.uid, "the per-output EQ is the headphones' again")
         #expect(engine.state.withLock { $0.starts } == [90], "restarted on the headphones at the playhead")
@@ -104,7 +102,7 @@ struct OutputDeviceViewModelTests {
     }
 
     @Test("launch shows the device the engine starts on and picks nothing (it is not the user's choice)")
-    func launchIsNotAPick() async {
+    func launchIsNotAPick() async throws {
         engine.state.withLock {
             $0.devices = [Self.speakers, Self.headphones]
             $0.engineDevice = Self.speakers.id
@@ -112,7 +110,7 @@ struct OutputDeviceViewModelTests {
         viewModel.isEngineReady = false
         viewModel.selectedDevice = nil
         viewModel.initializeEngine()
-        await settle()
+        try await settle()
         viewModel.disarmTransportTick()
         #expect(viewModel.isEngineReady)
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
@@ -120,13 +118,13 @@ struct OutputDeviceViewModelTests {
     }
 
     @Test("a re-initialization while the chosen headphones are away picks nothing: the choice stays")
-    func reinitializationIsNotAPick() async {
+    func reinitializationIsNotAPick() async throws {
         engine.state.withLock { $0.devices = [Self.speakers, Self.headphones] }
         viewModel.selectDevice(Self.headphones) // the user's pick
-        await settle()
-        await engineMoves(to: Self.speakers.id, listing: [Self.speakers]) // lost; the rule fell back
+        try await settle()
+        try await engineMoves(to: Self.speakers.id, listing: [Self.speakers]) // lost; the rule fell back
         viewModel.retryInitialization() // the Retry banner, or the engine-not-initialized self-heal
-        await settle()
+        try await settle()
         viewModel.disarmTransportTick()
         #expect(viewModel.isEngineReady)
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
@@ -134,10 +132,10 @@ struct OutputDeviceViewModelTests {
     }
 
     @Test("the user's pick goes to the engine as a pick (the pin moves with it)")
-    func menuPickIsAPick() async {
+    func menuPickIsAPick() async throws {
         engine.state.withLock { $0.devices = [Self.speakers, Self.headphones] }
         viewModel.selectDevice(Self.speakers)
-        await settle()
+        try await settle()
         #expect(engine.state.withLock { $0.picks } == [Self.speakers.id])
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
     }

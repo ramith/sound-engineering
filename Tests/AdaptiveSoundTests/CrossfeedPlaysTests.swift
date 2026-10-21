@@ -5,11 +5,12 @@
 
 @testable import AdaptiveSound
 import Foundation
+import RigKit
 import SettingsKit
 import Testing
 
 @MainActor
-@Suite("Crossfeed — where it plays, and what the hero shows", .serialized)
+@Suite("Crossfeed — where it plays, and what the hero shows", .timeLimit(.minutes(3)), .attachingLogTail)
 struct CrossfeedPlaysTests {
     /// Wired headphones in the Mac's own jack: the built-in transport, classified headphones by its
     /// data source ('hdpn').
@@ -24,23 +25,18 @@ struct CrossfeedPlaysTests {
         uid: "AirPlay:living-room", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: false
     )
 
-    private static let suiteName = "AdaptiveSoundTests.CrossfeedPlays"
-    private let defaults: UserDefaults
-
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: Self.suiteName))
-        defaults.removePersistentDomain(forName: Self.suiteName)
+    /// The suite of this test's own, removed with it.
+    private let world = IsolatedDefaults("CrossfeedPlays")
+    private var defaults: UserDefaults {
+        world.defaults
     }
 
-    /// Let the view model's tasks run: a start, a device read.
-    private func settle() async {
-        for _ in 0 ..< 50 {
-            await Task.yield()
-        }
+    init() {
+        QuietLog.install()
     }
 
     @Test("the Mac's own headphone jack plays crossfeed; an AirPlay speaker holds it off")
-    func crossfeedFollowsTheClassifier() async {
+    func crossfeedFollowsTheClassifier() async throws {
         let engine = DeviceTestEngine()
         engine.state.withLock {
             $0.devices = [Self.jack, Self.airPlay]
@@ -48,7 +44,7 @@ struct CrossfeedPlaysTests {
         }
         let viewModel = AudioViewModel(defaults: defaults, engine: engine)
         viewModel.initializeEngine()
-        await settle()
+        try await viewModel.settled()
         viewModel.disarmTransportTick()
 
         viewModel.crossfeedEnabled = true
@@ -57,7 +53,7 @@ struct CrossfeedPlaysTests {
 
         engine.state.withLock { $0.engineDevice = Self.airPlay.id }
         viewModel.refreshDevices()
-        await settle()
+        try await viewModel.settled()
         #expect(!viewModel.crossfeedPlays, "an AirPlay speaker is not headphones")
         #expect(engine.state.withLock { $0.crossfeeds }.last == false)
         #expect(viewModel.crossfeedEnabled, "the speaker holds crossfeed off; the listener's choice stays")

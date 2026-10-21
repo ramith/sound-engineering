@@ -5,23 +5,18 @@
 
 import EQEditKit
 import Foundation
+import RigKit
 @testable import SettingsKit
 import Testing
 
 @MainActor
-@Suite("R1.1-A break-it — SettingsKit", .serialized)
+@Suite("R1.1-A break-it — SettingsKit", .timeLimit(.minutes(3)))
 struct R11aSettingsBreakTests {
     private static let key = "listeningSettingsV1"
-    private let suiteName = "R11aSettingsBreak-\(UUID().uuidString)"
-    private let defaults: UserDefaults
-
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    private func cleanUp() {
-        defaults.removePersistentDomain(forName: suiteName)
+    /// The suite of this test's own, removed with it.
+    private let world = IsolatedDefaults("R11aSettingsBreak")
+    private var defaults: UserDefaults {
+        world.defaults
     }
 
     /// The listener left Master Gain at −30 dB. Then the stored value is damaged into another TYPE (a
@@ -29,7 +24,6 @@ struct R11aSettingsBreakTests {
     /// no louder (Silent) and be copied aside, as an unreadable JSON value is.
     @Test("SET-1: a value of the wrong plist type reads Silent and is kept aside")
     func wrongPlistType() {
-        defer { cleanUp() }
         let damaged: [(String, Any)] = [
             ("string", "garbage"), ("number", 42), ("dictionary", ["masterGainDecibels": -30]), ("array", [1, 2]),
         ]
@@ -52,7 +46,6 @@ struct R11aSettingsBreakTests {
     /// Valid JSON with the Master Gain key missing: the level left is unknown.
     @Test("SET-2: a stored value without a Master Gain level reads no louder than Silent")
     func missingLevel() {
-        defer { cleanUp() }
         var report: [String] = []
         for json in [#"{}"#, #"{"version":1}"#, #"{"version":1,"pureMode":true,"shuffle":true}"#] {
             defaults.set(Data(json.utf8), forKey: Self.key)
@@ -66,7 +59,6 @@ struct R11aSettingsBreakTests {
     /// from `listeningSettingsV1` to their own journal — H-2 — which reads them one by one.)
     @Test("SET-3: one bad Pure volume loan doesn't drop the good ones")
     func oneBadLoan() {
-        defer { cleanUp() }
         let json = #"[{"deviceUID":"DAC-A","ceiling":-20,"anchor":-20,"lastSet":-32},"#
             + #"{"deviceUID":"DAC-B","ceiling":"oops","anchor":-20,"lastSet":-32}]"#
         defaults.set(Data(json.utf8), forKey: "pureVolumeLoansV1")
@@ -114,7 +106,6 @@ struct R11aSettingsBreakTests {
 
     @Test("SET-5: saves coalesce; flush at quit writes the newest; a later turn writes nothing more")
     func quitFlush() async {
-        defer { cleanUp() }
         let store = SettingsStore(defaults: defaults)
         var settings = store.load()
         settings.masterGainDecibels = -5
@@ -123,9 +114,7 @@ struct R11aSettingsBreakTests {
         store.save(settings)
         store.flush() // quit
         let written = SettingsStore(defaults: defaults).load().masterGainDecibels
-        for _ in 0 ..< 10 {
-            await Task.yield()
-        }
+        await store.pendingWrite?.value
         let afterTurn = SettingsStore(defaults: defaults).load().masterGainDecibels
         print("R11A SET-5 flushed=\(written) afterTurn=\(afterTurn)")
         #expect(written == -25 && afterTurn == -25)
@@ -133,7 +122,6 @@ struct R11aSettingsBreakTests {
 
     @Test("SET-6: R1's shuffle and repeat are taken in once; a later change is what is kept")
     func r1Keys() {
-        defer { cleanUp() }
         defaults.set(true, forKey: "queue.cursor.shuffle")
         defaults.set(2, forKey: "queue.cursor.repeatMode")
         let store = SettingsStore(defaults: defaults)
