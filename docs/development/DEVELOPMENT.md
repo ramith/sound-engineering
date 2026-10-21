@@ -101,11 +101,11 @@ The gate is a **registry**, not a script: every check is one row in `scripts/gat
 **`make stress`: repeat a test under the CI-like profile.** Before merging a new or changed timing test, stress it:
 
 ```bash
-make stress TEST='ANALYZER-05' N=50          # Swift: swift test --skip-build --filter, every iteration must run >= 1 test
-make stress TEST='Loudness_WorkersSleepWhileIdle' N=20
+make stress TEST='prefetchPromoted' N=50     # Swift: swift test --skip-build --filter (function/type names), every iteration must run >= 1 test
+make stress KIND=cpp TEST='*.Loudness_WorkersSleepWhileIdle' N=20   # C++: a GoogleTest filter (Tier.Name), shuffled, seed printed
 ```
 
-The profile puts `ncpu − 3` CPU hogs in their own process group (a `trap` kills the group on any exit, so a leaked busy loop cannot outlive the run) and sets `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`. Each iteration has a hard cap (`STRESS_TIMEOUT`, default 600 s). The exit code is the verdict; put the pass rate in the PR (e.g. "ANALYZER-05 50/50 under the CI-like profile"). A C++ stress run (`KIND=cpp`) needs the repeat and filter flags of the C++ runner; until those land it refuses rather than faking a run. The nightly stress workflow (`.github/workflows/nightly-stress.yml`) runs the same command on a schedule and is advisory.
+The profile puts `ncpu − 3` CPU hogs in their own process group (a `trap` kills the group on any exit, so a leaked busy loop cannot outlive the run) and sets `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`. Each iteration has a hard cap (`STRESS_TIMEOUT`, default 600 s). The exit code is the verdict; put the pass rate in the PR (e.g. "ANALYZER-05 50/50 under the CI-like profile"). A C++ stress run (`KIND=cpp TEST='Concurrent.*'`) repeats the GoogleTest filter N times, shuffled, with its seed printed so a failure can be replayed. The nightly stress workflow (`.github/workflows/nightly-stress.yml`) runs the same command on a schedule and is advisory.
 
 `make ci` == `make strict-gate`: the same registry on your Mac and in CI, so a green local run means the same thing as a green CI run.
 

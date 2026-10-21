@@ -11,8 +11,9 @@
 #   3. HARD CAP per iteration (STRESS_TIMEOUT, default 600s): a hang is killed and named.
 #
 # Swift: loops `swift test --skip-build --filter TEST`, and every iteration must run >= 1 test.
-# C++:   hook into scripts/build-null-test.sh, which only accepts --repeat/--filter once Lane B
-#        adds them; until then KIND=cpp refuses loudly rather than faking a stress run.
+# C++:   scripts/build-null-test.sh with --shards 3 --gtest_filter=TEST --gtest_repeat=N
+#        --gtest_shuffle and a printed --gtest_random_seed (TEST is a GoogleTest filter, e.g.
+#        'Concurrent.*' for the Concurrent tier or 'Concurrent.Loudness_*').
 #
 # Environment: TEST (required), N (default 20), KIND (default swift), STRESS_TIMEOUT (default 600),
 #              STRESS_HOGS (default ncpu-3), PROFILE=ci-like (default; `none` disables the hogs).
@@ -28,7 +29,7 @@ KIND="${KIND:-swift}"
 STRESS_TIMEOUT="${STRESS_TIMEOUT:-600}"
 PROFILE="${PROFILE:-ci-like}"
 
-[[ -n "$TEST" ]] || fail "make stress needs TEST=<filter>, e.g. make stress TEST=ANALYZER-05 N=50"
+[[ -n "$TEST" ]] || fail "make stress needs TEST=<filter> (a function or type name, not a display name), e.g. make stress TEST=prefetchPromoted N=50"
 [[ "$N" =~ ^[0-9]+$ ]] && ((N >= 1)) || fail "N must be a positive integer (got '$N')"
 
 ncpu="$(sysctl -n hw.ncpu)"
@@ -73,9 +74,11 @@ run_iteration() {
     ( set -m; "$@" >"$log" 2>&1 ) &
     local pid=$!
     local pgid="$pid"
-    ( sleep "$STRESS_TIMEOUT"; kill -0 -- "-$pgid" 2>/dev/null && { kill -TERM -- "-$pgid" 2>/dev/null; sleep 5; kill -KILL -- "-$pgid" 2>/dev/null; echo "CAP" > "$log.cap"; } ) &
+    # The watcher's stderr is closed: killed mid-`sleep` when the run ends first, bash would print
+    # "Terminated: 15 sleep" into the stress output (and `wait` its job notice when a run is capped).
+    ( exec 2>/dev/null; sleep "$STRESS_TIMEOUT"; kill -0 -- "-$pgid" 2>/dev/null && { kill -TERM -- "-$pgid" 2>/dev/null; sleep 5; kill -KILL -- "-$pgid" 2>/dev/null; echo "CAP" > "$log.cap"; } ) &
     local wd=$!
-    wait "$pid"
+    wait "$pid" 2>/dev/null
     ITER_RC=$?
     # The cap watcher is not in its own group (only the step is), so kill it and its sleep by pid.
     pkill -P "$wd" 2>/dev/null
@@ -112,9 +115,11 @@ elif [[ "$KIND" == "cpp" ]]; then
     fi
     seed="${SEED:-$(( (RANDOM * 32768 + RANDOM) % 99999 + 1 ))}"
     echo "C++ shuffle seed: $seed (rerun with SEED=$seed to reproduce the order)"
-    run_iteration 1 bash scripts/gate/null-run.sh --shards 3 "--gtest_filter=$TEST" "--gtest_repeat=$N" \
+    # One process, no shards: a stress filter is usually one test or a few, and a shard that selects
+    # none fails by design (--gtest_fail_if_no_test_selected). Repetition, not splitting, is the point.
+    run_iteration 1 bash scripts/gate/null-run.sh "--gtest_filter=$TEST" "--gtest_repeat=$N" \
         --gtest_shuffle "--gtest_random_seed=$seed"
-    if ((ITER_RC == 0)); then passed=$N; else failed=1; echo "C++ stress FAILED (exit $ITER_RC); log: $ITER_OUT"; fi
+    if ((ITER_RC == 0)); then passed=$N; else failed=$N; echo "C++ stress FAILED: the run of $N shuffled repeats exited $ITER_RC; log: $ITER_OUT"; fi
 else
     fail "KIND must be swift or cpp (got '$KIND')"
 fi
