@@ -1567,11 +1567,13 @@ static auto testDesignerTwoThreads() -> void
 static auto testDesignerTiming() -> void
 {
     static const char* const kName = "Designer_Timing";
+    // Tripwires ≥ 10× each build's measurement (2026-10-21, M-series: debug 0.7 ms, ASan 2.3 ms,
+    // TSan 4.8 ms per design + read-back).
     constexpr rig::Budget kBudgetMicros{
         .strict = 250.0,
         .debug = 15000.0,
-        .asan = 20000.0,
-        .tsan = 40000.0,
+        .asan = 25000.0,
+        .tsan = 60000.0,
     };
     constexpr int kRounds = 200;
     const std::vector<EqCurve> curves = eqHardSet();
