@@ -3,6 +3,7 @@ import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 import PlaybackQueueKit
+import RigKit
 import Testing
 
 // MARK: - A same-rate gapless seam plays as one conversion (council C-22, P3 D39 b–d, D40; KI-GAP-04)
@@ -48,8 +49,8 @@ struct EnhancedSeamTests {
         let recording = try rig.recordPlayer()
         let reference = try Self.continuousConversion(frames: lengthA + Self.nextFrames)
         let total = reference.count + 4800
-        _ = try #require(rig.samples(frames: total + 9600, paced: true))
-        let played = try #require(recording.samples(frames: total), "the player's output was not recorded")
+        _ = try #require(await rig.samples(frames: total + 9600))
+        let played = try await recording.samples(frames: total)
         let seam = Self.seamFrame(lengthA)
 
         // Where B's sound lands against the one conversion (measured past the join, where a per-track
@@ -83,16 +84,16 @@ struct EnhancedSeamTests {
         let durationA = Double(lengthA) / Self.rate
 
         // Everything up to A's last output frame, but not that frame: A is still what plays.
-        _ = try #require(rig.samples(frames: seam - 1, paced: true))
-        Self.settle(bridge)
+        _ = try #require(await rig.samples(frames: seam - 1))
+        Self.drain(bridge) // the render already waited for every completion due; this runs what they queued
         #expect(bridge.gaplessTransitionCount == 0, "the seam was counted before B was heard (D40)")
         #expect(bridge.lastFileURL == rig.url, "A is still the playing file")
         let beforeSeam = try #require(rig.position)
         #expect(beforeSeam <= durationA, "the playhead is still inside A: \(beforeSeam) of \(durationA)")
 
         // A's last frame, and one block of B: the seam is counted once the player has consumed A.
-        _ = try #require(rig.samples(frames: 1 + 512, paced: true))
-        try Self.waitFor { bridge.gaplessTransitionCount == 1 }
+        _ = try #require(await rig.samples(frames: 1 + 512))
+        try await until("the seam to be counted") { bridge.gaplessTransitionCount == 1 }
         #expect(bridge.lastFileURL != rig.url, "B is the playing file")
 
         // The playhead is the player's time less A's whole length: B's time from its own first frame,
@@ -114,10 +115,10 @@ struct EnhancedSeamTests {
         let bridge = rig.bridge
         let recording = try rig.recordPlayer()
         let reference = try Self.continuousConversion(frames: lengthA + lengthB)
-        _ = try #require(rig.samples(frames: reference.count + 4800 + 9600, paced: true))
-        try Self.waitFor { bridge.gaplessPlaybackEnded }
+        _ = try #require(await rig.samples(frames: reference.count + 4800 + 9600))
+        try await until("the end of the program to be flagged") { bridge.gaplessPlaybackEnded }
         #expect(bridge.gaplessTransitionCount == 1, "the seam is counted, and before the end")
-        let played = try #require(recording.samples(frames: reference.count + 4800))
+        let played = try await recording.samples(frames: reference.count + 4800)
         let error = Self.peakError(played, reference, over: 0 ..< reference.count)
         #expect(error <= Self.tolerance, "the program differs from one conversion by \(error)")
         await rig.finish()
@@ -135,7 +136,7 @@ struct EnhancedSeamTests {
         // Play until the stream has taken B (its join pending), short of hearing it.
         var rendered = 0
         while bridge.resampleQueue.sync(execute: { bridge.resampleSession?.pendingJoin == nil }) {
-            _ = try #require(rig.samples(frames: 512, paced: true))
+            _ = try #require(await rig.samples(frames: 512))
             rendered += 512
             try #require(rendered < Self.seamFrame(lengthA), "the stream never took the next track")
         }
@@ -157,9 +158,9 @@ struct EnhancedSeamTests {
         // From the seek's frame, A then B are again one conversion.
         let from = Int((0.5 * Self.rate).rounded())
         let reference = try Self.continuousConversion(frames: lengthA + Self.nextFrames - from, from: from)
-        _ = try #require(rig.samples(frames: reference.count + 4800 + 9600, paced: true))
-        try Self.waitFor { bridge.gaplessTransitionCount == 1 }
-        let played = try #require(recording.samples(frames: rendered + reference.count + 4800))
+        _ = try #require(await rig.samples(frames: reference.count + 4800 + 9600))
+        try await until("the seam to be counted") { bridge.gaplessTransitionCount == 1 }
+        let played = try await recording.samples(frames: rendered + reference.count + 4800)
         let afterSeek = Array(played[rendered...])
         let joined = Self.peakError(afterSeek, reference, over: 0 ..< reference.count)
         #expect(joined <= Self.tolerance, "after the seek the program differs from one conversion by \(joined)")
@@ -179,8 +180,8 @@ struct EnhancedSeamTests {
         await bridge.setNextTrack(nextURL, ticket: OnDeckTicket(session: 0, sequence: 1))
         let first = try #require(bridge.resampleQueue.sync { bridge.resampleSession })
 
-        let output = try #require(rig.samples(frames: Self.seamFrame(lengthA) + 24000, paced: true))
-        try Self.waitFor { bridge.gaplessTransitionCount == 1 }
+        let output = try #require(await rig.samples(frames: Self.seamFrame(lengthA) + 24000))
+        try await until("the seam to be counted") { bridge.gaplessTransitionCount == 1 }
         let second = try #require(bridge.resampleQueue.sync { bridge.resampleSession })
         #expect(second !== first, "the next track has its own converter")
         #expect(second.resampler.inputFormat.sampleRate == next.rate)
@@ -234,19 +235,8 @@ struct EnhancedSeamTests {
         String(format: "%.1f", 20 * log10(Double(max(value, 1e-12)) / Double(peak)))
     }
 
-    /// Let completions already delivered run (the chain's work lands on `resampleQueue`).
-    static func settle(_ bridge: AudioEngineBridge) {
-        Thread.sleep(forTimeInterval: 0.1)
+    /// Run what the delivered completions queued on `resampleQueue`.
+    static func drain(_ bridge: AudioEngineBridge) {
         bridge.resampleQueue.sync {}
-    }
-
-    /// Wait up to a second for `condition`, letting the completion chain run.
-    static func waitFor(_ condition: () -> Bool) throws {
-        var waited = 0
-        while !condition(), waited < 100 {
-            Thread.sleep(forTimeInterval: 0.01)
-            waited += 1
-        }
-        try #require(condition(), "timed out")
     }
 }

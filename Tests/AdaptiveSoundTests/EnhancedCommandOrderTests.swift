@@ -20,7 +20,7 @@ struct EnhancedCommandOrderTests {
           arguments: SubPath.allCases)
     func overtakenSeekIsDropped(_ path: SubPath) async throws {
         let rig = try await EnhancedTransportRig(path: path, name: "overtaken-seek")
-        _ = rig.render(seconds: 0.2)
+        _ = try await rig.render(seconds: 0.2)
         let (_, older) = await rig.seek(to: 0.4)
         let (error, newer) = await rig.seek(to: 1.2)
         #expect(error == nil)
@@ -36,13 +36,13 @@ struct EnhancedCommandOrderTests {
     @Test("a stop overtaken by a newer command is dropped: playback goes on", arguments: SubPath.allCases)
     func overtakenStopIsDropped(_ path: SubPath) async throws {
         let rig = try await EnhancedTransportRig(path: path, name: "overtaken-stop")
-        _ = rig.render(seconds: 0.2)
+        _ = try await rig.render(seconds: 0.2)
         let (_, older) = await rig.seek(to: 0.3) // stands in for the Stop's number
         let (_, newer) = await rig.seek(to: 0.5) // the Play the user asked after it
         try await rig.bridge.stopAudio(epoch: older, pausing: false) // the Stop reaches the queue last
         #expect(rig.transport.epoch == newer)
         #expect(rig.bridge.enhancedPlayIntent, "a dropped stop leaves the play intent")
-        let after = try #require(rig.render(seconds: 0.3, skipping: 0.1))
+        let after = try #require(await rig.render(seconds: 0.3, skipping: 0.1))
         #expect(after > EnhancedTransportRig.silence, "the song the app shows as playing still plays")
         await rig.finish()
     }
@@ -50,7 +50,7 @@ struct EnhancedCommandOrderTests {
     @Test("the newest stop still stops", arguments: SubPath.allCases)
     func newestStopStops(_ path: SubPath) async throws {
         let rig = try await EnhancedTransportRig(path: path, name: "newest-stop")
-        _ = rig.render(seconds: 0.2)
+        _ = try await rig.render(seconds: 0.2)
         let (_, seek) = await rig.seek(to: 0.3)
         try await rig.bridge.stopAudio(epoch: seek + 1, pausing: false)
         #expect(rig.transport.epoch == seek + 1)

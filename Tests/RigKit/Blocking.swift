@@ -6,6 +6,7 @@
 // six-second fixtures took nineteen). `blocking` runs such work on a thread of its own and awaits it.
 
 import Foundation
+public import Testing
 
 /// Run `work` on a dedicated thread, named `name`, and return what it returns (or throw what it throws).
 /// The caller suspends meanwhile; no pool thread is held. `work` cannot be cancelled once started, so it
@@ -21,5 +22,26 @@ public func blocking<Value: Sendable>(
         thread.name = "rig.blocking.\(name)"
         thread.qualityOfService = .userInitiated
         thread.start()
+    }
+}
+
+/// Wait, ON A THREAD OF ITS OWN (inside `blocking`), until `condition` holds: the synchronous twin of
+/// `until`, for blocking test code that cannot suspend. It never runs on the cooperative pool. At its cap it
+/// THROWS `RigTimeout`, naming the state, exactly as `until` does.
+public func untilBlocking(
+    _ what: String,
+    cap: Duration = .seconds(120),
+    sourceLocation: SourceLocation = #_sourceLocation,
+    _ condition: () throws -> Bool
+) throws {
+    let deadline = ContinuousClock.now + cap
+    var naps = 0
+    while try !condition() {
+        guard ContinuousClock.now < deadline else {
+            throw RigTimeout(what: what, cap: cap, location: sourceLocation)
+        }
+        // Stay hot for a moment (a completion is ~150 µs away), then nap longer.
+        naps += 1
+        usleep(naps < 200 ? 50 : 1000)
     }
 }
