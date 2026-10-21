@@ -4,17 +4,22 @@
     @preconcurrency import AVFoundation
     import Foundation
     import OutputDeviceKit
+    import Synchronization
 
     // MARK: - `make main-thread-stall` (S10.8 G, the disconnect freeze)
 
-    /// `AdaptiveSound -ASMainThreadStall <mode>`: hold AVFAudio's engine-wide lock for seconds — as
-    /// macOS held a dying device's — and prove the main thread never waits on it. Runs the REAL
-    /// bridge and view model on an offline engine (`StallRig`: no device opened, nothing heard), times
-    /// every main-thread entry while the lock is held, and exits 0 only if every call returned
-    /// within `bound`, at most 1% took over `target` (an NSLog write or a scheduler hiccup can; a
-    /// wait on the engine would make them all slow), and the main queue never waited past
-    /// `queueBound`. A control read of the old kind (a live `isPlaying` / `isRunning` on main) must
-    /// still wait, proving the lock really was held.
+    /// `AdaptiveSound -ASMainThreadStall <mode>`: hold AVFAudio's engine-wide lock — as macOS held a
+    /// dying device's — and prove the main thread never waits on it. Runs the REAL bridge and view
+    /// model on an offline engine (`StallRig`: no device opened, nothing heard).
+    ///
+    /// Judged by BEHAVIOUR, not a stopwatch. The rig holds the lock until THIS test releases it; the
+    /// run passes only if, while the lock is held, main keeps finishing its work: `minRounds` probe
+    /// rounds (every way the main thread reaches the engine) complete and `minRoundTrips` main-queue
+    /// probes come back. A main thread that touches the lock cannot finish until the release, and the
+    /// hang cap fails the run naming what main was inside. A control read of the old kind (a live
+    /// `isPlaying` / `isRunning`) runs on a background thread and must still be waiting when main is
+    /// done — proof that the lock really was held. Timings are printed as information; no millisecond
+    /// threshold decides.
     ///
     /// Modes: `stop` (`player.stop()` holds the lock on `configChangeQueue`, the re-establish case),
     /// `start` (a slow `engine.start()` on `engineQueue`), `device-loss` (the founder's repro: the
@@ -25,10 +30,19 @@
     /// setting (a private defaults suite), no audio device.
     @MainActor
     enum MainThreadStallSelfTest {
-        static let target = 5.0 // ms, what a main-thread entry takes
-        static let bound = 25.0 // ms, what no main-thread entry may take (the freeze took 3–7 s)
-        static let queueBound = 25.0 // ms, the main queue's longest wait
-        static let holdSeconds = 2.5
+        /// Probe rounds main must finish, and main-queue round trips it must serve, with the lock held.
+        static let minRounds = 20
+        static let minRoundTrips = 10
+
+        /// What one held phase does: the control read, what happens once the holder is inside, one
+        /// step of main's work, and the extra state the phase waits for.
+        private struct HoldPlan {
+            let label: String
+            let control: @Sendable () -> Void
+            let trigger: () -> Void
+            let step: () -> Void
+            let finished: () -> Bool
+        }
 
         static func runIfRequested() {
             let arguments = ProcessInfo.processInfo.arguments
@@ -53,56 +67,69 @@
         private static func holdRun(mode: String) -> Bool {
             let rig = StallRig()
             guard rig.buildGraph(slowUnit: mode == "start") else { return report("the graph did not build") }
+            let bridge = rig.bridge
             if mode == "stop" {
                 rig.startPlaying()
+                waitFor("the transport clock to publish a playhead") { bridge.snapshot().transport.position != nil }
             } else {
-                rig.bridge.engineQueue.async { rig.bridge.startTransportClock() }
+                rig.onEngineQueue("the transport clock to start") { bridge.startTransportClock() }
             }
-            pump(0.5)
-            let viewModel = makeViewModel(rig.bridge, tracks: 1)
+            let viewModel = makeViewModel(bridge, tracks: 1)
             viewModel.isPlaying = true
-            let probe = EntryProbe(viewModel: viewModel, bridge: rig.bridge)
+            let probe = EntryProbe(viewModel: viewModel, bridge: bridge)
             let watchdog = StallWatchdog()
             watchdog.start()
             if mode == "stop" {
-                rig.holdInStop(on: rig.bridge.configChangeQueue, seconds: holdSeconds)
+                rig.holdInStop(on: bridge.configChangeQueue)
             } else {
-                rig.holdInStart(seconds: holdSeconds)
+                rig.holdInStart()
             }
-            pump(0.15) // let the holder get inside the lock
-            watchdog.reset()
-            let window = ContinuousClock.now
-            while ContinuousClock.now - window < .seconds(holdSeconds - 0.8) {
-                probe.round()
-                pump(0.004)
-            }
-            let queueWait = watchdog.worstMilliseconds
-            // CONTROL, after the probes: a live AVFAudio read on main still waits (the lock was held).
-            let control = milliseconds {
-                if mode == "stop" {
-                    _ = rig.bridge.playerNodeRef?.isPlaying
-                } else {
-                    _ = rig.bridge.avEngineRef?.isRunning
-                }
-            }
-            watchdog.stop()
+            let plan = HoldPlan(label: "mode=\(mode)",
+                                control: { liveRead(bridge, player: mode == "stop") }, trigger: {},
+                                step: { probe.round() }, finished: { true })
+            let held = holdWindow(plan, probe: probe, watchdog: watchdog)
             rig.stopRendering()
-            probe.printTable(title: "mode=\(mode) hold=\(holdSeconds)s")
-            print("main-queue longest wait".padding(toLength: 52, withPad: " ", startingAt: 0)
-                + String(format: "    %8.3f ms", queueWait))
-            print("CONTROL live AVFAudio read on main".padding(toLength: 52, withPad: " ", startingAt: 0)
-                + String(format: "    %8.1f ms", control))
-            guard entriesPassed(probe) else { return false }
-            guard queueWait < queueBound else { return report("the main queue waited \(queueWait) ms") }
-            guard control >= 300 else { return report("the control did not wait: the lock was not held") }
-            return true
+            return held
         }
 
-        private static func entriesPassed(_ probe: EntryProbe) -> Bool {
-            guard probe.worst < bound else { return report("a main-thread entry took \(probe.worst) ms") }
-            guard probe.shareOverTarget <= 0.01 else {
-                return report("\(Int(probe.shareOverTarget * 100))% of the calls took over \(target) ms")
+        /// The old kind of read, which waits on the engine lock: the player's `isPlaying`, or the engine's
+        /// `isRunning`. Only ever called off the main thread.
+        private nonisolated static func liveRead(_ bridge: AudioEngineBridge, player: Bool) {
+            if player {
+                _ = bridge.playerNodeRef?.isPlaying
+            } else {
+                _ = bridge.avEngineRef?.isRunning
             }
+        }
+
+        /// The one held phase: wait for the holder to be INSIDE the lock, start the control read, let main
+        /// work until it has finished enough (the hang cap breaks a main that cannot), check the control is
+        /// still waiting, then release — and wait for the control read to finish, which only the release
+        /// allows.
+        private static func holdWindow(_ plan: HoldPlan, probe: EntryProbe, watchdog: StallWatchdog) -> Bool {
+            waitFor("the holder to be inside the engine lock") { StallHold.shared.isInside }
+            let control = StallControlRead()
+            control.start(plan.control)
+            plan.trigger()
+            let cap = StallHangCap()
+            cap.begin("main finishing \(minRounds) probe rounds and \(minRoundTrips) main-queue round trips",
+                      progress: probe.progress)
+            repeat {
+                plan.step()
+                pump(0.004)
+            } while probe.rounds < minRounds || watchdog.roundTrips < minRoundTrips || !plan.finished()
+            let queueWait = watchdog.worstMilliseconds
+            let stillHeld = control.isWaiting // read while the hold lasts
+            let roundTrips = watchdog.roundTrips
+            StallHold.shared.release()
+            cap.end()
+            watchdog.stop()
+            waitFor("the control read to finish after the release") { control.isDone }
+            probe.printTable(title: "\(plan.label)")
+            print("while the engine lock was held: \(probe.rounds) probe rounds, \(roundTrips) main-queue round trips")
+            print("main-queue longest wait (information)".padding(toLength: 52, withPad: " ", startingAt: 0)
+                + String(format: "    %8.3f ms", queueWait))
+            guard stillHeld else { return report("the control read finished during the hold: the lock was not held") }
             return true
         }
 
@@ -113,44 +140,44 @@
             guard rig.buildGraph(slowUnit: false) else { return report("the graph did not build") }
             rig.startPlaying()
             let bridge = rig.bridge
-            let ready = DispatchSemaphore(value: 0)
-            bridge.engineQueue.async {
+            rig.onEngineQueue("the output rule to register") {
                 bridge.updateOutputSelection { $0.adopt(0x7FFF_FFF0, uid: "") } // the app's device: gone
                 bridge.setPinPlaybackToSelectedDevice(false) // any adoption stays in the app
                 bridge.registerOutputDeviceListeners()
-                ready.signal()
             }
-            ready.wait()
             let viewModel = makeViewModel(bridge, tracks: 1)
             viewModel.selectedTrackIndex = 0
             viewModel.isPlaying = true
             viewModel.duration = 20
-            for _ in 0 ..< 8 {
+            waitFor("the playhead to pass 0.3 s before the device is lost") {
                 viewModel.tickTransport()
-                pump(0.05)
+                return viewModel.playbackPosition > 0.3
             }
-            let placeBefore = viewModel.playbackPosition
-            rig.holdInStop(on: DispatchQueue(label: "avfaudio-internal-stand-in"), seconds: holdSeconds)
-            pump(0.05)
-            let lossAt = ContinuousClock.now
-            bridge.outputDeviceDidChange(.engineReconfigured)
-            bridge.outputDeviceDidChange(.targetAliveChanged)
             let probe = EntryProbe(viewModel: viewModel, bridge: bridge)
-            var pausedAfter: Duration?
-            while ContinuousClock.now - lossAt < .seconds(holdSeconds) {
-                probe.tickOnly()
-                if pausedAfter == nil, !viewModel.isPlaying {
-                    pausedAfter = ContinuousClock.now - lossAt
-                }
-                pump(0.01)
-            }
+            let watchdog = StallWatchdog()
+            watchdog.start()
+            rig.holdInStop(on: DispatchQueue(label: "avfaudio-internal-stand-in"))
+            let placeBefore = Mutex<Double>(0)
+            let plan = HoldPlan(
+                label: "mode=device-loss",
+                control: { liveRead(bridge, player: true) },
+                trigger: {
+                    viewModel.tickTransport() // the last playhead read before the loss
+                    placeBefore.withLock { $0 = viewModel.playbackPosition }
+                    bridge.outputDeviceDidChange(.engineReconfigured)
+                    bridge.outputDeviceDidChange(.targetAliveChanged)
+                },
+                step: { probe.tickOnly() },
+                finished: { !viewModel.isPlaying } // paused after the device loss: a state, not a deadline
+            )
+            let held = holdWindow(plan, probe: probe, watchdog: watchdog)
             rig.stopRendering()
-            probe.printTable(title: "mode=device-loss hold=\(holdSeconds)s")
+            let before = placeBefore.withLock { $0 }
             let place = viewModel.pausedResumePosition ?? -1
-            print("paused after \(pausedAfter.map { "\($0)" } ?? "NEVER"); place \(placeBefore) → \(place)")
-            guard let pausedAfter, pausedAfter < .milliseconds(500) else { return report("no pause within 500 ms") }
-            guard abs(place - placeBefore) < 0.25 else { return report("the place was not kept") }
-            return entriesPassed(probe)
+            print("paused after the device loss; place \(before) → \(place)")
+            guard held else { return false }
+            guard abs(place - before) < 0.25 else { return report("the place was not kept") }
+            return true
         }
 
         // MARK: - Review MAJOR-1
@@ -159,7 +186,6 @@
             let rig = StallRig()
             guard rig.buildGraph(slowUnit: false) else { return report("the graph did not build") }
             rig.startPlaying()
-            pump(0.3)
             let bridge = rig.bridge
             let device = getDefaultOutputDeviceID()
             bridge.updateOutputSelection { $0.adopt(device, uid: "") }
@@ -171,16 +197,32 @@
             viewModel.pendingNextIndex = 1
             viewModel.isPlaying = true
             bridge.gaplessPlaybackEnded = true // A ended; B queued but not armed (Pure cross-rate)
-            pump(0.1) // the clock publishes the end flag
-            bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.3) } // B's start is slow
+            waitFor("the clock to publish the end flag") { bridge.snapshot().transport.ended }
+            // B's start is slow: the engine queue is held until THIS test lets it go.
+            let release = DispatchSemaphore(value: 0)
+            bridge.engineQueue.async { StallVerdict.wait(release, for: "the test's release of B's start") }
+            waitFor("the advance to B") {
+                viewModel.tickTransport()
+                return viewModel.selectedTrackIndex == 1
+            }
+            // B's start still waits and A's end flag is still set: ticks must not act on it.
             for _ in 0 ..< 12 {
                 viewModel.tickTransport()
-                pump(0.05)
+                pump(0.01)
             }
-            pump(0.5)
+            let stoppedEarly = !viewModel.isPlaying || viewModel.selectedTrackIndex != 1
+            release.signal()
+            waitFor("B's start to finish") {
+                viewModel.tickTransport()
+                return viewModel.transportCommand == nil
+            }
+            for _ in 0 ..< 6 {
+                viewModel.tickTransport()
+                pump(0.01)
+            }
             rig.stopRendering()
             print("after the advance: playing \(viewModel.isPlaying), selected \(viewModel.selectedTrackIndex ?? -1)")
-            guard viewModel.isPlaying, viewModel.selectedTrackIndex == 1 else {
+            guard !stoppedEarly, viewModel.isPlaying, viewModel.selectedTrackIndex == 1 else {
                 return report("the advance was stopped by the replaced track's end flag")
             }
             return true
@@ -221,6 +263,18 @@
                 buffer.frameLength = 96000
                 try? file.write(from: buffer)
                 return url
+            }
+        }
+
+        /// Run the main loop until `state` holds. Its generous cap only breaks a hang: it fails, naming the
+        /// state, and never carries on past the deadline.
+        static func waitFor(_ state: String, cap: Double = StallVerdict.hangCap, _ condition: () -> Bool) {
+            let deadline = ContinuousClock.now + .seconds(cap)
+            while !condition() {
+                if ContinuousClock.now >= deadline {
+                    StallVerdict.fail("\(state) did not happen within \(Int(cap)) s")
+                }
+                pump(0.002)
             }
         }
 
