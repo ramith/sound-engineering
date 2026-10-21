@@ -99,7 +99,7 @@ private func cancelAfterFirstBatch(
                 firstBatch.runOnce {
                     committed.continuation.yield(())
                     committed.continuation.finish()
-                    proceed.wait() // park the scanner mid-walk until the test has cancelled
+                    awaitState(proceed, "the test's cancel of the scan") // parked mid-walk
                 }
             }
         )

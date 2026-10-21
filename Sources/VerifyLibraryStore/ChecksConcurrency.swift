@@ -206,7 +206,7 @@ private func checkBusyHandled(url: URL, number: Int) -> Bool {
                 }
                 semaphore.signal()
             }
-            semaphore.wait()
+            awaitState(semaphore, "the contender's BUSY outcome")
             try db.rollback()
         }
 

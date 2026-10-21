@@ -42,6 +42,14 @@ func withDeadline<T: Sendable>(
     return try await operation()
 }
 
+/// Wait on a parked rendezvous — `gate` is signalled by the state named `what` — or fail naming the
+/// running check and that state. For the non-cooperative parks inside a sync closure: they are
+/// released by the test, never by time; the cap only breaks a hang.
+func awaitState(_ gate: DispatchSemaphore, _ what: String, seconds: Double = 60) {
+    guard gate.wait(timeout: .now() + seconds) == .timedOut else { return }
+    fail("\(CurrentCheck.name): \(what) did NOT happen within \(Int(seconds)) s — the park was never released")
+}
+
 /// A thread-safe one-shot: `runOnce`'s body executes on the FIRST call only. Used to gate
 /// a scan's synchronous `progress` closure so a mid-scan rendezvous parks EXACTLY once
 /// (after the first committed batch), never on later batches. `@unchecked Sendable` is
