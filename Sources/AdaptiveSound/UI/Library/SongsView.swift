@@ -17,6 +17,8 @@ import SwiftUI
 struct SongsView: View {
     @Environment(LibraryBrowseModel.self) private var model
     @FocusState private var focus: CardFocus?
+    /// The clock the filter's debounce sleeps on.
+    var clock: any Clock<Duration> = ContinuousClock()
 
     var body: some View {
         LibraryLoadStateView(state: model.songsState, isEmpty: model.songs.isEmpty) {
@@ -34,7 +36,7 @@ struct SongsView: View {
         // actor round-trip a cancel can't interrupt. Hosted HERE (the stable SongsView body, not
         // the re-rendering SongsHeader) so it isn't torn down by header updates.
         .task(id: model.searchQuery) {
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await clock.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
             await model.runFilter()
         }

@@ -121,8 +121,12 @@ final class LibraryModel {
     /// NSWorkspace mount/unmount observer tokens (removed in `shutdown()`).
     var volumeMonitorTokens: [any NSObjectProtocol] = []
 
+    /// The clock the reconcile debounce sleeps on: `ContinuousClock` in the app, a test clock in a test.
+    @ObservationIgnored let clock: any Clock<Duration>
+
     /// A library over the store at `location` (the launch's `AppDataLocation`).
-    init(location: AppDataLocation) {
+    init(location: AppDataLocation, clock: any Clock<Duration> = ContinuousClock()) {
+        self.clock = clock
         // Construct the persistent library store off-main (S8.2b). The initializer is async, so —
         // per design §7 — it runs in an init-time Task; failure leaves `store` nil and the audio
         // path (which no longer owns any of this state) fully intact.
@@ -132,7 +136,9 @@ final class LibraryModel {
     #if DEBUG
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): a library that never builds the
         /// on-disk store — `store` stays `nil`, so no scan, watcher or reconcile ever starts.
-        init(storeless _: Void) {}
+        init(storeless _: Void, clock: any Clock<Duration> = ContinuousClock()) {
+            self.clock = clock
+        }
     #endif
 
     /// Ordered library teardown: stop the FSEvents watcher + NSWorkspace volume monitor, start no

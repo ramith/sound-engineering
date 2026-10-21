@@ -64,7 +64,7 @@ extension AudioViewModel {
         let playedAt = Int64(Date().timeIntervalSince1970)
         let trackID = file.trackID
         let url = file.absoluteURL
-        Task.detached(priority: .utility) { [weak self] in
+        work.spawnDetached(priority: .utility) { [weak self] in
             do {
                 // Prefer the durable id (the queue carries it, no url→id lookup); fall back to url.
                 if let trackID {

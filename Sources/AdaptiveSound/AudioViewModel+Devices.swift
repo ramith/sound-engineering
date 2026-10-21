@@ -36,7 +36,7 @@ extension AudioViewModel {
     /// this device" holds from now on (the engine's `selectDevice`). The one place the app picks.
     func selectDevice(_ device: AudioDeviceModel) {
         logUX("selectDevice: '\(device.name)' id=\(device.id)")
-        Task {
+        work.spawn { [self] in
             do {
                 let success = try await engine.selectDevice(device.id)
                 if !success {
@@ -60,7 +60,7 @@ extension AudioViewModel {
     /// went away, the engine adopted a device (the system default, or the chosen device back), or it
     /// paused for a lost device. Invoked on the main actor via `onOutputDevicesChanged`.
     func refreshDevices() {
-        Task {
+        work.spawn { [self] in
             guard let devices = try? await engine.enumerateOutputDevices() else { return }
             showEngineOutput(among: devices)
             logUX("refreshDevices: \(devices.count) device(s) "

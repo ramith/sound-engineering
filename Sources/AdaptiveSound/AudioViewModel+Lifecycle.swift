@@ -22,7 +22,7 @@ extension AudioViewModel {
         guard !isInitializing, !isEngineReady else { return }
         isInitializing = true
         // The start holds the view model until it finishes; the callback it installs does not.
-        Task { [self] in
+        work.spawn { [self] in
             // Reset on EVERY completion path (success, the `!success` early return, and any throw
             // incl. `enumerateOutputDevices`) so the guard can never get stuck latched `true`.
             defer { isInitializing = false }
@@ -117,7 +117,7 @@ extension AudioViewModel {
     /// die mid-teardown — losing the P2-C ordering it exists to guarantee (use-after-free of the
     /// C handles). Being `async` also lets callers sequence teardown deterministically.
     func shutdown() async {
-        logUX("shutdown — was playing=\(isPlaying)")
+        logUX("shutdown — was playing=\(isPlaying), commands in flight=\(!work.isIdle)")
         // S10.2 2c quit-flush: persist the now-playing cursor and write the FINAL queue snapshot
         // BEFORE `performStop()` zeroes `playbackPosition` — so a clean quit restores exactly where
         // you left off. Cancel any pending debounced mirror first (this write supersedes it). The
@@ -164,7 +164,7 @@ extension AudioViewModel {
         // order the two reach it in. The stop itself lives in `performStop()` so `shutdown()` can
         // `await` it.
         let epoch = nextStopEpoch()
-        Task { await performStop(epoch: epoch) }
+        work.spawn { [self] in await performStop(epoch: epoch) }
     }
 
     /// Stop the engine WITHOUT resetting the playhead — the position-preserving Pause path (D2), for

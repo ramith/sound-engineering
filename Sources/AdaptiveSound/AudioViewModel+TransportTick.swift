@@ -27,25 +27,18 @@ extension AudioViewModel {
     /// At shutdown, and in tests that tick by hand: no tick runs from here on.
     func disarmTransportTick() {
         transportTickArmed = false
-        transportTimer?.invalidate()
-        transportTimer = nil
+        transportTicker?.stop()
+        transportTicker = nil
     }
 
     /// Start the 20 Hz transport tick if something plays or is on its way. Called whenever that may
     /// have changed (`isPlaying`, `transportCommand`). The tick stops itself: the tick that finds
     /// nothing live is the last, after it has read the settled engine once more.
     func runTransportTickIfLive() {
-        guard transportTimer == nil, transportTickIsLive else { return }
-        let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            // Scheduled on RunLoop.main (below), so this always fires on the main thread:
-            // assumeIsolated proves it to the compiler with no per-tick Task allocation.
-            MainActor.assumeIsolated {
-                self?.tickTransport()
-            }
+        guard transportTicker == nil, transportTickIsLive else { return }
+        transportTicker = makeTicker(1.0 / 20.0) { [weak self] in
+            self?.tickTransport()
         }
-        // Common modes: the tick fires during tracking (a slider drag, a scroll) too.
-        RunLoop.main.add(timer, forMode: .common)
-        transportTimer = timer
     }
 
     /// Called at 20 Hz on the main thread by the transport timer while something plays or is on its
@@ -131,8 +124,8 @@ extension AudioViewModel {
 
         // Nothing plays and nothing is on its way: this tick read the settled engine; it is the last.
         if !transportTickIsLive {
-            transportTimer?.invalidate()
-            transportTimer = nil
+            transportTicker?.stop()
+            transportTicker = nil
         }
     }
 

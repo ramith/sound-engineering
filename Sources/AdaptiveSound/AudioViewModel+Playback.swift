@@ -57,7 +57,7 @@ extension AudioViewModel {
         // it replaces), until a newer start or a stop is asked (council C-15).
         let epoch = nextStartEpoch()
 
-        Task {
+        work.spawn { [self] in
             do {
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
                                             startAt: resumeFrom ?? 0, epoch: epoch)
@@ -93,7 +93,7 @@ extension AudioViewModel {
     /// actor. Fire-and-forget. Shared by `startPlayback` and the gapless auto-advance seam
     /// (S3 LOW-a — was duplicated); `logLabel` distinguishes the call site in the UX log.
     func refreshDuration(for fileURL: URL, logLabel: String = "duration") {
-        Task.detached(priority: .userInitiated) { [weak self] in
+        work.spawnDetached(priority: .userInitiated) { [weak self] in
             let computedDuration: Double = {
                 guard let file = try? AVAudioFile(forReading: fileURL) else { return 0 }
                 let rate = file.processingFormat.sampleRate
@@ -151,7 +151,7 @@ extension AudioViewModel {
         switch route {
         case .engine:
             let epoch = nextTransportEpoch() // the old playhead is ignored until the seek lands
-            Task {
+            work.spawn { [self] in
                 do {
                     try await engine.seek(to: seconds, epoch: epoch)
                 } catch {
