@@ -20,10 +20,11 @@
 //     each return under a wall-clock bound (never block unboundedly behind the batched
 //     writes); the scan still completes and sees every file.
 
-import Dispatch
 import Foundation
+import GRDB
 import LibraryScan
 import LibraryStore
+import Synchronization
 
 // MARK: - Multi-root sweep isolation (M-A)
 
@@ -244,9 +245,8 @@ func checkReadsDuringScan(number: Int, url: URL) async -> Bool {
 /// + fast read-loop is vacuous — the reads all drain before the walk's first
 /// `nextObject()`. Instead: park the scanner in its progress closure right after the
 /// first batch commits, then — on a SEPARATE connection (one actor would serialize) —
-/// read and assert a consistent PARTIAL count (0 < seen < total). Release the scanner;
-/// it finishes seeing every file. `withDeadline`'s watchdog thread makes any deadlock a FAIL, not a hang — it
-/// fires even while the scanner is parked in the non-cooperative `awaitState`.
+/// read and assert a consistent PARTIAL count (0 < seen < total). The scan then finishes seeing
+/// every file. `withDeadline`'s watchdog thread makes any deadlock a FAIL, not a hang.
 private func readsDuringScan(_ store: LibraryStore, url: URL, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("reads-during-scan")
     let fileCount = 600 // > 2 batches (internal batchSize 256) so a mid-scan commit is < total
@@ -266,33 +266,33 @@ private func readsDuringScan(_ store: LibraryStore, url: URL, number: Int) async
     return true
 }
 
-/// Run a scan that PARKS (in its progress closure) right after its first committed
-/// batch, and — while parked — read `trackCount` on a fresh SEPARATE connection. Returns
-/// that mid-scan count (the reader releases the scanner, which then finishes). A deadlock fails
-/// the run through the watchdog. The `firstBatch` latch makes the park a one-shot, so later
-/// batches run freely.
+/// Run a scan and, from INSIDE its progress closure right after the first committed batch, read
+/// `tracks` on a fresh SEPARATE connection. Returns that mid-scan count. The scanner is mid-walk
+/// for the whole read — as it was when it was parked on a semaphore — but nothing waits for another
+/// task: a park inside a cooperative-pool thread starves the reader when the pool is one thread
+/// wide (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`, the runner's profile), so the rendezvous is the
+/// closure itself. A deadlock fails the run through the watchdog. The `firstBatch` latch reads on
+/// the first batch only, so later batches run freely.
 private func parkedMidScanRead(store: LibraryStore, url: URL, root: URL, folderID: Int64) async throws -> Int {
     let firstBatch = OneShotLatch()
-    let readDone = DispatchSemaphore(value: 0) // released by the reader; wait()ed in the SYNC closure only
-    let committed = AsyncStream<Void>.makeStream() // scanner → async: "first batch committed"
+    let seen = Mutex<Int?>(nil)
     return try await withDeadline("reads-during-scan", seconds: 20) {
-        async let scanned: ScanResult = LibraryScanner().scan(
+        _ = try await LibraryScanner().scan(
             root: root, folderID: folderID, into: store,
             progress: { _ in
-                // Sync closure: DispatchSemaphore.wait() is legal here (not an async context).
                 firstBatch.runOnce {
-                    committed.continuation.yield(())
-                    committed.continuation.finish()
-                    awaitState(readDone, "the reader's release of the scan") // parked mid-walk
+                    // A raw read connection on the store's file: a WAL snapshot while the scanner is between
+                    // batches, the same count `LibraryStore.trackCount()` reads.
+                    let count = try? DatabaseQueue(path: url.path).read { db in
+                        try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tracks")
+                    }
+                    seen.withLock { $0 = count }
                 }
             }
         )
-        var batches = committed.stream.makeAsyncIterator()
-        _ = await batches.next() // async-await the first committed batch (no async-context semaphore wait)
-        let reader = try await LibraryStore(url: url, appBuild: "verify")
-        let seen = try await reader.trackCount()
-        readDone.signal() // release the parked scanner; it then finishes the walk + sweep
-        _ = try await scanned
-        return seen
+        guard let count = seen.withLock({ $0 }) else {
+            fail("\(CurrentCheck.name): the mid-scan read never returned a count")
+        }
+        return count
     }
 }

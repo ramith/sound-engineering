@@ -214,7 +214,8 @@ func checkOneTitlePassCost(number: Int, url: URL) async -> Bool {
         }
         printPass(number, "ALB-08 (B2) one shared title costs a pass nothing extra: 1,000 'Unknown Album' songs in "
             + "100 folders re-read in \(String(format: "%.2f", shared.seconds)) s of CPU vs "
-            + "\(String(format: "%.2f", distinct.seconds)) s for 100 titles (tripwire 10× + 2 s) — no per-write regroup")
+            + "\(String(format: "%.2f", distinct.seconds)) s for 100 titles (tripwire 10× + 2 s) — "
+            + "no per-write regroup")
         return true
     } catch {
         printFail(number, "ALB-08 threw: \(error)"); return false

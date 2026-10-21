@@ -5,7 +5,6 @@
 // tagless anti-loop. Same VerifyAUGraph idiom.
 
 import CoreGraphics
-import Dispatch
 import Foundation
 import LibraryScan
 import LibraryStore
@@ -183,32 +182,24 @@ func checkMetadataPassCancellation(number: Int, url: URL) async -> Bool {
     }
 }
 
-/// Run the pass, park it in its progress closure after the FIRST apply, cancel while parked,
-/// then release so the drain loop's next `checkCancellation()` throws. Returns true iff the
-/// pass threw `CancellationError`. Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly. Shared
-/// with ALB-10 (a pass cut off at quit leaves no zero-song album).
+/// Run the pass and cancel it from INSIDE its progress closure after the FIRST apply, so the drain
+/// loop's next `checkCancellation()` throws. The closure cancels the very task the pass runs in — no
+/// semaphore park (a park on a cooperative-pool thread starves the rest when the pool is one thread
+/// wide, `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`). Returns true iff the pass threw `CancellationError`.
+/// Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly. Shared with ALB-10 (a pass cut off at quit leaves no zero-song album).
 func cancelPassAfterFirstApply(
     _ store: LibraryStore, cache: ArtworkCache, gen: Int64, extractor: some MetadataExtracting, number: Int
 ) async throws -> Bool {
     let firstApply = OneShotLatch()
-    let proceed = DispatchSemaphore(value: 0) // released after cancel; wait()ed in the SYNC closure only
-    let applied = AsyncStream<Void>.makeStream()
     let task = Task {
         try await MetadataScanner().run(
             generation: gen, into: store, cache: cache, extractor: extractor,
             progress: { _ in
-                firstApply.runOnce {
-                    applied.continuation.yield(())
-                    applied.continuation.finish()
-                    awaitState(proceed, "the test's cancel of the metadata pass") // parked after the first apply
-                }
+                // The drain loop's next checkCancellation() throws.
+                firstApply.runOnce { withUnsafeCurrentTask { $0?.cancel() } }
             }
         )
     }
-    var applies = applied.stream.makeAsyncIterator()
-    _ = await applies.next() // await the first applied row (no async-context semaphore wait)
-    task.cancel()
-    proceed.signal() // release → the drain loop's next checkCancellation() throws
     do {
         try await task.value
         printFail(number, "m9: cancelled pass did NOT throw"); return false
