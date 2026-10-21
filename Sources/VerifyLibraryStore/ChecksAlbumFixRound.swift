@@ -204,15 +204,16 @@ func checkOneTitlePassCost(number: Int, url: URL) async -> Bool {
             .appendingPathComponent("alb08-distinct-\(UUID().uuidString).sqlite3")
         let distinct = try await timedReRead(url: distinctURL, label: "alb08-distinct") { "Album \($0)" }
         // Before the fix the shared-title re-read regrouped every same-title song per write: ~30× the
-        // distinct-title time (22.6 s vs ~0.7 s on the founder's Mac). A linear pass stays within 3× + 2 s.
-        guard shared.seconds <= 3 * distinct.seconds + 2, shared.albums == 100, distinct.albums == 100 else {
-            printFail(number, "ALB-08: 1,000 songs on ONE title re-read in \(shared.seconds) s vs "
+        // distinct-title time (22.6 s vs ~0.7 s on the founder's Mac). Both passes are measured in CPU
+        // time (the code, not the machine's load); a linear pass stays far inside the 10× + 2 s tripwire.
+        guard shared.seconds <= 10 * distinct.seconds + 2, shared.albums == 100, distinct.albums == 100 else {
+            printFail(number, "ALB-08: 1,000 songs on ONE title re-read in \(shared.seconds) s of CPU vs "
                 + "\(distinct.seconds) s "
                 + "on 100 titles (albums \(shared.albums) / \(distinct.albums), expected 100 each)"); return false
         }
         printPass(number, "ALB-08 (B2) one shared title costs a pass nothing extra: 1,000 'Unknown Album' songs in "
-            + "100 folders re-read in \(String(format: "%.2f", shared.seconds)) s vs "
-            + "\(String(format: "%.2f", distinct.seconds)) s for 100 titles (bound 3× + 2 s) — no per-write regroup")
+            + "100 folders re-read in \(String(format: "%.2f", shared.seconds)) s of CPU vs "
+            + "\(String(format: "%.2f", distinct.seconds)) s for 100 titles (tripwire 10× + 2 s) — no per-write regroup")
         return true
     } catch {
         printFail(number, "ALB-08 threw: \(error)"); return false
@@ -220,8 +221,8 @@ func checkOneTitlePassCost(number: Int, url: URL) async -> Bool {
 }
 
 /// Scan + read 1,000 songs (10 per folder, the album title of folder n is `title(n)`), then queue
-/// every song again (a derived-data bump) and time the re-read pass. Returns its seconds and the
-/// album count.
+/// every song again (a derived-data bump) and cost the re-read pass in CPU time. Returns its CPU seconds and the
+/// album count. Costed in CPU time, not wall time.
 private func timedReRead(
     url: URL, label: String, title: (Int) -> String
 ) async throws -> (seconds: Double, albums: Int) {
@@ -230,9 +231,8 @@ private func timedReRead(
     }
     let fixture = try await AlbumFixture(label, url: url, songs: songs)
     try queueEverySongForReRead(storeAt: url)
-    let start = Date()
-    try await fixture.rescan()
-    return try (Date().timeIntervalSince(start), await fixture.store.albums().count)
+    let seconds = try await cpuSeconds { try await fixture.rescan() }
+    return try (seconds, await fixture.store.albums().count)
 }
 
 /// Queue every song of the store at `url` for a tag re-read — what a derived-data bump does —

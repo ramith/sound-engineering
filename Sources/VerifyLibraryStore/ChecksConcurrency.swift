@@ -15,14 +15,14 @@
 // store's pragmas are designed for. The low-level BUSY / writer-abort probes use raw
 // GRDB `DatabaseQueue`s directly against the file.
 //
-// BOUNDED: every concurrent phase runs under a wall-clock deadline; a phase that
-// does not finish is a FAIL (a deadlock), never a skip.
+// BOUNDED: every concurrent phase runs under a watchdog thread (`withDeadline`); a phase that
+// does not finish fails the run naming the check (a deadlock), never a hang or a skip.
 
 import Foundation
 import GRDB
 import LibraryStore
 
-/// The concurrent phases' wall-clock budget. Overrun ⇒ FAIL (deadlock), per §6-D.
+/// The concurrent phases' hang cap. Overrun ⇒ the watchdog fails the run (deadlock), per §6-D.
 private let concurrencyDeadlineSeconds: Double = 20.0
 
 /// The two counts a snapshot read must always be one of (never in-between).
@@ -31,9 +31,7 @@ private struct SnapshotBounds {
     let post: Int
 }
 
-/// The outcome of the snapshot-isolation probe: the first torn count observed (nil
-/// = none). A dedicated type so `withDeadline`'s "nil == timed out" is unambiguous
-/// (a plain `Int?` would collide with "no torn value").
+/// The outcome of the snapshot-isolation probe: the first torn count observed (nil = none).
 private struct SnapshotOutcome {
     let tornValue: Int?
 }
@@ -81,7 +79,7 @@ private func checkPragmasSet(_ store: LibraryStore, number: Int) async throws ->
 /// Multiple reader connections (separate store instances) read the same store
 /// concurrently without error, under a deadline.
 private func checkConcurrentReaders(url: URL, number: Int) async throws -> Bool {
-    let completed = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+    let completed = try await withDeadline("concurrent readers", seconds: concurrencyDeadlineSeconds) {
         try await withThrowingTaskGroup(of: Int.self) { group in
             for _ in 0 ..< 4 {
                 group.addTask {
@@ -101,8 +99,7 @@ private func checkConcurrentReaders(url: URL, number: Int) async throws -> Bool 
         }
     }
     guard completed == 4 else {
-        printFail(number, "concurrency: concurrent readers did not all complete within the deadline "
-            + "(\(String(describing: completed))/4)")
+        printFail(number, "concurrency: only \(completed)/4 concurrent readers completed")
         return false
     }
     return true
@@ -122,11 +119,8 @@ private func checkSnapshotIsolation(
         makeScanned(path: "/Music/Conc/snap-\($0).flac", name: "snap-\($0)")
     }
 
-    let outcome = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+    let outcome = try await withDeadline("snapshot isolation", seconds: concurrencyDeadlineSeconds) {
         try await runSnapshotProbe(writer: writer, url: url, batch: batch, rootID: rootID, bounds: bounds)
-    }
-    guard let outcome else {
-        printFail(number, "snapshot isolation: did NOT complete within the deadline (deadlock)"); return false
     }
     if let torn = outcome.tornValue {
         printFail(number, "snapshot isolation: torn count \(torn) (not pre=\(bounds.pre) or post=\(bounds.post))")
@@ -293,7 +287,7 @@ private func checkResolverRaceSafety(
         albumArtistName: "Race Artist", year: 2024, genres: ["Race Genre"]
     )
 
-    let finished = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+    try await withDeadline("resolver race", seconds: concurrencyDeadlineSeconds) {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 let workerA = try await LibraryStore(url: url, appBuild: "verify")
@@ -305,10 +299,6 @@ private func checkResolverRaceSafety(
             }
             try await group.waitForAll()
         }
-        return true
-    }
-    guard finished == true else {
-        printFail(number, "resolver race: did NOT complete within the deadline (deadlock)"); return false
     }
 
     // Exactly one row per name (the ON CONFLICT DO NOTHING collapsed the loser's insert).
@@ -348,14 +338,9 @@ private func checkStressLoop(
     let writeCount = 500
     let readsPerReader = 500 // × 4 readers = 2000 reads
 
-    let finished = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+    try await withDeadline("stress: N-writes ‖ M-reads", seconds: concurrencyDeadlineSeconds) {
         try await runStress(writer: writer, url: url, rootID: rootID,
                             writeCount: writeCount, readsPerReader: readsPerReader)
-        return true
-    }
-    guard finished == true else {
-        printFail(number, "stress: N-writes ‖ M-reads did NOT complete within "
-            + "\(concurrencyDeadlineSeconds)s — treated as a deadlock (FAIL)"); return false
     }
 
     // Row-count ledger: every distinct write landed exactly once.
@@ -419,15 +404,10 @@ func checkSinglePoolConcurrency(number: Int, url: URL) async -> Bool {
         let readsPerReader = 300
         let bounds = baseline ... (baseline + writes)
 
-        let finished = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+        try await withDeadline("single-pool N-writes ‖ M-reads", seconds: concurrencyDeadlineSeconds) {
             try await runSinglePoolStress(
                 store: store, root: root, writes: writes, readsPerReader: readsPerReader, bounds: bounds
             )
-            return true
-        }
-        guard finished == true else {
-            printFail(number, "single-pool concurrency: N-writes ‖ M-reads on one pool did NOT complete "
-                + "within \(concurrencyDeadlineSeconds)s (deadlock)"); return false
         }
         let final = try await store.trackCount()
         guard final == baseline + writes else {

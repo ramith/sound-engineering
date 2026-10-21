@@ -303,6 +303,7 @@ func runAllChecks() async {
         usedURLs.append(url)
         // Each case starts from a clean slate (no stale sibling files).
         cleanupStore(url)
+        CurrentCheck.begin(number: number, label: testCase.label)
         let caseResult = await testCase.run(number, url)
         if caseResult {
             passed += 1
