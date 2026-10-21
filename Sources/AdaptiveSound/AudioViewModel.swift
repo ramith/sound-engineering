@@ -271,16 +271,10 @@ final class AudioViewModel {
     /// itself once nothing is (council C-52). Internal (not private) for `+TransportTick`.
     @ObservationIgnored var transportTicker: (any TransportTicker)?
 
-    /// Makes the transport tick's ticker: the main run loop's timer in the app, a hand-fired one in a
-    /// test (`TransportTicker`).
+    /// Test seams, each defaulting to what the app uses: the tick's ticker (the main run loop's timer), the
+    /// clock the debounces sleep on, and the fire-and-forget work the view model spawns (`WorkTracker`).
     @ObservationIgnored let makeTicker: TransportTickerMaker
-
-    /// The clock the view model's debounces sleep on (the queue mirror): `ContinuousClock` in the app,
-    /// a test clock in a test.
     @ObservationIgnored let clock: any Clock<Duration>
-
-    /// Everything the view model set going without awaiting it (`WorkTracker`): a test waits until it
-    /// is idle.
     @ObservationIgnored let work = WorkTracker()
 
     /// Whether the transport tick may run: from engine-ready (`armTransportTick`) to shutdown. Off in
