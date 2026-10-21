@@ -365,7 +365,8 @@ func checkGenreCoverAtScale(number: Int, url: URL) async -> Bool {
         // 10× above the ~100 ms it was held to; only an algorithmic blow-up (a per-genre scan) trips it.
         let milliseconds = cheapest * 1000
         guard milliseconds < tripwireMilliseconds else {
-            printFail(number, "GC-05: the read cost \(milliseconds) ms of CPU (tripwire \(tripwireMilliseconds) ms)")
+            printFail(number, "GC-05: the read cost \(String(format: "%.1f", milliseconds)) ms of CPU "
+                + "(tripwire \(tripwireMilliseconds) ms)")
             return false
         }
         printPass(number, "GC-05 300 genres / 1,500 albums / 10,000 songs (\(memberships.count) memberships): "

@@ -62,6 +62,14 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+/// Wait for `gate`'s signal — the state named `what` — or fail naming it. The cap only breaks a hang
+/// (an AU instantiation takes milliseconds); it never lets the run carry on past the deadline.
+func waitOrFail(_ gate: DispatchSemaphore, for what: String, seconds: Double = 60) {
+    if gate.wait(timeout: .now() + seconds) == .timedOut {
+        fail("\(what) did not complete within \(Int(seconds)) s")
+    }
+}
+
 /// Reference box for handing an `AVAudioUnit.instantiate` result out of its `@Sendable`
 /// completion into a synchronous `DispatchSemaphore.wait()` caller. `@unchecked Sendable`
 /// because the completion is the sole writer and the caller reads only AFTER `gate.wait()`
@@ -100,7 +108,7 @@ AVAudioUnit.instantiate(with: description, options: []) { unit, error in
     instantiateGate.signal()
 }
 
-instantiateGate.wait()
+waitOrFail(instantiateGate, for: "AVAudioUnit.instantiate (AdaptiveSoundAU)")
 
 if let error = instantiateResult.error {
     fail("AVAudioUnit.instantiate errored: \(error)")
@@ -286,7 +294,7 @@ func instantiateSpatialAU() -> AVAudioUnit? {
         unit = instance
         gate.signal()
     }
-    gate.wait()
+    waitOrFail(gate, for: "AVAudioUnit.instantiate (SpatialRendererAU)")
     return unit
 }
 
