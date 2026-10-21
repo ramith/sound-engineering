@@ -190,7 +190,7 @@ private actor Coordinator {
         case let .prefixOnly(reason):
             log("loudness: '\(name)' — \(reason) after the prefix; keeping the prefix")
         case .cancelled:
-            break
+            log("loudness: '\(name)' — cancelled")
         case let .failed(reason):
             failed.insert(identity)
             sink.reportLoudnessAnalysisFailure(token: identity.token)

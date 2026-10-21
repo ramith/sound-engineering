@@ -67,13 +67,20 @@ struct TrackLoudnessAnalyzerTests {
         let short = try Fixtures.noise(named: "latest-wins-short", seconds: 6)
         let longIdentity = try #require(TrackIdentity(url: long))
         let shortIdentity = try #require(TrackIdentity(url: short))
-        let sink = RecordingSink()
-        let analyzer = TrackLoudnessAnalyzer(log: { _ in })
+        // The long job is held at its prefix: running, and it cannot finish until released. So the
+        // second request decides whether it ends, not how fast the runner decodes 240 s (PR #94's
+        // CI: a busy runner let the long job finish before the second request was handled).
+        let sink = RecordingSink(holdingPrefixOf: longIdentity.token)
+        let log = LogRecorder()
+        let analyzer = TrackLoudnessAnalyzer(prefixSeconds: 2, log: log.record)
         analyzer.analyze(long, identity: longIdentity, as: .current, sink: sink)
+        _ = await sink.wait(keeping: analyzer) { $0.contains { $0.token == longIdentity.token } }
         analyzer.analyze(short, identity: shortIdentity, as: .current, sink: sink)
         _ = await sink.wait(keeping: analyzer) { $0.contains { $0.isWhole && $0.token == shortIdentity.token } }
-        // Had the long job survived, it could finish in this time.
-        await sink.idle(keeping: analyzer, for: .milliseconds(500))
+        // Released, the long job meets its cancellation at its next read and ends without a whole.
+        sink.release()
+        await log.wait(keeping: analyzer, forLineContaining: "'\(long.lastPathComponent)' — cancelled")
+        #expect(!sink.holdExpired, "the long job's hold expired before the test released it")
         #expect(!sink.events.contains { $0.isWhole && $0.token == longIdentity.token })
     }
 
@@ -213,21 +220,8 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
     func wait(keeping _: TrackLoudnessAnalyzer,
               sourceLocation: SourceLocation = #_sourceLocation,
               until done: ([Event]) -> Bool) async -> [Event] {
-        let hangLimit = ContinuousClock.now + .seconds(300)
-        while !done(events) {
-            if ContinuousClock.now >= hangLimit {
-                Issue.record("the analyzer never reached the awaited state in 300 s", sourceLocation: sourceLocation)
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        await waitUntil("the analyzer reached the awaited state", sourceLocation: sourceLocation) { done(events) }
         return events
-    }
-
-    /// Keep `analyzer` alive and let it run for `duration`: a negative test's window, in which anything
-    /// that should not happen could. A longer window can only hide a failure, never invent one.
-    func idle(keeping _: TrackLoudnessAnalyzer, for duration: Duration) async {
-        try? await Task.sleep(for: duration)
     }
 }
 
@@ -249,6 +243,27 @@ final class LogRecorder: @unchecked Sendable {
 
     func count(containing text: String) -> Int {
         lock.withLock { lines.count { $0.contains(text) } }
+    }
+
+    /// Wait, keeping `analyzer` alive, until a line contains `text`.
+    func wait(keeping _: TrackLoudnessAnalyzer,
+              sourceLocation: SourceLocation = #_sourceLocation,
+              forLineContaining text: String) async {
+        await waitUntil("a log line containing \"\(text)\"", sourceLocation: sourceLocation) {
+            count(containing: text) > 0
+        }
+    }
+}
+
+/// Wait until `done` holds. Time only breaks a hang: after 300 s the test fails, naming `what`.
+func waitUntil(_ what: String, sourceLocation: SourceLocation, _ done: () -> Bool) async {
+    let hangLimit = ContinuousClock.now + .seconds(300)
+    while !done() {
+        if ContinuousClock.now >= hangLimit {
+            Issue.record("\(what): not so after 300 s", sourceLocation: sourceLocation)
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(10))
     }
 }
 
