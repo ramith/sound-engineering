@@ -35,7 +35,7 @@ struct EnhancedResamplerTests {
     @Test("a 44.1 kHz file plays 20 kHz as loud as 1 kHz (within 0.1 dB)")
     func trebleSurvivesTheResampler() async throws {
         let rig = try await EnhancedTransportRig(path: .resampler, name: "treble", tones: [1000, 20000])
-        let output = try #require(rig.samples(seconds: 0.5))
+        let output = try #require(await rig.samples(seconds: 0.5))
         // 0.1 … 0.5 s: past the start, inside the primed lead.
         let span = output[4800 ..< 24000]
         let low = Self.amplitude(span, frequency: 1000)

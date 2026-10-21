@@ -3,6 +3,7 @@ import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 import PlaybackQueueKit
+import RigKit
 import Synchronization
 import Testing
 
@@ -49,13 +50,21 @@ final class EnhancedTransportRig: @unchecked Sendable {
     /// The track's length as the view model computes it (`refreshDuration`: frames / rate).
     let duration: Double
     private var nextEpoch: UInt64 = 0
+    /// What the bridge scheduled and which completions it has handed on (`StreamLedger`).
+    private let ledger = StreamLedger()
+    /// The schedule the current render position belongs to, and the frames rendered since it began. Touched
+    /// only by one `blocking` render at a time.
+    private var renderEpoch = 0
+    private var rendered: Int64 = 0
     /// Further fixture files a test wrote (`writeTrack`), removed with the track by `finish`.
     private var fixtures: [URL] = []
 
     /// Build the graph, write `tones` (Hz, equal levels summing to `toneAmplitude`) at `rate` (default:
     /// `path`'s) — `frames` long (default `toneSeconds`) — and play the file from the top.
     init(path: SubPath, name: String, tones: [Double] = [440], frames: Int? = nil, rate: Double? = nil) async throws {
+        QuietLog.install()
         try #require(stall.buildGraph(slowUnit: false), "the real graph did not build offline")
+        stall.bridge.streamObserver.withLock { [ledger] in $0 = ledger }
         let fileRate = rate ?? path.fileRate
         let length = frames ?? Int(Self.toneSeconds * fileRate)
         url = try Self.writeTones(tones, named: "\(name)-\(path.rawValue)", rate: fileRate, frames: 0 ..< length)
@@ -116,31 +125,57 @@ final class EnhancedTransportRig: @unchecked Sendable {
     }
 
     /// Pull `seconds` of output, the device stand-in, and return its left channel (`nil`: the render
-    /// failed). The resampler's queue is drained after every block, so its chain keeps up.
-    func samples(seconds: Double) -> [Float]? {
-        samples(frames: Int(seconds * Self.graphRate))
+    /// failed).
+    func samples(seconds: Double) async throws -> [Float]? {
+        try await samples(frames: Int(seconds * Self.graphRate))
     }
 
-    /// Pull exactly `frames` of output in blocks of at most 512 and return its left channel (`nil`:
-    /// the render failed). `paced`: each block takes as long as it lasts, as a device pulls it, so
-    /// the completion-driven chain runs on a device's time — what a seam's timing depends on.
-    func samples(frames total: Int, paced: Bool = false) -> [Float]? {
+    /// Pull exactly `frames` of output in blocks of at most 512 and return its left channel (`nil`: the
+    /// render failed). The render runs in lock-step with the completion chain: after each block it waits
+    /// until every completion that block made due has been handed on and its work has run — which is what
+    /// a device's pace only hoped to give the chain (R4) — so a seam, a gap or a level depends on the code,
+    /// never on how fast the machine is. Runs on a thread of its own, off the cooperative pool.
+    func samples(frames total: Int) async throws -> [Float]? {
+        try await blocking("render") { try self.renderLockStep(frames: total) }
+    }
+
+    private func renderLockStep(frames total: Int) throws -> [Float]? {
         guard let engine = bridge.avEngineRef,
               let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 512)
         else { return nil }
         var left: [Float] = []
         left.reserveCapacity(total)
         while left.count < total {
+            if ledger.epoch != renderEpoch { // a stop or a seek began a new schedule: its clock starts at 0
+                renderEpoch = ledger.epoch
+                rendered = 0
+            }
             let frames = AVAudioFrameCount(min(512, total - left.count))
             guard (try? engine.renderOffline(frames, to: buffer)) == .success,
                   let channel = buffer.floatChannelData?[0] else { return nil }
             left += UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
-            if paced {
-                Thread.sleep(forTimeInterval: Double(frames) / Self.graphRate)
+            rendered += Int64(buffer.frameLength)
+            let renderedSoFar = rendered
+            try untilBlocking("the completions due after \(renderedSoFar) rendered frames to be handed on") {
+                ledger.undelivered(dueBy: renderedSoFar) == 0
             }
+            // Their work is queued on `resampleQueue`: drain it (twice, for what that work queues in turn).
+            bridge.resampleQueue.sync {}
             bridge.resampleQueue.sync {}
         }
         return left
+    }
+
+    /// Wait until the completions a stop or a seek set off (AVFAudio fires them for the buffers it drops)
+    /// have been handed on and their work has run.
+    func untilSupersededCompletionsLand() async throws {
+        try await until("the completions of the superseded schedule to be handed on") {
+            ledger.undeliveredFromSuperseded == 0
+        }
+        try await blocking("drain") {
+            self.bridge.resampleQueue.sync {}
+            self.bridge.resampleQueue.sync {}
+        }
     }
 
     /// Record what the player itself plays from now on — the bridge's schedule, before the effects
@@ -166,26 +201,20 @@ final class EnhancedTransportRig: @unchecked Sendable {
             left.withLock { $0 += frames }
         }
 
-        /// The first `frames` frames, once delivered (`nil`: not within two seconds).
-        func samples(frames: Int) -> [Float]? {
-            for _ in 0 ..< 200 {
-                let recorded = left.withLock { $0.count >= frames ? Array($0[..<frames]) : nil }
-                if let recorded {
-                    return recorded
-                }
-                Thread.sleep(forTimeInterval: 0.01)
-            }
-            return nil
+        /// The first `frames` frames, once delivered.
+        func samples(frames: Int) async throws -> [Float] {
+            try await until("the tap to deliver \(frames) frames") { left.withLock { $0.count >= frames } }
+            return left.withLock { Array($0[..<frames]) }
         }
     }
 
-    /// Pull output in paced 512-frame blocks until `condition` holds after a block, at most `limit`
-    /// frames. Returns how many frames had been pulled when it first held (`nil`: it never did, or the
-    /// render failed). The condition is read after the block's completions had their time to land.
-    func frames(until condition: () -> Bool, limit: Int) -> Int? {
+    /// Pull output in 512-frame blocks (each in lock-step with the completion chain) until `condition` holds
+    /// after a block, at most `limit` frames. Returns how many frames had been pulled when it first held
+    /// (`nil`: it never did, or the render failed).
+    func frames(until condition: () -> Bool, limit: Int) async throws -> Int? {
         var pulled = 0
         while pulled < limit {
-            guard samples(frames: 512, paced: true) != nil else { return nil }
+            guard try await samples(frames: 512) != nil else { return nil }
             pulled += 512
             if condition() {
                 return pulled
@@ -196,8 +225,8 @@ final class EnhancedTransportRig: @unchecked Sendable {
 
     /// Pull `seconds` of output and return its peak after the first `skipping` seconds (the DSP's
     /// look-ahead and tails), or `nil` when the render failed.
-    func render(seconds: Double, skipping: Double = 0) -> Float? {
-        guard let left = samples(seconds: seconds) else { return nil }
+    func render(seconds: Double, skipping: Double = 0) async throws -> Float? {
+        guard let left = try await samples(seconds: seconds) else { return nil }
         let skip = min(Int(skipping * Self.graphRate), left.count)
         return left[skip...].reduce(0) { max($0, abs($1)) }
     }

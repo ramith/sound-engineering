@@ -3,6 +3,7 @@ import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 import PlaybackQueueKit
+import RigKit
 import Testing
 
 // MARK: - The end of the queue plays the last track to its last frame (R1.1-A close-out, S-1)
@@ -59,7 +60,7 @@ struct EnhancedEndOfQueueTests {
         let program = try Self.program(test)
         let seams = test.after == nil ? 0 : 1
 
-        let endAt = try #require(rig.frames(until: { bridge.gaplessPlaybackEnded }, limit: program.count + 48000),
+        let endAt = try #require(await rig.frames(until: { bridge.gaplessPlaybackEnded }, limit: program.count + 48000),
                                  "the end never rose")
         let played = try Self.playerFrames(bridge)
         print("[end] \(test.testDescription): the end rose with \(played) of \(program.count) frames played "
@@ -68,8 +69,8 @@ struct EnhancedEndOfQueueTests {
         #expect(bridge.gaplessTransitionCount == UInt64(seams), "the seam counted, and before the end")
 
         // Everything the program holds reached the player, exactly.
-        _ = rig.samples(frames: 9600, paced: true) // the tap hands its frames over in whole buffers
-        let heard = try #require(recording.samples(frames: program.count), "the player's output was not recorded")
+        _ = try await rig.samples(frames: 9600) // the tap hands its frames over in whole buffers
+        let heard = try await recording.samples(frames: program.count)
         let error = zip(heard, program).reduce(Float(0)) { max($0, abs($1.0 - $1.1)) }
         #expect(error <= 1e-5, "what the player played differs from the program by \(error)")
         await rig.finish()
@@ -83,12 +84,13 @@ struct EnhancedEndOfQueueTests {
         let rig = try await Self.play(Case(rate: rate, frames: frames, after: nil), name: "end-stop")
         let bridge = rig.bridge
         let total = Int((Double(frames) * Rig.graphRate / rate).rounded(.up))
-        _ = try #require(rig.samples(frames: total - 4800, paced: true)) // 100 ms before its last frame
+        _ = try #require(await rig.samples(frames: total - 4800)) // 100 ms before its last frame
         try await bridge.stopAudio(epoch: 1, pausing: false)
         let player = try #require(bridge.playerNodeRef)
         #expect(!player.isPlaying, "the stop stops the player at once")
-        try await Task.sleep(for: .milliseconds(300)) // anything the stop's completions set off has run
-        bridge.resampleQueue.sync {}
+        // The completions the stop set off (AVFAudio fires them for the buffers it drops) have been handed on
+        // and their work has run: the positive witness that a stop's end WOULD have risen by now.
+        try await rig.untilSupersededCompletionsLand()
         #expect(!bridge.gaplessPlaybackEnded, "a stopped track never reports an end")
         await rig.finish()
     }
@@ -98,12 +100,12 @@ struct EnhancedEndOfQueueTests {
         let frames = Self.chunk * 8 + 4096
         let rig = try await Self.play(Case(rate: 44100, frames: frames, after: nil), name: "end-seek")
         let bridge = rig.bridge
-        let scheduled = rig.frames(until: { bridge.resampleQueue.sync { bridge.resampleSession?.reachedEnd ?? false } },
+        let scheduled = try await rig.frames(until: { bridge.resampleQueue.sync { bridge.resampleSession?.reachedEnd ?? false } },
                                    limit: 96000)
         try #require(scheduled != nil, "the stream never finished scheduling")
         let (error, _) = await rig.seek(to: 0.25)
         #expect(error == nil)
-        let after = try #require(rig.render(seconds: 0.4))
+        let after = try #require(await rig.render(seconds: 0.4))
         #expect(after > 0.01, "the track plays on from its new place")
         #expect(!bridge.gaplessPlaybackEnded, "the replaced stream's end never rises")
         let position = try #require(rig.position)
