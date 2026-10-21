@@ -1,6 +1,7 @@
-import Dispatch
 import Foundation
 import PlaybackQueueKit
+import RigKit
+import Synchronization
 import Testing
 
 // MARK: - TransportSnapshot — the tick reads a copy, never the engine (VM-TS)
@@ -11,7 +12,7 @@ import Testing
 // samples off the main thread and publishes through `SnapshotChannel`; these tests pin the property
 // that makes the tick safe — a publisher stuck in its work never makes a reader wait.
 
-@Suite("PlaybackQueueKit — TransportSnapshot, read without waiting (VM-TS)")
+@Suite("PlaybackQueueKit — TransportSnapshot, read without waiting (VM-TS)", .timeLimit(.minutes(3)))
 struct TransportSnapshotTests {
     @Test("VM-TS-01: a reader gets the last published value")
     func readsLatest() {
@@ -26,33 +27,41 @@ struct TransportSnapshotTests {
     }
 
     @Test("VM-TS-02: a publisher stuck mid-sample (the 7 s CoreAudio wait) never delays a reader")
-    func stuckPublisherNeverBlocksReader() {
+    func stuckPublisherNeverBlocksReader() async throws {
         let channel = SnapshotChannel(TransportSnapshot(position: 90, transitionCount: 1, ended: false))
-        let release = DispatchSemaphore(value: 0)
-        let sampling = DispatchSemaphore(value: 0)
-        // The engine's clock: it starts a sample, and the "player" it reads blocks until released.
-        DispatchQueue.global().async {
-            sampling.signal()
-            release.wait() // stuck inside the read, as -[AVAudioPlayerNode isPlaying] was
-            channel.publish(TransportSnapshot(position: 91, transitionCount: 1, ended: false))
-            sampling.signal()
-        }
-        sampling.wait() // the publisher is now stuck
-
-        // 60 ticks' worth of reads (3 s at 20 Hz) while it stays stuck: each returns at once with the
-        // last value — the scrubber just holds still.
-        let clock = ContinuousClock()
-        var slowest = Duration.zero
-        for _ in 0 ..< 60 {
-            let elapsed = clock.measure {
-                #expect(channel.read().position == 90)
+        let readsDone = Atomic<Int>(0)
+        try await withHold("the publisher, stuck inside its sample") { stuck in
+            // The engine's clock: it starts a sample, and the "player" it reads blocks until released.
+            let publisher = Task {
+                try await blocking("publisher") {
+                    stuck.wait() // stuck inside the read, as -[AVAudioPlayerNode isPlaying] was
+                    channel.publish(TransportSnapshot(position: 91, transitionCount: 1, ended: false))
+                }
             }
-            slowest = max(slowest, elapsed)
-        }
-        #expect(slowest < .milliseconds(5), "a read waited \(slowest)")
+            try await stuck.arrived()
 
-        release.signal()
-        sampling.wait() // the publisher finished
+            // 60 ticks' worth of reads (3 s at 20 Hz) while it STAYS stuck — held until the reads are done,
+            // not for a while. Each must return the last value: if a read waited on the publisher it could
+            // never finish (the hold ends only when this test releases it), and the wait below fails naming
+            // it. No duration is measured: how long a read took is the machine's business, not the code's.
+            let reader = Task {
+                try await blocking("reader") {
+                    for _ in 0 ..< 60 {
+                        guard channel.read().position == 90 else { return false }
+                        readsDone.add(1, ordering: .relaxed)
+                    }
+                    return true
+                }
+            }
+            try await until("60 reads to complete while the publisher is stuck", cap: .seconds(60)) {
+                readsDone.load(ordering: .relaxed) == 60
+            }
+            let allSawTheLastValue = try await reader.value
+            #expect(allSawTheLastValue, "a read saw something but the last published value")
+
+            stuck.release()
+            try await publisher.value // the publisher finished
+        }
         #expect(channel.read().position == 91)
     }
 
