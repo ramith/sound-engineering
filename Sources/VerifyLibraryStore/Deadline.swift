@@ -1,37 +1,45 @@
 // Deadline — a bounded-wait helper for the concurrency case (design §6-D).
 //
-// The concurrency stress/snapshot phases MUST be bounded: a phase that never
-// finishes is a DEADLOCK and must be a FAIL, never a hang or a skip. `withDeadline`
-// races the async `operation` against a wall-clock timeout using a task group; the
-// first to finish wins and the loser is cancelled. A `nil` result means the timeout
-// won (⇒ the caller fails the check).
+// The concurrency stress/snapshot phases MUST be bounded: a phase that never finishes is a
+// DEADLOCK and must FAIL — loudly, naming the check — never hang. The deadline is a WATCHDOG
+// THREAD, not a task in the operation's own task group: a group waits for all its children, even
+// cancelled ones, so a deadline raced inside one cannot fire while a child is wedged in a
+// non-cooperative wait (`DispatchSemaphore.wait()`, a synchronous SQLite call). The watchdog sleeps
+// on its own thread, outside the cooperative pool, and when the time is up it prints which check
+// and which phase did not finish and exits non-zero. The cap only ever breaks a hang: every phase
+// finishes in well under a second when nothing is wrong.
 
 import Foundation
+import Synchronization
 
-/// Run `operation`, returning its value, or `nil` if `seconds` elapse first (the
-/// operation is then cancelled). Rethrows anything `operation` throws.
-///
-/// Note: SQLite calls are synchronous C and do not observe Swift cancellation, so a
-/// truly wedged SQLite call could still outlive the timeout at the C level; in
-/// practice the store's `busy_timeout` bounds every lock wait, so a timeout here
-/// reflects a genuine logic deadlock in the test's task graph — exactly what §6-D
-/// wants surfaced as a FAIL.
-func withDeadline<T: Sendable>(
-    seconds: Double, operation: @escaping @Sendable () async throws -> T
-) async throws -> T? {
-    try await withThrowingTaskGroup(of: T?.self) { group in
-        group.addTask {
-            try await operation()
-        }
-        group.addTask {
-            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            return nil
-        }
-        // The first task to finish decides the result; cancel the rest.
-        let first = try await group.next() ?? nil
-        group.cancelAll()
-        return first
+/// The check the driver is running now, for the watchdog's message.
+enum CurrentCheck {
+    private static let running = Mutex("no check running")
+
+    static func begin(number: Int, label: String) {
+        running.withLock { $0 = "check \(number) (\(label))" }
     }
+
+    static var name: String {
+        running.withLock { $0 }
+    }
+}
+
+/// Run `operation` and return its value. If it has not finished within `seconds`, the watchdog
+/// prints `what` and the running check's name and exits 1 — whatever the operation is blocked on.
+/// Rethrows anything `operation` throws.
+func withDeadline<T: Sendable>(
+    _ what: String, seconds: Double, operation: @Sendable () async throws -> T
+) async rethrows -> T {
+    let finished = DispatchSemaphore(value: 0)
+    let check = CurrentCheck.name
+    Thread.detachNewThread {
+        guard finished.wait(timeout: .now() + seconds) == .timedOut else { return }
+        fail("\(check): \(what) did NOT finish within \(Int(seconds)) s — a deadlock "
+            + "(the watchdog thread fired; the operation never returned)")
+    }
+    defer { finished.signal() }
+    return try await operation()
 }
 
 /// A thread-safe one-shot: `runOnce`'s body executes on the FIRST call only. Used to gate
