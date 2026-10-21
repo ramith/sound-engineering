@@ -1,0 +1,9 @@
+# actionlint config. ONE declared label, and why:
+#   xcode-27 is GitHub's Xcode 27 PREVIEW hosted image (image 20261012, macOS 27.0.1). actionlint 1.7.12
+#   (the pinned version, the newest release) predates it, so it does not know the label and would reject
+#   every macOS job. The label is verified against the runner image readme (scratchpad/testrig/
+#   xcode-27-arm64-Readme.md). This declares it; no rule is disabled. When actionlint learns the label,
+#   delete this file.
+self-hosted-runner:
+  labels:
+    - xcode-27

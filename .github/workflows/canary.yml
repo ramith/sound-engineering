@@ -1,0 +1,49 @@
+name: Toolchain canary
+
+# Weekly (and on demand): asks what each tool bump would change, BEFORE a bump is forced by a red PR.
+# ADVISORY: it never fails a PR and it is not a required check. It opens or updates ONE issue.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: toolchain-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: canary (latest tools, advisory)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - name: Run the canary (writes .build/gate/canary/canary-report.md)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/gate/canary.sh
+      - name: Open or update the single canary issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report=".build/gate/canary/canary-report.md"
+          [ -s "$report" ] || { echo "::error::canary wrote no report"; exit 1; }
+          title="Toolchain canary: what the latest tool versions would change"
+          number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -1)"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$report"
+            gh issue comment "$number" --body "Updated by run $GITHUB_RUN_ID."
+          else
+            gh issue create --title "$title" --body-file "$report"
+          fi

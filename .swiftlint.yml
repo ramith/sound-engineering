@@ -46,7 +46,7 @@ excluded:
   # Agent/tooling worktrees (`.claude/worktrees/*`) are full repo copies with their own
   # `.build/`, gitignored but on disk inside the repo — linting them is not our source and
   # crashed swiftlint (SIGILL) in the S10.8 Sprint A gate. Mirrored in .swiftformat.
-  - .claude/
+  - scripts/gate/semgrep-fixtures/
 
 # --- Severity promotions (guide §4.2) ---
 force_cast: error

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# AdaptiveSound pre-push hook (T1): the fast, whole-repo part of the gate, run by git before a push.
+#
+# It is the registry's `push` tier (scripts/gate/steps.tsv): toolchain parity first, then SwiftFormat,
+# SwiftLint, semgrep, the suppression policy, the posture guards and actionlint over TRACKED files.
+# Anything heavier (builds, tests, clang-tidy, Periphery, the sanitizers) is `make check` (T2) or
+# `make combine-check` (T3) and CI. Bypass once, not recommended: git push --no-verify.
+set -uo pipefail
+repo_root="$(git rev-parse --show-toplevel)" || exit 1
+cd "$repo_root" || exit 1
+"$repo_root/scripts/gate/run.sh" --tier push
+rc=$?
+if ((rc != 0)); then
+    echo "push aborted by the pre-push gate (T1). Fix the failures above, or run 'make check' for the full lane bar." >&2
+fi
+exit "$rc"

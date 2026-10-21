@@ -1,4 +1,4 @@
-.PHONY: build run release run-release sheets songs-perf main-thread-stall clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help dist
+.PHONY: build run release run-release sheets songs-perf main-thread-stall clean xcode profile test format lint periphery strict-gate ci check combine-check stress toolchain library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help dist
 
 build:
 	swift build -c debug -j 8
@@ -118,11 +118,7 @@ songs-perf:
 # regression (a slow start must not be stopped by the replaced track's end flag). Exits non-zero on a
 # miss. Like `sheets`: no library store, no app setting, no audio device.
 main-thread-stall:
-	swift build -c debug -j 8
-	@BIN="$$(swift build -c debug --show-bin-path)"; \
-		for mode in stop start device-loss ended-advance; do \
-			"$$BIN/AdaptiveSound" -ASMainThreadStall $$mode || exit 1; \
-		done
+	scripts/gate/run.sh --step main-thread-stall
 
 # Stress library (S10.8 C1): ~10,000 tiny, real, tagged audio files (FLAC/MP3/M4A; long, CJK, RTL and
 # emoji names; flagged and unflagged compilations; same-title albums; 5.1 and 7.1 files; art and no
@@ -198,25 +194,39 @@ format:
 # CI-safe drift DETECTION (never mutates): SwiftFormat lint + SwiftLint strict + clang-format
 # dry-run + Semgrep. This is the fast static slice of the strict gate.
 lint:
-	swiftformat Sources Tests --lint
-	swiftlint lint --strict
-	find Sources Tests -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' \) -print0 | xargs -0 clang-format --dry-run --Werror
-	semgrep scan --config .semgrep.yml --error --quiet
+	scripts/gate/run.sh --step swiftformat --step swiftlint --step clang-format --step semgrep
 
 # Swift dead-code detection (Periphery) on the HOSTILE config in .periphery.yml — retain_public
 # false + strict (fails on ANY unused declaration); Tests/ excluded (mock-conformance noise).
 # Also runs inside `make strict-gate` / CI. Requires periphery:
 #   brew install peripheryapp/periphery/periphery
 periphery:
-	periphery scan
+	scripts/gate/run.sh --step periphery
 
 # Full local pre-merge gate: lint + static analysis + builds + tests + sanitizers +
 # suppression policy. Fails on the first problem. Run before opening/merging a PR.
 strict-gate:
-	bash scripts/strict-gate.sh
+	scripts/gate/run.sh --tier ci
 
-# CI entry point — same gate, so local and CI cannot diverge.
+# CI entry point — same registry, so local and CI cannot diverge.
 ci: strict-gate
+
+# T2 (a lane says done) and T3 (before pushing an integration branch). Both run through the same
+# registry; see docs/development/DEVELOPMENT.md for the tiers.
+check:
+	scripts/gate/run.sh --tier check
+
+combine-check:
+	scripts/gate/run.sh --tier combine
+
+# Install the pinned toolchain into the user cache, then print the parity table.
+toolchain:
+	scripts/toolchain/install.sh
+	scripts/toolchain/check.sh
+
+# Repeat a test under the CI-like profile: make stress TEST=<filter> N=<n> [KIND=swift|cpp].
+stress:
+	scripts/gate/stress.sh
 
 # S8.1a store acceptance gate — headless verification of the persistent library
 # store (open/create/migrate, v1 schema, transactional + downgrade-guarded
@@ -232,7 +242,7 @@ library-store-verify:
 # every rate pair, with a control that must fail — R1.1-A, C-26), and the library
 # store acceptance check. Any failure stops the chain (&&). Run before merging.
 gate:
-	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run SRCQualityMeasure && swift run VerifyLibraryStore
+	scripts/gate/run.sh --tier gate
 
 # Runtime-instrumented C++ DSP null test. sanitize = AddressSanitizer + Undefined
 # Behavior Sanitizer (heap/stack overruns, use-after-free, signed overflow, bad
@@ -240,10 +250,10 @@ gate:
 # races). Both halt on the first finding with a non-zero exit. Run before merging
 # changes to the AudioDSP kernels.
 sanitize:
-	bash scripts/build-null-test.sh --sanitize
+	scripts/gate/run.sh --step null-asan
 
 tsan:
-	bash scripts/build-null-test.sh --tsan
+	scripts/gate/run.sh --step null-tsan
 
 # M11 (S8.3): the FFmpeg-metadata C bridge (FileDecodeSource.cpp's new/delete handle + the
 # std::vector art copy in readAttachedArt) under AddressSanitizer. `make sanitize`/`tsan`
@@ -254,7 +264,7 @@ tsan:
 # macOS/Apple-Silicon ASan ships NO LeakSanitizer, so leaks are covered by the opaque-handle
 # RAII design + review, not by this gate. Part of the pre-merge sanitizer suite (with sanitize/tsan).
 sanitize-library-store:
-	swift run --sanitize=address VerifyLibraryStore
+	scripts/gate/run.sh --step store-asan
 
 # Leak DETECTION over the C-ABI opaque handles (audit hole #2). macOS/Apple-Silicon ASan
 # ships NO LeakSanitizer, so `sanitize`/`tsan`/`sanitize-library-store` are blind to plain
@@ -263,7 +273,7 @@ sanitize-library-store:
 # runs it under `xcrun leaks --atExit`, plus a plant-a-leak self-test proving the step is not
 # a no-op. Expensive runtime check — part of the strict gate, run before merging.
 leak-check:
-	bash scripts/build-leak-check.sh
+	scripts/gate/run.sh --step leak-check
 
 # Regenerate the S8.3 metadata-extraction fixtures (Tests/Fixtures/artwork-audio/).
 # DEV-ONLY + manual: the checked-in fixtures are AUTHORITATIVE and `make gate` never runs

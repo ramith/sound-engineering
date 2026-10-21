@@ -9,3 +9,6 @@ assets/
 scripts/hal-spike.dSYM/
 scripts/hal-spike
 *.dSYM/
+# The Semgrep rule fixtures are non-compiling snippets with violations ON PURPOSE; scripts/gate/semgrep-rule-tests.sh
+# tests them. Scanning them would fail the gate on every run.
+scripts/gate/semgrep-fixtures/

@@ -1,0 +1,37 @@
+# Composite action: select the pinned Xcode (27.1), restore the toolchain cache, and install the pinned
+# toolchain from toolchain/toolchain.env. Every gate job uses this, so each job starts from the
+# SAME tools the local install script installs (one manifest, Mac and CI).
+name: setup-gate
+description: Select the pinned Xcode and install the pinned gate toolchain from the manifest.
+
+runs:
+  using: composite
+  steps:
+    - name: Select the pinned Xcode (from toolchain/toolchain.env)
+      shell: bash
+      run: |
+        set -euo pipefail
+        set -a; source toolchain/toolchain.env; set +a
+        # The manifest names the app path (Xcode_27.1.app, an alias of the 27.1 Release Candidate build).
+        sudo xcode-select -s "$XCODE_APP_PATH"
+        xcodebuild -version
+        swift --version
+        sw_vers
+
+    # Tool downloads, keyed by the manifest content. The install script verifies every checksum on
+    # restore as well, so a restored cache can never smuggle in an unverified binary.
+    - name: Restore the toolchain cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/adaptivesound-toolchain
+        key: toolchain-${{ runner.os }}-${{ hashFiles('toolchain/toolchain.env', 'scripts/toolchain/semgrep-requirements.txt') }}
+
+    - name: Install the pinned toolchain (scripts/toolchain/install.sh)
+      shell: bash
+      run: scripts/toolchain/install.sh
+
+    # The FFmpeg headers (libavformat under /opt/homebrew/include) are how FileDecodeSource's FFmpeg
+    # branch is analysed at all. Installed here, checked by the parity step; a failed install is red.
+    - name: Install the FFmpeg headers (checked by the parity step)
+      shell: bash
+      run: brew install ffmpeg
