@@ -4,18 +4,17 @@
 
 import EQEditKit
 import Foundation
+import RigKit
 import SettingsKit
 import Testing
 
-@Suite("PureVolumeLoanJournal — Pure's loans, kept ahead of every change", .serialized)
+@Suite("PureVolumeLoanJournal — Pure's loans, kept ahead of every change")
 struct PureVolumeLoanJournalTests {
-    private static let suiteName = "SettingsKitTests.PureVolumeLoanJournal"
     private static let key = "pureVolumeLoansV1"
-    private let defaults: UserDefaults
-
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: Self.suiteName))
-        defaults.removePersistentDomain(forName: Self.suiteName)
+    /// The suite of this test's own, removed with it.
+    private let world = IsolatedDefaults("PureVolumeLoanJournal")
+    private var defaults: UserDefaults {
+        world.defaults
     }
 
     private static let dacA = PureVolumeLoan(deviceUID: "DAC-A", ceiling: -20, anchor: -20, lastSet: -32)

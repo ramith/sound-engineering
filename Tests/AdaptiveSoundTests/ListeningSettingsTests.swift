@@ -7,11 +7,12 @@
 import EQEditKit
 import Foundation
 import LibraryScan
+import RigKit
 import SettingsKit
 import Testing
 
 @MainActor
-@Suite("AudioViewModel — a faithful default, and the listener's settings kept", .serialized)
+@Suite("AudioViewModel — a faithful default, and the listener's settings kept", .timeLimit(.minutes(3)), .attachingLogTail)
 struct ListeningSettingsTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
@@ -25,14 +26,14 @@ struct ListeningSettingsTests {
     /// Where the listener's settings are kept (`SettingsStore`): a versioned key, so a later format
     /// gets a key of its own and this one stays readable.
     private static let settingsKey = "listeningSettingsV1"
-    /// This suite's defaults, emptied before each test (the suite runs its tests one at a time).
-    private static let suiteName = "AdaptiveSoundTests.ListeningSettings"
+    /// The suite of this test's own, removed with it.
+    private let world = IsolatedDefaults("ListeningSettings")
+    private var defaults: UserDefaults {
+        world.defaults
+    }
 
-    private let defaults: UserDefaults
-
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: Self.suiteName))
-        defaults.removePersistentDomain(forName: Self.suiteName)
+    init() {
+        QuietLog.install()
     }
 
     /// A launch: the view model the app builds, over this suite's defaults.
@@ -41,7 +42,7 @@ struct ListeningSettingsTests {
     }
 
     /// A launch that brings the engine up on `device`, with `devices` connected.
-    private func launchReady(on device: AudioDeviceModel, devices: [AudioDeviceModel]) async
+    private func launchReady(on device: AudioDeviceModel, devices: [AudioDeviceModel]) async throws
         -> (AudioViewModel, DeviceTestEngine) {
         let engine = DeviceTestEngine()
         engine.state.withLock {
@@ -50,16 +51,9 @@ struct ListeningSettingsTests {
         }
         let viewModel = launch(engine)
         viewModel.initializeEngine()
-        await settle()
+        try await viewModel.settled()
         viewModel.disarmTransportTick()
         return (viewModel, engine)
-    }
-
-    /// Let the view model's tasks run: a start, a device read, the settings' write at the end of a turn.
-    private func settle() async {
-        for _ in 0 ..< 50 {
-            await Task.yield()
-        }
     }
 
     /// One song in the queue, selected.
@@ -78,8 +72,8 @@ struct ListeningSettingsTests {
     // MARK: - A faithful default (C-41)
 
     @Test("a fresh launch plays as recorded: Intensity 0 (so no leveller, blend or limiter), the EQ off")
-    func freshLaunchIsFaithful() async {
-        let (viewModel, engine) = await launchReady(on: Self.speakers, devices: [Self.speakers])
+    func freshLaunchIsFaithful() async throws {
+        let (viewModel, engine) = try await launchReady(on: Self.speakers, devices: [Self.speakers])
         // Intensity 0 is the kernel's P0 / P1 path: no normaliser (leveling), no blend, and with the EQ
         // off no limiter either — the bit-exact anchor (DspBypassTests in the C++ gate).
         #expect(viewModel.intensity == 0)
@@ -98,7 +92,7 @@ struct ListeningSettingsTests {
     // MARK: - Remembered settings (C-102, C-12)
 
     @Test("Pure, Master Gain, crossfeed and its strength, shuffle, repeat and the pin come back after a relaunch")
-    func settingsRoundTrip() async {
+    func settingsRoundTrip() async throws {
         let first = launch()
         first.pureModeEnabled = true
         first.masterGain = -12
@@ -107,7 +101,7 @@ struct ListeningSettingsTests {
         first.shuffleEnabled = true
         first.repeatMode = 2
         first.pinPlaybackToSelectedDevice = false
-        await settle()
+        try await first.settled()
 
         let relaunched = launch()
         #expect(relaunched.pureModeEnabled)
@@ -121,13 +115,13 @@ struct ListeningSettingsTests {
     }
 
     @Test("crossfeed is kept as the listener chose it, not as the output allowed it (C-12)")
-    func crossfeedIntentSurvivesSpeakers() async {
-        let (viewModel, engine) = await launchReady(on: Self.headphones, devices: [Self.headphones, Self.speakers])
+    func crossfeedIntentSurvivesSpeakers() async throws {
+        let (viewModel, engine) = try await launchReady(on: Self.headphones, devices: [Self.headphones, Self.speakers])
         viewModel.crossfeedEnabled = true
         // The output moves to the speakers: crossfeed can't play there.
         engine.state.withLock { $0.engineDevice = Self.speakers.id }
         viewModel.refreshDevices()
-        await settle()
+        try await viewModel.settled()
         #expect(engine.state.withLock { $0.crossfeeds }.last == false, "crossfeed doesn't play on the speakers")
         #expect(viewModel.crossfeedEnabled, "the speakers hold crossfeed off, not the listener's choice")
 
@@ -148,13 +142,15 @@ struct ListeningSettingsTests {
     // MARK: - Master Gain is never restored louder than it was left (C-102)
 
     @Test("Master Gain comes back where it was left — a turn-down, or Silent")
-    func masterGainComesBackAsLeft() async {
-        launch().masterGain = -20
-        await settle()
+    func masterGainComesBackAsLeft() async throws {
+        let left = launch()
+        left.masterGain = -20
+        try await left.settled()
         #expect(launch().masterGain == -20)
 
-        launch().setMasterGain(position: 0) // the bottom stop: Silent
-        await settle()
+        let silenced = launch()
+        silenced.setMasterGain(position: 0) // the bottom stop: Silent
+        try await silenced.settled()
         #expect(launch().masterGain == -.infinity)
     }
 
@@ -179,7 +175,7 @@ struct ListeningSettingsTests {
     // MARK: - Master Gain on Pure is the device's own volume (C-29; founder 2026-10-15)
 
     @Test("turned down, the view model still asks for Pure: the engine turns the device down, or waits")
-    func pureIsAskedForAtAnyLevel() async {
+    func pureIsAskedForAtAnyLevel() async throws {
         let engine = DeviceTestEngine()
         let viewModel = launch(engine)
         viewModel.isEngineReady = true
@@ -187,7 +183,7 @@ struct ListeningSettingsTests {
         viewModel.masterGain = -20
         viewModel.pureModeEnabled = true
         viewModel.startPlayback()
-        await settle()
+        try await viewModel.settled()
         // The engine knows the device: it lowers its volume by Master Gain (MasterGainOnPure), or — on a
         // device with no volume the app can set — waits, and says so (PureModeReason.waitsForMasterGain).
         #expect(engine.state.withLock { $0.pureModes } == [true])
@@ -195,19 +191,19 @@ struct ListeningSettingsTests {
     }
 
     @Test("a pause reaches the engine as a pause, so Pure keeps the device's volume; a stop ends playback")
-    func pauseIsNotAStop() async {
+    func pauseIsNotAStop() async throws {
         let engine = DeviceTestEngine()
         let viewModel = launch(engine)
         viewModel.isEngineReady = true
         queueOneSong(viewModel)
         viewModel.pureModeEnabled = true
         viewModel.startPlayback()
-        await settle()
+        try await viewModel.settled()
         viewModel.pause()
-        await settle()
+        try await viewModel.settled()
         #expect(engine.state.withLock { $0.stops } == [.pause], "playback resumes there: Pure's hold stays")
         viewModel.stopPlayback()
-        await settle()
+        try await viewModel.settled()
         #expect(engine.state.withLock { $0.stops } == [.pause, .stop], "playback ended: Pure is left")
     }
 
@@ -227,45 +223,45 @@ struct ListeningSettingsTests {
     }
 
     @Test("at engine-ready the engine is handed Pure's loan journal over the app's defaults — what a crash left")
-    func loansKeptAcrossALaunch() async {
+    func loansKeptAcrossALaunch() async throws {
         let loan = PureVolumeLoan(deviceUID: "AppleUSBAudioEngine:DAC:1", ceiling: -20, anchor: -20, lastSet: -32,
                                   pending: -32)
         PureVolumeLoanJournal(defaults: defaults).keep([loan]) // as the engine wrote it ahead, before dying
-        let (_, relaunchedEngine) = await launchReady(on: Self.speakers, devices: [Self.speakers])
+        let (_, relaunchedEngine) = try await launchReady(on: Self.speakers, devices: [Self.speakers])
         #expect(relaunchedEngine.state.withLock { $0.journalLoans } == [[loan]])
     }
 
     @Test("the device the user chose comes back after a relaunch; the device the app launches on is not a choice")
-    func chosenDeviceKept() async {
+    func chosenDeviceKept() async throws {
         // Launched on the speakers: nothing chosen, so nothing comes back.
         let devices = [Self.speakers, Self.headphones]
-        _ = await launchReady(on: Self.speakers, devices: devices)
-        let (second, secondEngine) = await launchReady(on: Self.speakers, devices: devices)
+        _ = try await launchReady(on: Self.speakers, devices: devices)
+        let (second, secondEngine) = try await launchReady(on: Self.speakers, devices: devices)
         #expect(secondEngine.state.withLock { $0.restoredChoices } == [nil], "the launch device was not chosen")
 
         // The user picks the headphones; the next launch gets them back as the choice, not as a pick.
         second.selectDevice(Self.headphones)
-        await settle()
-        let (_, thirdEngine) = await launchReady(on: Self.speakers, devices: devices)
+        try await second.settled()
+        let (_, thirdEngine) = try await launchReady(on: Self.speakers, devices: devices)
         #expect(thirdEngine.state.withLock { $0.restoredChoices } == [Self.headphones.uid])
         #expect(thirdEngine.state.withLock { $0.picks }.isEmpty, "a restored choice is not a pick")
     }
 
     @Test("turning \"Keep playback on this device\" on chooses the device in use, and that choice is kept")
-    func pinOnChoiceKept() async {
+    func pinOnChoiceKept() async throws {
         let devices = [Self.speakers, Self.headphones]
-        let (viewModel, _) = await launchReady(on: Self.headphones, devices: devices)
+        let (viewModel, _) = try await launchReady(on: Self.headphones, devices: devices)
         viewModel.pinPlaybackToSelectedDevice = false
         viewModel.pinPlaybackToSelectedDevice = true // "this device": the headphones
-        await settle()
-        let (_, relaunchedEngine) = await launchReady(on: Self.speakers, devices: devices)
+        try await viewModel.settled()
+        let (_, relaunchedEngine) = try await launchReady(on: Self.speakers, devices: devices)
         #expect(relaunchedEngine.state.withLock { $0.restoredChoices } == [Self.headphones.uid])
     }
 
     // MARK: - A damaged value falls back to the faithful default
 
     @Test("FFmpeg is off on a new install; turned on, it is kept and opens the process's switch (FD-3)")
-    func ffmpegOptIn() async {
+    func ffmpegOptIn() async throws {
         defer { FFmpegOptIn.isOn = false }
         let fresh = launch()
         #expect(!fresh.useFFmpeg)
@@ -273,7 +269,7 @@ struct ListeningSettingsTests {
 
         fresh.useFFmpeg = true
         #expect(FFmpegOptIn.isOn)
-        await settle()
+        try await fresh.settled()
         FFmpegOptIn.isOn = false // a new process starts with the switch off
         let relaunched = launch()
         #expect(relaunched.useFFmpeg)

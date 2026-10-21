@@ -5,20 +5,19 @@
 
 import EQEditKit
 import Foundation
+import RigKit
 @testable import SettingsKit
 import Testing
 
 @MainActor
-@Suite("SettingsStore — the listener's settings, kept", .serialized)
+@Suite("SettingsStore — the listener's settings, kept", .timeLimit(.minutes(3)))
 struct SettingsStoreTests {
-    private static let suiteName = "SettingsKitTests"
     private static let key = "listeningSettingsV1"
 
-    private let defaults: UserDefaults
-
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: Self.suiteName))
-        defaults.removePersistentDomain(forName: Self.suiteName)
+    /// The suite of this test's own, removed with it.
+    private let world = IsolatedDefaults("SettingsKitTests")
+    private var defaults: UserDefaults {
+        world.defaults
     }
 
     private func stored(_ json: String) {
@@ -29,12 +28,6 @@ struct SettingsStoreTests {
         SettingsStore(defaults: defaults).load()
     }
 
-    /// Let the main actor finish this turn's work (a store's end-of-turn write).
-    private func endTurn() async {
-        for _ in 0 ..< 10 {
-            await Task.yield()
-        }
-    }
 
     /// Every setting away from its default.
     private static let changed = ListeningSettings(
@@ -92,14 +85,14 @@ struct SettingsStoreTests {
         store.save(first)
         store.save(Self.changed)
         #expect(defaults.object(forKey: Self.key) == nil, "nothing is written within the turn")
-        await endTurn()
+        await store.pendingWrite?.value
         #expect(load() == Self.changed, "the turn's newest settings, written once it ended")
 
         // The faithful default saved over a new install's: equal to what is stored, so never written.
-        defaults.removePersistentDomain(forName: Self.suiteName)
+        defaults.removePersistentDomain(forName: world.suiteName)
         let fresh = SettingsStore(defaults: defaults)
         fresh.save(fresh.load())
-        await endTurn()
+        await fresh.pendingWrite?.value
         #expect(defaults.object(forKey: Self.key) == nil)
     }
 
@@ -145,14 +138,14 @@ struct SettingsStoreTests {
             ("a dictionary", ["masterGainDecibels": -30]), ("an array", [1, 2]),
         ]
         for (what, value) in wrongTypes {
-            defaults.removePersistentDomain(forName: Self.suiteName)
+            defaults.removePersistentDomain(forName: world.suiteName)
             defaults.set(value, forKey: Self.key)
             #expect(load().masterGainDecibels == -.infinity, "\(what): read louder than Silent")
             #expect(defaults.object(forKey: unreadable) != nil, "\(what): not kept aside")
         }
         let badJSON = ["not json at all", "[]", #""text""#, "5", "null", #"{"version":1"#]
         for json in badJSON {
-            defaults.removePersistentDomain(forName: Self.suiteName)
+            defaults.removePersistentDomain(forName: world.suiteName)
             stored(json)
             #expect(load().masterGainDecibels == -.infinity, "\(json): read louder than Silent")
             #expect(defaults.object(forKey: unreadable) != nil, "\(json): not kept aside")
@@ -164,13 +157,13 @@ struct SettingsStoreTests {
             #"{"masterGainDecibels":"loud"}"#, #"{"masterGainDecibels":true}"#, #"{"masterGainDecibels":[0]}"#,
         ]
         for json in badLevels {
-            defaults.removePersistentDomain(forName: Self.suiteName)
+            defaults.removePersistentDomain(forName: world.suiteName)
             stored(json)
             #expect(load().masterGainDecibels == -.infinity, "\(json): read louder than Silent")
         }
         // A level that can be what was left reads as itself.
         for (json, level) in [(#"{"masterGainDecibels":-12}"#, Float(-12)), (#"{"masterGainDecibels":0}"#, 0)] {
-            defaults.removePersistentDomain(forName: Self.suiteName)
+            defaults.removePersistentDomain(forName: world.suiteName)
             stored(json)
             #expect(load().masterGainDecibels == level)
         }

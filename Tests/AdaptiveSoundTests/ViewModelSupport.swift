@@ -1,6 +1,7 @@
 @testable import AdaptiveSound
 import Foundation
 import RigKit
+import Testing
 
 // MARK: - What every test of the real view model shares (test-rig redesign)
 
@@ -62,6 +63,16 @@ final class TickerBench {
             let ticker = ManualTicker(tick: tick)
             tickers.append(ticker)
             return ticker
+        }
+    }
+}
+
+extension AudioViewModel {
+    /// Wait until everything this view model set going has finished: the tasks it spawned (a start, a device
+    /// read), and the settings' write at the end of the turn. Replaces "50 yields and hope".
+    func settled() async throws {
+        try await until("the view model's tasks and the settings' write to finish") {
+            work.isIdle && settingsStore.pendingWrite == nil
         }
     }
 }
