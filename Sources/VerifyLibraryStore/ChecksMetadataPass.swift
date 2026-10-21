@@ -186,7 +186,8 @@ func checkMetadataPassCancellation(number: Int, url: URL) async -> Bool {
 /// loop's next `checkCancellation()` throws. The closure cancels the very task the pass runs in — no
 /// semaphore park (a park on a cooperative-pool thread starves the rest when the pool is one thread
 /// wide, `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`). Returns true iff the pass threw `CancellationError`.
-/// Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly. Shared with ALB-10 (a pass cut off at quit leaves no zero-song album).
+/// Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly. Shared with ALB-10 (a pass cut off at quit leaves
+/// no zero-song album).
 func cancelPassAfterFirstApply(
     _ store: LibraryStore, cache: ArtworkCache, gen: Int64, extractor: some MetadataExtracting, number: Int
 ) async throws -> Bool {
