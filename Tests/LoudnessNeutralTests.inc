@@ -844,17 +844,19 @@ static auto testSoakDspKernelZeroRtAllocCausalTap() -> void
 static auto testRealizerLoudnessCost() -> void
 {
     static const char* const kName = "Realizer_LoudnessCost";
+    // Tripwires ≥ 10× each build's measurement (2026-10-21: edit debug 1.8, ASan 5.7, TSan 18 ms;
+    // refresh debug 14, ASan 54, TSan 332 ms).
     constexpr rig::Budget kEditBudgetMs{
         .strict = 1.0,
         .debug = 25.0,
-        .asan = 60.0,
+        .asan = 75.0,
         .tsan = 250.0,
     };
     constexpr rig::Budget kRefreshBudgetMs{
         .strict = 5.0,
         .debug = 200.0,
-        .asan = 500.0,
-        .tsan = 2000.0,
+        .asan = 600.0,
+        .tsan = 4000.0,
     };
     constexpr double kRate = 192000.0;
     constexpr int kRounds = 20;

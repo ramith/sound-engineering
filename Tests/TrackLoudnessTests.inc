@@ -2118,17 +2118,19 @@ namespace
 static auto testProfilerTiming() -> void
 {
     static const char* const kName = "Profiler_Timing";
+    // Tripwires ≥ 10× each build's measurement (2026-10-21: feed debug 41, ASan 114, TSan 466 ms/s;
+    // predict debug 13, ASan 53, TSan 379 ms).
     constexpr rig::Budget kFeedBudgetMsPerSecond{
         .strict = 40.0,
         .debug = 1000.0,
-        .asan = 1000.0,
-        .tsan = 4000.0,
+        .asan = 1500.0,
+        .tsan = 6000.0,
     };
     constexpr rig::Budget kPredictBudgetMs{
         .strict = 4.0,
         .debug = 250.0,
-        .asan = 400.0,
-        .tsan = 2000.0,
+        .asan = 600.0,
+        .tsan = 4500.0,
     };
     constexpr double kAudioSeconds = 6.0;
     constexpr int kPredictions = 20;
