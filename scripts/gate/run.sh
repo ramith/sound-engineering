@@ -206,8 +206,11 @@ run_step() {
     pid=$!
     pgid="$pid"
     current_pgid="$pgid"
-    # Watchdog in its own group: it names the timeout and kills the step's whole group.
+    # Watchdog in its own group: it names the timeout and kills the step's whole group. Its stderr
+    # is closed: when the step ends first the watchdog is killed mid-`sleep`, and bash would print
+    # "Terminated: 15 sleep" into the gate's console for every step.
     (
+        exec 2>/dev/null
         sleep "$secs"
         if kill -0 -- "-$pgid" 2>/dev/null; then
             : > "$flag"
@@ -217,7 +220,9 @@ run_step() {
         fi
     ) &
     wd=$!
-    wait "$pid"
+    # The step's exit code is read from `wait`; its stderr is closed so a step killed by its watchdog
+    # does not also print the shell's job notice ("[1]- Terminated: 15 ...") — the result row names it.
+    wait "$pid" 2>/dev/null
     rc=$?
     kill -TERM -- "-$wd" 2>/dev/null
     wait "$wd" 2>/dev/null

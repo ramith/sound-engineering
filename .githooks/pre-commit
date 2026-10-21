@@ -105,7 +105,20 @@ fi
 # ---------------------------------------------------------------------------
 # 3. clang-tidy (blocking; REQUIRED — a missing clang-tidy fails the commit)
 # ---------------------------------------------------------------------------
+# The C++ includes headers from the submodules. One not checked out does not read as "missing":
+# clang-tidy reports a cascade of bogus findings instead, so name it here first.
+submodules_ok=1
 if ((${#cpp_files[@]})); then
+    while read -r state path _; do
+        if [[ "$state" == -* ]]; then
+            red "❌ submodule $path is not checked out: run 'git submodule update --init' first —"
+            red "    without its headers clang-tidy reports bogus findings instead of saying so."
+            submodules_ok=0
+            fail=1
+        fi
+    done < <(git submodule status 2>/dev/null)
+fi
+if ((${#cpp_files[@]})) && ((submodules_ok)); then
     if [[ -n "$CLANG_TIDY" ]]; then
         # Parse flags come from the single source of truth shared with the strict-gate
         # and build-null-test.sh (scripts/lib/cxx-analysis-flags.sh, sourced above with the

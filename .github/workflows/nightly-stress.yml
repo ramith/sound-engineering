@@ -1,7 +1,10 @@
 name: Nightly stress
 
-# Advisory (schedule and on demand): repeats the concurrency-sensitive Swift suites under the CI-like
-# profile (make stress). It never blocks a merge. A failure is a flake to FIX the same day, not retry.
+# Advisory (schedule and on demand): repeats the concurrency-sensitive suites under the CI-like
+# profile (make stress) — Swift by type or function name, the C++ null test's Concurrent tier
+# shuffled, and the verifiers with ONE cooperative thread (the profile that found the store
+# verifier's mid-scan deadlock). It never blocks a merge. A failure is a flake to FIX the same day,
+# not retry.
 
 on:
   schedule:
@@ -9,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       test:
-        description: "swift --filter regex to stress (function or type names)"
+        description: "swift --filter regex to stress (function or type names, not @Test display names)"
         required: true
-        default: "ANALYZER-05|Loudness_WorkersSleepWhileIdle"
+        default: "TrackLoudnessAnalyzerTests|LiveReadoutsTests"
       n:
         description: "iterations"
         required: true
@@ -35,11 +38,23 @@ jobs:
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-gate
-      - name: Stress (CI-like profile, strict pool)
+      - name: Stress the Swift suites (CI-like profile, strict pool)
         env:
-          TEST: ${{ inputs.test || 'ANALYZER-05|Loudness_WorkersSleepWhileIdle' }}
+          TEST: ${{ inputs.test || 'TrackLoudnessAnalyzerTests|LiveReadoutsTests' }}
           N: ${{ inputs.n || '20' }}
         run: make stress
+      - name: Stress the C++ Concurrent tier (repeated, shuffled, printed seed)
+        if: ${{ !cancelled() }}
+        env:
+          KIND: cpp
+          TEST: "Concurrent.*"
+          N: ${{ inputs.n || '20' }}
+        run: make stress
+      - name: The verifiers with one cooperative thread
+        if: ${{ !cancelled() }}
+        env:
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
+        run: scripts/gate/run.sh --step verify-library-store --step verify-au-graph --step main-thread-stall
       - name: Upload the stress logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
