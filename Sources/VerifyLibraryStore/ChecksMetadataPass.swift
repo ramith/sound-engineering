@@ -200,7 +200,7 @@ func cancelPassAfterFirstApply(
                 firstApply.runOnce {
                     applied.continuation.yield(())
                     applied.continuation.finish()
-                    proceed.wait() // park the pass after the first apply until the test has cancelled
+                    awaitState(proceed, "the test's cancel of the metadata pass") // parked after the first apply
                 }
             }
         )

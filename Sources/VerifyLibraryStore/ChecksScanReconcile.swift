@@ -246,7 +246,7 @@ func checkReadsDuringScan(number: Int, url: URL) async -> Bool {
 /// first batch commits, then — on a SEPARATE connection (one actor would serialize) —
 /// read and assert a consistent PARTIAL count (0 < seen < total). Release the scanner;
 /// it finishes seeing every file. `withDeadline`'s watchdog thread makes any deadlock a FAIL, not a hang — it
-/// fires even while the scanner is parked in the non-cooperative `readDone.wait()`.
+/// fires even while the scanner is parked in the non-cooperative `awaitState`.
 private func readsDuringScan(_ store: LibraryStore, url: URL, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("reads-during-scan")
     let fileCount = 600 // > 2 batches (internal batchSize 256) so a mid-scan commit is < total
@@ -283,7 +283,7 @@ private func parkedMidScanRead(store: LibraryStore, url: URL, root: URL, folderI
                 firstBatch.runOnce {
                     committed.continuation.yield(())
                     committed.continuation.finish()
-                    readDone.wait() // park the scanner mid-walk until the read completes
+                    awaitState(readDone, "the reader's release of the scan") // parked mid-walk
                 }
             }
         )
