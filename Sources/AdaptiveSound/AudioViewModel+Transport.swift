@@ -57,7 +57,7 @@ extension AudioViewModel {
         // The stop takes the engine's on-deck with it.
         pendingNextIndex = nil
         let epoch = nextStopEpoch()
-        Task { await performPause(epoch: epoch) }
+        work.spawn { [self] in await performPause(epoch: epoch) }
     }
 
     /// Position-preserving transport toggle — the single entry point every UI play/pause control

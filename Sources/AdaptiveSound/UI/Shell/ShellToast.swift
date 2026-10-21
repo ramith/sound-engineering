@@ -26,9 +26,12 @@ final class ShellToastSlot {
     @ObservationIgnored private var token = 0
     @ObservationIgnored private var dismissTask: Task<Void, Never>?
     private let lifetime: Duration
+    /// The clock the lifetime runs on: `ContinuousClock` in the app, a test clock in a test.
+    private let clock: any Clock<Duration>
 
-    init(lifetime: Duration) {
+    init(lifetime: Duration, clock: any Clock<Duration> = ContinuousClock()) {
         self.lifetime = lifetime
+        self.clock = clock
     }
 
     /// Show `message` for `lifetime`, replacing any message on show.
@@ -36,8 +39,8 @@ final class ShellToastSlot {
         token &+= 1
         toast = Toast(message: message, token: token)
         dismissTask?.cancel()
-        dismissTask = Task { [weak self, lifetime] in
-            try? await Task.sleep(for: lifetime)
+        dismissTask = Task { [weak self, lifetime, clock] in
+            try? await clock.sleep(for: lifetime)
             guard !Task.isCancelled else { return }
             self?.toast = nil
         }

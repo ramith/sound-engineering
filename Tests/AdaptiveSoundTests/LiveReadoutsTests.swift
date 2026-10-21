@@ -11,40 +11,20 @@
 
 @testable import AdaptiveSound
 import Foundation
+import RigKit
 import Testing
 
 @MainActor
-@Suite("Live readouts: real time, and idle when nobody looks (C-51, C-52)", .serialized)
+@Suite("Live readouts: real time, and idle when nobody looks (C-51, C-52)", .timeLimit(.minutes(3)),
+       .attachingLogTail)
 struct LiveReadoutsTests {
-    private static let suiteName = "AdaptiveSoundTests.LiveReadouts"
-    private let defaults: UserDefaults
+    /// The suite of this test's own, removed with it.
+    private let world = IsolatedDefaults("LiveReadouts")
+    /// The transport tick's hand-fired tickers: a tick happens when the test says so.
+    private let bench = TickerBench()
 
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: Self.suiteName))
-        defaults.removePersistentDomain(forName: Self.suiteName)
-    }
-
-    /// Run the main run loop, where the view model's timers fire, and let its tasks run, until `done`
-    /// holds. Time only breaks a hang: a busy runner may take its time, so this waits for the state,
-    /// never for a fixed while, and fails naming `what` if a minute passes without it (main CI run
-    /// 39477694633: a pause that landed after a fixed 0.1 s left the tick running).
-    private func runMainLoop(until what: String, sourceLocation: SourceLocation = #_sourceLocation,
-                             _ done: () -> Bool) async {
-        let deadline = ContinuousClock.now + .seconds(60)
-        while !done() {
-            guard ContinuousClock.now < deadline else {
-                Issue.record("\(what): still not so after a minute", sourceLocation: sourceLocation)
-                return
-            }
-            runMainLoop(0.01)
-            await Task.yield()
-        }
-    }
-
-    /// Run the main run loop for `seconds`: a window in which something must NOT happen, opened only
-    /// once the state it guards has been seen.
-    private func runMainLoop(_ seconds: TimeInterval) {
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
+    init() {
+        QuietLog.install()
     }
 
     /// Whether a start or a pause has landed: nothing is on its way to the engine.
@@ -58,10 +38,10 @@ struct LiveReadoutsTests {
     }
 
     /// The view model, its engine ready, one song queued and selected.
-    private func readyViewModel(_ engine: DeviceTestEngine) async -> AudioViewModel {
-        let viewModel = AudioViewModel(defaults: defaults, engine: engine)
+    private func readyViewModel(_ engine: DeviceTestEngine) async throws -> AudioViewModel {
+        let viewModel = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         viewModel.initializeEngine()
-        await runMainLoop(until: "the engine to come up") { viewModel.isEngineReady || viewModel.errorMessage != nil }
+        try await until("the engine to come up") { viewModel.isEngineReady || viewModel.errorMessage != nil }
         #expect(viewModel.isEngineReady, "the engine did not come up: \(viewModel.errorMessage ?? "")")
         let url = URL(fileURLWithPath: "/nonexistent/live-readouts.flac") // never opened
         let song = AudioFile(name: "Song", relativePath: "", absoluteURL: url, format: "FLAC", durationSeconds: 240)
@@ -70,12 +50,26 @@ struct LiveReadoutsTests {
         return viewModel
     }
 
+    /// Start the song and wait until it plays — and the tick, which a start arms, is going.
+    private func startPlaying(_ viewModel: AudioViewModel) async throws -> ManualTicker {
+        viewModel.playTrack(at: 0)
+        try await until("the song to start") { landed(viewModel, playing: true) && bench.current != nil }
+        return try #require(bench.current)
+    }
+
+    /// Let a pause land, then deliver the tick that finds nothing playing and nothing on its way: the last.
+    private func pauseAndFinishTheLastTick(_ viewModel: AudioViewModel, _ ticker: ManualTicker) async throws {
+        viewModel.pause()
+        try await until("the pause to land") { landed(viewModel, playing: false) }
+        ticker.fire()
+    }
+
     // MARK: Peak-hold in real time (D57)
 
     @Test("a peak cap holds 0.6 s, then falls 1.25 of full scale a second, as frames arrive every 100 ms")
     func peakCapsMoveInRealTime() {
         let engine = DeviceTestEngine()
-        let viewModel = AudioViewModel(defaults: defaults, engine: engine)
+        let viewModel = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         let sampler = viewModel.spectrum
         let start = Date(timeIntervalSinceReferenceDate: 1000)
         let bar = SpectrumConstants.displayBarCount / 2
@@ -102,7 +96,7 @@ struct LiveReadoutsTests {
     @Test("paused, the lens shows the latest frame as it is: it draws once, so never part-way through an ease")
     func pausedLensShowsTheLatestFrame() {
         let engine = DeviceTestEngine()
-        let viewModel = AudioViewModel(defaults: defaults, engine: engine)
+        let viewModel = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         engine.state.withLock { $0.spectrumFrames = [Self.frame(0.5)] }
         let shown = viewModel.spectrum.lens(at: Date(), isPlaying: false, isPure: false, reduceMotion: false)
         #expect(shown.bars.allSatisfy { abs($0 - 0.5) < 1e-6 }, "paused, the lens drew \(shown.bars.prefix(3))…")
@@ -111,59 +105,83 @@ struct LiveReadoutsTests {
     // MARK: Idle (C-52)
 
     @Test("with no view showing the spectrum nothing reads it, playing or paused")
-    func spectrumUnreadWhileHidden() async {
+    func spectrumUnreadWhileHidden() async throws {
         let engine = DeviceTestEngine()
-        let viewModel = await readyViewModel(engine)
-        viewModel.playTrack(at: 0)
-        await runMainLoop(until: "the song to start") { landed(viewModel, playing: true) }
-        let before = engine.state.withLock { $0.spectrumReads }
-        // Seven ticks of the transport (0.35 s of playing), counted rather than timed.
-        let ticksFrom = engine.state.withLock { $0.snapshotReads }
-        await runMainLoop(until: "seven transport ticks") {
-            engine.state.withLock { $0.snapshotReads } >= ticksFrom + 7
+        let viewModel = try await readyViewModel(engine)
+        let ticker = try await startPlaying(viewModel)
+        let spectrumBefore = engine.state.withLock { $0.spectrumReads }
+        let ticksBefore = engine.state.withLock { $0.snapshotReads }
+        // Seven ticks of the transport (0.35 s of playing): each reads the engine's snapshot — the witness
+        // that the tick had its chance to read the spectrum — and none reads the spectrum.
+        for _ in 0 ..< 7 {
+            ticker.fire()
         }
-        let reads = engine.state.withLock { $0.spectrumReads } - before
+        let ticks = engine.state.withLock { $0.snapshotReads } - ticksBefore
+        let reads = engine.state.withLock { $0.spectrumReads } - spectrumBefore
+        #expect(ticks == 7, "the seven ticks read the engine \(ticks) times")
         #expect(reads == 0, "playing, with no view showing it, the spectrum was read \(reads) times in seven ticks")
         viewModel.disarmTransportTick()
     }
 
     @Test("the transport tick runs while a song plays and stops once a pause has settled")
-    func transportTickStopsWhenPaused() async {
+    func transportTickStopsWhenPaused() async throws {
         let engine = DeviceTestEngine()
-        let viewModel = await readyViewModel(engine)
-        viewModel.playTrack(at: 0)
-        await runMainLoop(until: "the song to start") { landed(viewModel, playing: true) }
+        let viewModel = try await readyViewModel(engine)
+        let ticker = try await startPlaying(viewModel)
         let playingFrom = engine.state.withLock { $0.snapshotReads }
-        await runMainLoop(until: "playing, the tick to read the engine") {
-            engine.state.withLock { $0.snapshotReads } > playingFrom
-        }
+        ticker.fire()
+        #expect(engine.state.withLock { $0.snapshotReads } > playingFrom, "playing, the tick reads the engine")
+        #expect(ticker.isRunning, "playing, the tick goes on")
 
-        viewModel.pause()
-        // The tick that finds nothing playing and nothing on its way is the last.
-        await runMainLoop(until: "paused, the tick to stop") { viewModel.transportTimer == nil }
-        #expect(landed(viewModel, playing: false))
+        // The tick that finds nothing playing and nothing on its way is the last: it stops itself, so
+        // no tick can read the engine from here on.
+        try await pauseAndFinishTheLastTick(viewModel, ticker)
+        #expect(!ticker.isRunning, "paused, the tick did not stop")
+        #expect(viewModel.transportTicker == nil, "paused, the view model still holds its ticker")
         let pausedFrom = engine.state.withLock { $0.snapshotReads }
-        runMainLoop(0.35)
+        ticker.fire() // a stopped ticker delivers nothing
         let reads = engine.state.withLock { $0.snapshotReads } - pausedFrom
-        #expect(reads == 0, "paused, the transport tick read the engine \(reads) times in 0.35 s")
+        #expect(reads == 0, "paused, the transport tick read the engine \(reads) times")
         viewModel.disarmTransportTick()
     }
 
-    @Test("paused, the scrubber follows the paused song at once: a scrub moves it, another song zeroes it")
-    func pausedScrubberNeedsNoTick() async {
+    @Test("a play after a pause starts a tick again")
+    func playAfterPauseTicksAgain() async throws {
         let engine = DeviceTestEngine()
-        let viewModel = await readyViewModel(engine)
+        let viewModel = try await readyViewModel(engine)
+        let first = try await startPlaying(viewModel)
+        try await pauseAndFinishTheLastTick(viewModel, first)
+        #expect(bench.current == nil, "paused: no tick is going")
+        viewModel.play()
+        try await until("the play to land, and a tick to start") {
+            landed(viewModel, playing: true) && bench.current != nil
+        }
+        let second = try #require(bench.current)
+        #expect(second !== first, "the new tick is a ticker of its own")
+        viewModel.disarmTransportTick()
+    }
+
+    @Test("the product's ticker is a main-run-loop timer: it fires, and stopping it ends it")
+    func runLoopTickerFiresAndStops() async throws {
+        var fired = 0
+        let ticker = RunLoopTicker(interval: 0.01) { fired += 1 }
+        try await untilOnMainRunLoop("the timer to fire three times") { fired >= 3 }
+        ticker.stop()
+        #expect(!ticker.timer.isValid, "a stopped ticker's timer is still scheduled")
+    }
+
+    @Test("paused, the scrubber follows the paused song at once: a scrub moves it, another song zeroes it")
+    func pausedScrubberNeedsNoTick() async throws {
+        let engine = DeviceTestEngine()
+        let viewModel = try await readyViewModel(engine)
         let url = URL(fileURLWithPath: "/nonexistent/live-readouts-2.flac")
         viewModel.queue.append(QueueItem(file: AudioFile(name: "Next", relativePath: "", absoluteURL: url,
                                                          format: "FLAC", durationSeconds: 200)))
         viewModel.duration = 240
-        viewModel.playTrack(at: 0)
-        await runMainLoop(until: "the song to start") { landed(viewModel, playing: true) }
+        let ticker = try await startPlaying(viewModel)
         viewModel.seek(to: 81)
-        viewModel.pause()
-        // The tick that finds nothing playing and nothing on its way is the last.
-        await runMainLoop(until: "paused, the tick to sleep") { viewModel.transportTimer == nil }
-        #expect(landed(viewModel, playing: false))
+        try await pauseAndFinishTheLastTick(viewModel, ticker)
+        #expect(viewModel.transportTicker == nil, "paused, the tick sleeps")
         viewModel.seek(to: 120) // a scrub while paused moves the resume point
         #expect(viewModel.playbackPosition == 120)
         viewModel.selectedTrackIndex = 1 // another song selected: the paused place is not its place
@@ -172,7 +190,7 @@ struct LiveReadoutsTests {
     }
 
     @Test("paused, turning crossfeed on shows in the hero at once")
-    func pausedIntentReachesTheHero() async {
+    func pausedIntentReachesTheHero() async throws {
         let engine = DeviceTestEngine()
         let headphones = AudioDeviceModel(id: 7, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
                                           uid: "hp", modelUID: nil, transportType: 0, type: .builtin,
@@ -181,8 +199,8 @@ struct LiveReadoutsTests {
             $0.devices = [headphones]
             $0.engineDevice = headphones.id
         }
-        let viewModel = await readyViewModel(engine)
-        #expect(viewModel.transportTimer == nil, "nothing plays: the tick sleeps")
+        let viewModel = try await readyViewModel(engine)
+        #expect(viewModel.transportTicker == nil, "nothing plays: the tick sleeps")
         viewModel.crossfeedEnabled = true
         #expect(viewModel.signalPath.crossfeedStrength == viewModel.crossfeedStrength,
                 "the hero's crossfeed chip waits for a tick that never comes")

@@ -124,8 +124,8 @@ extension LibraryModel {
     /// change is not lost and two walks of one folder never overlap.
     func scheduleReconcile(folderID: Int64) {
         reconcileDebounce[folderID]?.cancel()
-        reconcileDebounce[folderID] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(1000))
+        reconcileDebounce[folderID] = Task { @MainActor [weak self, clock] in
+            try? await clock.sleep(for: .milliseconds(1000))
             guard !Task.isCancelled, let self else { return }
             // Debounce fired — drop our own now-completed handle so the map doesn't accumulate
             // finished Tasks (S3 LOW-b). We are the current entry (not cancelled), and this runs

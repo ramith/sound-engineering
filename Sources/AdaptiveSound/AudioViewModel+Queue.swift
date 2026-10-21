@@ -194,7 +194,7 @@ extension AudioViewModel {
         pendingNextIndex = index
         let url: URL? = index.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].file.absoluteURL : nil }
         let ticket = nextOnDeckTicket()
-        return Task { [engine] in
+        return work.spawn { [engine] in
             await engine.setNextTrack(url, ticket: ticket)
         }
     }

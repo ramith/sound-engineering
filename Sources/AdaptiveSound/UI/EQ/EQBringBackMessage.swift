@@ -12,6 +12,8 @@ import SwiftUI
 struct EQBringBackMessage: View {
     @Environment(EQViewModel.self) private var eq
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The clock the offer's time runs on: `ContinuousClock` in the app, a test clock in a test.
+    var clock: any Clock<Duration> = ContinuousClock()
 
     /// How long the capsule shows, unpaused.
     private static let lifetime: Duration = .seconds(6)
@@ -77,14 +79,19 @@ struct EQBringBackMessage: View {
     /// is left of THIS offer's time.
     private func run(_ countdown: Countdown) async {
         guard let offer = countdown.offer, !countdown.isPaused else { return }
-        let clock = ContinuousClock()
+        let clock = clock
+        await sleepOut(offer, on: clock)
+    }
+
+    /// `run`, on `clock`: sleeps this offer's remaining time, or keeps what a pause left of it.
+    private func sleepOut(_ offer: Int, on clock: some Clock<Duration>) async {
         let start = clock.now
         do {
-            try await Task.sleep(for: remaining)
+            try await clock.sleep(for: remaining)
             shownOffer = nil
         } catch {
             if shownOffer == offer {
-                remaining = max(remaining - (clock.now - start), .zero)
+                remaining = max(remaining - start.duration(to: clock.now), .zero)
             }
         }
     }

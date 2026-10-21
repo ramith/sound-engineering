@@ -269,7 +269,19 @@ final class AudioViewModel {
     /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss, the readouts) at 20 Hz
     /// while a song plays or a start, pause or stop is on its way (`transportTickIsLive`); it stops
     /// itself once nothing is (council C-52). Internal (not private) for `+TransportTick`.
-    @ObservationIgnored var transportTimer: Timer?
+    @ObservationIgnored var transportTicker: (any TransportTicker)?
+
+    /// Makes the transport tick's ticker: the main run loop's timer in the app, a hand-fired one in a
+    /// test (`TransportTicker`).
+    @ObservationIgnored let makeTicker: TransportTickerMaker
+
+    /// The clock the view model's debounces sleep on (the queue mirror): `ContinuousClock` in the app,
+    /// a test clock in a test.
+    @ObservationIgnored let clock: any Clock<Duration>
+
+    /// Everything the view model set going without awaiting it (`WorkTracker`): a test waits until it
+    /// is idle.
+    @ObservationIgnored let work = WorkTracker()
 
     /// Whether the transport tick may run: from engine-ready (`armTransportTick`) to shutdown. Off in
     /// a view model whose engine was never started (tests that tick by hand, the picture sheets).
@@ -437,9 +449,13 @@ final class AudioViewModel {
 
     /// A view model over `defaults` that starts with the settings the listener left there — on a new
     /// install, the faithful default (FD-2).
-    init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
+    init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge(),
+         makeTicker: @escaping TransportTickerMaker = RunLoopTicker.make,
+         clock: any Clock<Duration> = ContinuousClock()) {
         self.defaults = defaults
         self.engine = engine
+        self.makeTicker = makeTicker
+        self.clock = clock
         settingsStore = SettingsStore(defaults: defaults)
         spectrum = SpectrumSampler(engine: engine)
         eqDesignRate = engine.snapshot().eqDesignRate

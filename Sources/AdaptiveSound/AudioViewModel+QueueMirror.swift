@@ -25,8 +25,9 @@ extension AudioViewModel {
     func scheduleQueueMirror() {
         hasUserEditedQueue = true // a real edit — supersedes any not-yet-run launch hydration
         queueMirrorTask?.cancel()
-        queueMirrorTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.queueMirrorDebounce)
+        queueMirrorTask = Task { @MainActor [weak self, clock] in
+            // The view model's clock (ContinuousClock in the app); a test's clock settles it without time.
+            try? await clock.sleep(for: Self.queueMirrorDebounce)
             guard !Task.isCancelled, let self else { return }
             await mirrorQueueNow()
         }

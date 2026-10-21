@@ -36,6 +36,9 @@ public final class SettingsStore {
     private var stored: ListeningSettings?
     /// The newest settings not yet written; a write is on its way while it is set.
     private var pending: ListeningSettings?
+    /// The task that writes `pending` at the end of the turn, set from the save that scheduled it until the
+    /// write runs (`flush`); a test awaits it.
+    public private(set) var pendingWrite: Task<Void, Never>?
 
     public init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -68,14 +71,15 @@ public final class SettingsStore {
 
     /// Keep `settings`: written at the end of this main-actor turn, with whatever else the turn saves.
     public func save(_ settings: ListeningSettings) {
-        let writeOnItsWay = pending != nil
+        let writeOnItsWay = pendingWrite != nil
         pending = settings
         guard !writeOnItsWay else { return }
-        Task { self.flush() }
+        pendingWrite = Task { self.flush() }
     }
 
     /// Write the newest saved settings now, if they differ from what is stored.
     public func flush() {
+        pendingWrite = nil
         guard let settings = pending else { return }
         pending = nil
         guard settings != stored, let data = try? Self.encoder.encode(settings) else { return }

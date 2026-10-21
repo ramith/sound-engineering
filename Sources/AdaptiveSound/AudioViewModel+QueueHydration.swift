@@ -37,7 +37,7 @@ extension AudioViewModel {
     func hydrateQueueOnLaunch() {
         guard !queueHydrated, !hasUserEditedQueue, queue.isEmpty, let store = library?.store else { return }
         queueHydrated = true
-        Task { @MainActor [weak self] in
+        work.spawn { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let playlistID = try await store.currentPlaylistID()
