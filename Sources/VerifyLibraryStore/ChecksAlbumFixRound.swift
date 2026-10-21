@@ -202,6 +202,7 @@ func checkOneTitlePassCost(number: Int, url: URL) async -> Bool {
         let shared = try await timedReRead(url: url, label: "alb08-shared") { _ in "Unknown Album" }
         let distinctURL = url.deletingLastPathComponent()
             .appendingPathComponent("alb08-distinct-\(UUID().uuidString).sqlite3")
+        defer { cleanupStore(distinctURL) }
         let distinct = try await timedReRead(url: distinctURL, label: "alb08-distinct") { "Album \($0)" }
         // Before the fix the shared-title re-read regrouped every same-title song per write: ~30× the
         // distinct-title time (22.6 s vs ~0.7 s on the founder's Mac). Both passes are measured in CPU

@@ -38,7 +38,7 @@ func instantiateAU() -> AVAudioUnit? {
         unit = instance
         gate.signal()
     }
-    gate.wait()
+    waitOrFail(gate, for: "AVAudioUnit.instantiate (AdaptiveSoundAU)")
     return unit
 }
 
