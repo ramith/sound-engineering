@@ -1,6 +1,7 @@
 import AudioDSP
 @preconcurrency import AVFoundation
 import Foundation
+import Synchronization
 
 /// Where the analyzer's results go: the live engine (the playback bridge, through the AU's C-ABI).
 public protocol TrackLoudnessSink: Sendable {
@@ -164,7 +165,7 @@ private actor Coordinator {
         let prefixSeconds = prefixSeconds
         log("loudness: analysing '\(url.lastPathComponent)'")
         let task = Task.detached(priority: .utility) { [weak self] in
-            let outcome = TrackLoudnessDecoder.decode(url, prefixSeconds: prefixSeconds) { prefix in
+            let outcome = await TrackLoudnessDecoder.decodeOffPool(url, prefixSeconds: prefixSeconds) { prefix in
                 sink.publishLoudnessProfile(prefix, token: token)
             }
             await self?.finished(id, identity: identity, url: url, outcome: outcome, sink: sink)
@@ -223,11 +224,50 @@ enum TrackLoudnessDecoder {
         case failed(String)
     }
 
+    /// Where the synchronous decodes run: a queue of their own, never the Swift cooperative pool. A decode
+    /// is seconds of blocking reads and DSP; on the pool it holds one of its few threads (three on a 3-core
+    /// Mac, and two jobs run at once), starving every other task — and, in a test with the pool at one
+    /// thread, the whole process. The sink's callbacks run here too, so a sink may block safely.
+    private static let decodeQueue = DispatchQueue(label: "com.adaptivesound.track-loudness-decode",
+                                                   qos: .utility, attributes: .concurrent)
+
+    /// A cancellation the decode thread can see: `Task.isCancelled` belongs to the task, not the queue.
+    private final class CancelFlag: Sendable {
+        private let raised = Atomic<Bool>(false)
+
+        var isRaised: Bool {
+            raised.load(ordering: .acquiring)
+        }
+
+        func raise() {
+            raised.store(true, ordering: .releasing)
+        }
+    }
+
+    /// `decode`, run on `decodeQueue` while the caller's task awaits (no pool thread waits), and
+    /// cancelled when the task is.
+    static func decodeOffPool(_ url: URL,
+                              prefixSeconds: Double,
+                              onPrefix: @escaping @Sendable (TrackLoudnessProfileHandle) -> Void) async -> Outcome {
+        let cancel = CancelFlag()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                decodeQueue.async {
+                    continuation.resume(returning: decode(url, prefixSeconds: prefixSeconds,
+                                                          isCancelled: { cancel.isRaised }, onPrefix: onPrefix))
+                }
+            }
+        } onCancel: {
+            cancel.raise()
+        }
+    }
+
     /// Decode `url` and profile it, calling `onPrefix` once the first `prefixSeconds` are in (not
-    /// for a shorter track). Checks for cancellation between reads.
-    static func decode(_ url: URL,
-                       prefixSeconds: Double,
-                       onPrefix: (TrackLoudnessProfileHandle) -> Void) -> Outcome {
+    /// for a shorter track). Checks `isCancelled` between reads.
+    private static func decode(_ url: URL,
+                               prefixSeconds: Double,
+                               isCancelled: () -> Bool,
+                               onPrefix: (TrackLoudnessProfileHandle) -> Void) -> Outcome {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -242,7 +282,7 @@ enum TrackLoudnessDecoder {
             return .failed(failure.reason)
         }
         defer { asLoudnessProfilerDestroy(source.profiler) }
-        let streamed = source.stream(prefixSeconds: prefixSeconds, onPrefix: onPrefix)
+        let streamed = source.stream(prefixSeconds: prefixSeconds, isCancelled: isCancelled, onPrefix: onPrefix)
         if streamed.cancelled {
             return .cancelled
         }
@@ -305,11 +345,12 @@ private struct DecodeSource {
     }
 
     /// Feed the whole file, publishing the prefix once `prefixSeconds` are in.
-    func stream(prefixSeconds: Double, onPrefix: (TrackLoudnessProfileHandle) -> Void) -> DecodeStream {
+    func stream(prefixSeconds: Double, isCancelled: () -> Bool,
+                onPrefix: (TrackLoudnessProfileHandle) -> Void) -> DecodeStream {
         let prefixFrames = AVAudioFramePosition(prefixSeconds * file.processingFormat.sampleRate)
         var streamed = DecodeStream()
         var fed: AVAudioFramePosition = 0
-        while !Task.isCancelled {
+        while !isCancelled() {
             switch readChunk() {
             case .end:
                 return streamed
