@@ -21,7 +21,7 @@
 // profile, so the caller may destroy its handle right after publishing.
 //
 // Must stay valid ISO C11 (no C++ namespaces, no <cstdint>, no class declarations): it is
-// re-exported through DeviceBridge.h, the single Swift bridging header. Audio travels as
+// re-exported through DeviceBridge.h, the module's single Swift-visible header. Audio travels as
 // (pointer, count) pairs in caller-owned buffers.
 //
 // THE TRUST BOUNDARY. Every call rejects NULL handles and pointers, wrong counts and non-finite

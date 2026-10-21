@@ -5,6 +5,7 @@
 // transport (the default output marked). A machine with no output device has nothing to read and
 // passes.
 
+import AudioDSP
 import Foundation
 
 /// The C signature shared by `copyOutputDeviceUIDC` and `copyOutputDeviceModelUIDC`.

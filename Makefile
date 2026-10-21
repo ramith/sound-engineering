@@ -2,9 +2,12 @@
 
 build:
 	swift build -c debug -j 8
+	@# The bin path from SwiftPM itself, as `release` does: a `find .build` picks whichever
+	@# AdaptiveSound it meets first, a stale one from another build layout included (Xcode 27's
+	@# build engine writes to .build/out/Products/Debug, the old one to .build/arm64-apple-macosx).
 	@bash -c '\
-		EXECUTABLE=$$(find .build -type f -name AdaptiveSound -not -path "*/.*" | head -1); \
-		BUILD_DIR=$$(dirname "$$EXECUTABLE"); \
+		BUILD_DIR=$$(swift build -c debug --show-bin-path); \
+		EXECUTABLE="$$BUILD_DIR/AdaptiveSound"; \
 		APP_BUNDLE="$$BUILD_DIR/AdaptiveSound.app"; \
 		python3 scripts/bundle-app.py \
 			--executable "$$EXECUTABLE" \

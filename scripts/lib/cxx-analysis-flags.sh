@@ -39,7 +39,6 @@ cxx_analysis_core_flags() {
         -isysroot "$(xcrun --show-sdk-path)"
         -fno-exceptions
         -fno-rtti
-        -D_LIBCPP_DISABLE_AVAILABILITY
         -DACCELERATE_NEW_LAPACK
         -I "$_cxx_repo_root/Sources/AudioDSP"
         -I "$_cxx_repo_root/Sources/AudioDSP/include"
