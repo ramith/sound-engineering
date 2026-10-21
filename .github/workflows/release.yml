@@ -24,26 +24,22 @@ concurrency:
 jobs:
   release:
     name: build, attest, publish
-    # The same runner as strict-ci (macOS 26, Xcode 26, Apple Silicon), so the release builds with
+    # The same runner as strict-ci (xcode-27: the Xcode 27.1 image), so the release builds with
     # the toolchain the merge gate verified.
-    runs-on: macos-26
+    runs-on: xcode-27
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
-      - name: Show toolchain
-        run: |
-          sw_vers
-          xcodebuild -version
-          swift --version
+      # The same pinned Xcode and toolchain as the merge gate (toolchain/toolchain.env), so the release
+      # is built and analysed by the tools the gate verified (FFmpeg headers included: the app dlopens
+      # FFmpeg at run time when the user has it, and the headers compile FileDecodeSource's branch).
+      - uses: ./.github/actions/setup-gate
 
-      - name: Install FFmpeg headers
-        # As in strict-ci: the libavformat headers under /opt/homebrew/include compile in
-        # FileDecodeSource's FFmpeg decode branch. At run time the app dlopens FFmpeg when the user
-        # has it (Homebrew) and otherwise uses Apple's decoders.
-        run: brew install ffmpeg || true
+      - name: "Parity check (hard fail in CI: every verdict tool, and the FFmpeg headers)"
+        run: CI=true scripts/toolchain/check.sh
 
       - name: Check the tag matches the app version
         run: |
@@ -59,7 +55,7 @@ jobs:
         run: make dist DIST_NAME="${GITHUB_REF_NAME#v}"
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: |
             dist/*.zip

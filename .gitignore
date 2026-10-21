@@ -52,3 +52,4 @@ scripts/hal-spike*
 
 # Distribution artifacts (make dist)
 dist/
+__pycache__/

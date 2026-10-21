@@ -51,7 +51,7 @@ while IFS= read -r -d '' f; do
     # docs/ holds design-reference snapshots (handoff artifacts, never compiled) — out of
     # format/lint/tidy scope. Mirrors .swiftlint.yml `excluded` + .swiftformat `--exclude`;
     # the tools need explicit paths here, so the hook must apply the same scope itself.
-    case "$f" in docs/*) continue ;; esac
+    case "$f" in docs/*|scripts/gate/semgrep-fixtures/*) continue ;; esac
     case "$f" in
         *.swift)            swift_files+=("$f") ;;
         *.h|*.hpp|*.cpp|*.cc|*.mm) cpp_files+=("$f") ;;

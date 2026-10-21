@@ -1,94 +1,164 @@
 name: Strict CI
 
-# Runs the full strict pre-merge gate (`make strict-gate`) on every PR and on pushes to
-# main. Local `make strict-gate` and this job are the SAME command, so they cannot diverge.
+# The full gate (scripts/gate/run.sh --tier ci), as parallel jobs plus ONE summary check named
+# `strict-gate`. Every job runs its registry steps to completion; the `strict-gate` check reads all
+# of them and is red if any blocking step failed, timed out, or was missing. Local `make strict-gate`
+# runs the same registry, so the two cannot diverge.
 
 on:
   pull_request:
   push:
     branches: [main]
 
-# Cancel superseded runs on the same ref to save runner time.
+# A superseded PR run is cancelled to save runner time. A run on main is NEVER cancelled: main's run
+# on the merge commit is the real gate, and the founder merges by hand, sometimes mid-run.
 concurrency:
   group: strict-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  strict-gate:
-    name: strict-gate
-    # This package targets macOS 26 (Tahoe) + Xcode 26 + Swift 6.2. GitHub-hosted `macos-26`
-    # went GA on 2026-02-26, runs natively on Apple Silicon (arm64), and ships Xcode 26.x
-    # preinstalled (default is 26.x) — so it builds this package directly, no self-hosted
-    # runner needed. Pinned to `macos-26` (not `macos-latest`) to hold the OS major explicitly;
-    # bump when the target OS moves. The base image includes swiftlint/swiftformat but NOT
-    # semgrep/cppcheck/clang-tidy/ffmpeg — the Install-tools step below covers those. ffmpeg is
-    # required for coverage, not just convenience: it ships the libavformat headers under
-    # /opt/homebrew/include that make FileDecodeSource.cpp's __has_include(<libavformat/...>)
-    # FFmpeg decode + metadata branch actually parse, so clang-tidy analyzes it here (see
-    # strict-gate.sh — CI-with-ffmpeg is the guaranteed coverage for that branch).
-    runs-on: macos-26
-
+  static:
+    name: static (parity, format, lint, analysis, dead code)
+    runs-on: xcode-27
+    timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-gate
+      - name: Run the static steps
+        run: scripts/gate/run.sh --job static
+      - name: Upload the gate logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-static
+          path: .build/gate/
+          if-no-files-found: warn
 
-      - name: Show toolchain
-        run: |
-          sw_vers
-          xcodebuild -version
-          swift --version
-          clang --version
+  swift:
+    name: swift (build, swift test, main-thread stall)
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-gate
+      - name: Cache SwiftPM checkouts (keyed by Package.resolved)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: spm-checkouts-${{ hashFiles('Package.resolved') }}
+      - name: Cache .build (PR runs only; main always builds cold)
+        if: github.event_name == 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: build-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.run_id }}
+          restore-keys: |
+            build-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+      - name: Run the swift steps
+        run: scripts/gate/run.sh --job swift
+      - name: Upload the gate logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-swift
+          path: .build/gate/
+          if-no-files-found: warn
 
-      - name: Install tools (idempotent)
-        run: |
-          # keg-only llvm@23 provides clang-tidy — MAJOR-PINNED (clang-tidy 23 added checks
-          # that 22 lacks, e.g. readability-trailing-comma; strict-gate.sh asserts the major via
-          # CXX_CLANG_TIDY_MAJOR_PIN, so a brew-latest major bump fails loudly instead of
-          # surfacing as a wall of red-herring findings — PR #63 run 1). A deliberate upgrade
-          # bumps the pin + fixes the new findings in one commit. ffmpeg supplies the libavformat headers under
-          # /opt/homebrew/include so FileDecodeSource.cpp's __has_include(<libavformat/...>)
-          # FFmpeg decode + metadata branch parses and clang-tidy actually analyzes it here
-          # (that branch is analyzed NOWHERE else in the merge path); the rest are
-          # formatters/linters/scanners. SwiftFormat/SwiftLint are NOT brewed: they are PINNED
-          # below (the original trigger: brew-latest SwiftFormat 0.62.x changed wrapIfStatementBodies
-          # vs the then-pinned 0.61.1 — PR #61 run 1); strict-gate.sh asserts the pins, so a
-          # skew fails loudly with instructions instead of red-herring style errors.
-          brew install llvm@23 semgrep cppcheck ffmpeg || true
-          # Periphery (Swift dead-code detection) — VERSION-PINNED like the style tools below
-          # (strict-gate.sh asserts PERIPHERY_PIN) and checksum-verified. It is NOT brewed: its
-          # tap (peripheryapp/periphery) no longer installs on current Homebrew ("depends_on
-          # macos: :catalina is disabled"), and the old `brew install … || true` swallowed that,
-          # so the gate died at its tool check with nothing of the PR tested (PR #91, 2026-10-18).
-          # The SHA-256 is the one the tap's own cask pins for this release.
-          curl -fsSL -o /tmp/periphery.zip \
-            https://github.com/peripheryapp/periphery/releases/download/2.21.2/periphery-2.21.2.zip
-          echo "e5b4e802f794df230a2e4b9d5bb176626b3a9fd74ea6cf7d0d42c20ebe57fd4a  /tmp/periphery.zip" \
-            | shasum -a 256 -c -
-          # Pinned style tools (versions MUST match strict-gate.sh's SWIFTFORMAT_PIN /
-          # SWIFTLINT_PIN; a deliberate upgrade bumps both places + reformats in one commit).
-          mkdir -p "$HOME/pinned-tools"
-          curl -fsSL -o /tmp/swiftformat.zip \
-            https://github.com/nicklockwood/SwiftFormat/releases/download/0.63.0/swiftformat.zip
-          unzip -o -q /tmp/swiftformat.zip -d "$HOME/pinned-tools"
-          curl -fsSL -o /tmp/swiftlint.zip \
-            https://github.com/realm/SwiftLint/releases/download/0.65.1/portable_swiftlint.zip
-          unzip -o -q /tmp/swiftlint.zip -d "$HOME/pinned-tools"
-          unzip -o -q /tmp/periphery.zip periphery -d "$HOME/pinned-tools"
-          chmod +x "$HOME/pinned-tools/swiftformat" "$HOME/pinned-tools/swiftlint" \
-            "$HOME/pinned-tools/periphery"
-          # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the
-          # runner default PATH (/usr/bin, where make lives). A step-level
-          # `env: PATH: …:${{ env.PATH }}` does NOT work — the Actions env context has no PATH,
-          # so it expanded to empty, dropped /usr/bin, and broke `make` (exit 127).
-          # pinned-tools is written LAST so it lands FIRST on PATH (each write prepends),
-          # shadowing any preinstalled brew swiftformat/swiftlint/periphery on the runner image.
-          # llvm@23 is an alias of `llvm` while 23 is current (keg at opt/llvm) and becomes
-          # a versioned keg (opt/llvm@23) once 24 ships — put both on PATH, versioned first.
-          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/opt/llvm@23/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "$HOME/pinned-tools" >> "$GITHUB_PATH"
+  cpp:
+    name: cpp (null test, verifiers, -O2, coverage guard, leaks)
+    runs-on: xcode-27
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-gate
+      - name: Cache SwiftPM checkouts (keyed by Package.resolved)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: spm-checkouts-${{ hashFiles('Package.resolved') }}
+      - name: Cache .build (PR runs only; main always builds cold)
+        if: github.event_name == 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: build-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.run_id }}
+          restore-keys: |
+            build-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+      - name: Run the cpp steps
+        run: scripts/gate/run.sh --job cpp
+      - name: Upload the gate logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-cpp
+          path: .build/gate/
+          if-no-files-found: warn
 
-      - name: Run strict gate
-        run: make strict-gate
+  asan:
+    name: asan (null test ASan+UBSan, store ASan)
+    runs-on: xcode-27
+    timeout-minutes: 160
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-gate
+      - name: Run the asan steps
+        run: scripts/gate/run.sh --job asan
+      - name: Upload the gate logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-asan
+          path: .build/gate/
+          if-no-files-found: warn
+
+  tsan:
+    name: tsan (null test ThreadSanitizer)
+    runs-on: xcode-27
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-gate
+      - name: Run the tsan steps
+        run: scripts/gate/run.sh --job tsan
+      - name: Upload the gate logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-tsan
+          path: .build/gate/
+          if-no-files-found: warn
+
+  # The single summary check. Runs on Linux (no macOS slot) and always runs, so a job that was
+  # cancelled, timed out or crashed is reported as missing, not silently green.
+  report:
+    name: strict-gate
+    needs: [static, swift, cpp, asan, tsan]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download every job's gate logs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: gate-*
+          path: gate-results
+      - name: Write the one table and the verdict
+        run: scripts/gate/report.sh gate-results

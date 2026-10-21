@@ -4,54 +4,32 @@ This document covers coding standards, tooling, and guardrails to maintain code 
 
 ## Tool Setup
 
-The strict gate (`make strict-gate`) and the pre-commit hook require the full toolchain.
-Missing tools are now a **hard failure**, not a silent skip — install everything:
+Every tool the gate depends on is pinned in **one file**, `toolchain/toolchain.env`, with its exact version and checksum. One install script serves your Mac and CI, so the Mac and CI run the same binaries:
 
 ```bash
-# Swift format + lint — VERSION-PINNED: SwiftFormat 0.63.0, SwiftLint 0.65.1 (the pins live in
-# scripts/strict-gate.sh; any other version fails its tool-skew guard). Install exactly those,
-# e.g. the release binaries .github/workflows/strict-ci.yml downloads.
-
-# C++ static analysis (keg-only LLVM: clang-tidy MAJOR-PINNED to 23 — see "known, accepted
-# edges" below — and clang-format) + supplementary checker
-brew install llvm@23 cppcheck
-export PATH="/opt/homebrew/opt/llvm@23/bin:/opt/homebrew/opt/llvm/bin:$PATH"   # as CI does
-
-# Pattern-based bans (.semgrep.yml: Swift force-try/cast, the main-thread / engine-bridge rules,
-# C++ unsafe string funcs + thread detach, the UI design-system rules, …)
-brew install semgrep
-
-# Dead-code gate (REQUIRED by strict-gate) — Periphery VERSION-PINNED to 2.21.2 (strict-gate.sh
-# PERIPHERY_PIN), from its GitHub release: its Homebrew tap no longer installs on current Homebrew
-# ("depends_on macos: :catalina is disabled", 2026-10). Same binary + checksum CI uses:
-curl -fsSL -o /tmp/periphery.zip \
-  https://github.com/peripheryapp/periphery/releases/download/2.21.2/periphery-2.21.2.zip
-echo "e5b4e802f794df230a2e4b9d5bb176626b3a9fd74ea6cf7d0d42c20ebe57fd4a  /tmp/periphery.zip" | shasum -a 256 -c -
-unzip -o -q /tmp/periphery.zip periphery -d "$HOME/.local/bin"   # any directory on your PATH
-
-# FFmpeg (recommended: clang-tidy then also analyses the FFmpeg decode branch; the app can use it
-# at runtime for formats Apple can't open — opt-in, Settings ▸ Formats)
-brew install ffmpeg
-
-# Verify the whole set (leaks(1) comes with the Xcode Command Line Tools):
-swiftformat --version   # 0.63.0
-swiftlint --version     # 0.65.1
-clang-format --version
-clang-tidy --version    # must report the pinned major (23)
-semgrep --version
-periphery version       # 2.21.2
-xcrun --find leaks
-cppcheck --version   # optional: strict-gate runs a supplementary pass if present
+scripts/toolchain/install.sh   # downloads, verifies every sha256, installs into ~/.cache/adaptivesound-toolchain/<hash>/
+scripts/toolchain/check.sh     # the parity table: what the gate will run, against the manifest
 ```
 
-**Why clang-tidy is now REQUIRED (was "optional"):**
+- **No sudo, no global Homebrew change.** The install lives in a cache keyed by the manifest hash; a bump changes the hash and lands in a new directory. A failed download or checksum stops the install and names the file. Never edit a checksum to make it pass.
+- **The gate puts that directory first on `PATH` itself.** For a by-hand tool call: `export PATH="$(scripts/toolchain/install.sh --print-bin):$PATH"`.
+- **Verdict tools are exact.** SwiftFormat, SwiftLint, Periphery, clang-format and clang-tidy (one LLVM), cppcheck (built from its pinned source), semgrep (pip, `--require-hashes`) and actionlint. A mismatch **fails** the parity check, locally and in CI, before anything else runs.
+- **Xcode and Swift are exact, macOS is info, FFmpeg warns here and fails in CI.** The Xcode build and Swift are EXACT everywhere (27.1, build 27A9275). macOS is info only (the founder accepted the Mac on 26.6 against the 27.0.1 CI image). The FFmpeg headers warn locally and fail in CI. The pin is **Xcode 27.1 (build 27A9275)**, Swift 6.4, on the `xcode-27` CI runner (GitHub's Xcode 27 preview image, macOS 27.0.1). An older Xcode fails the parity check with the fix: install Xcode 27.1, then re-run `check.sh`.
+- **Xcode 27's SwiftPM uses the new `swiftbuild` engine.** Never hardcode the build directory: `swift build --show-bin-path` gives it (`.build/out/Products/Debug` today). Relative paths in `unsafeFlags` break, because the compiler runs from the package's parent directory.
+- **Never set `-D_LIBCPP_DISABLE_AVAILABILITY`.** It made Xcode 27's libc++ emit a macOS 27-only symbol, so the app failed to load on macOS 26. The residual risk is that CI runs macOS 27 while the product targets macOS 26; `scripts/gate/deployment-target.sh` fails any built product whose minimum macOS is newer than the target.
+- **FFmpeg headers** (the FFmpeg decode branch is only analysed when they are present): `brew install ffmpeg`. Parity asserts `FFMPEG_VERSION` from the installed `ffversion.h`; Homebrew cannot install an exact older ffmpeg, so a move on Homebrew is a visible parity change, not a silent one.
+- **leaks(1)** comes with the Xcode Command Line Tools: `xcrun --find leaks`.
+
+A bump is one commit, `toolchain: bump X a→b`, that changes the manifest **and** fixes what the new version finds. The weekly canary (`.github/workflows/canary.yml`) reports what each bump would change, as one issue, before a red PR forces it.
+
+**Why clang-tidy is REQUIRED:**
 - Catches subtle C++ bugs (nullptr dereferences, use-after-free, data races)
 - Enforces the Core Guidelines subset as build-breaking errors (`WarningsAsErrors: '*'`)
 - Prevents hard-to-debug audio glitches
 
 The pre-commit hook **fails** (no longer skips) if a required tool is missing for the file
 types you staged. `git commit --no-verify` is the deliberate escape hatch; the repo-wide
-`make strict-gate` / CI is the real net.
+gate / CI is the real net.
 
 ---
 
@@ -86,20 +64,51 @@ it is a convenience, not the real protection — that is `make strict-gate` / CI
 
 ## Quality Gates
 
-Three tiers, fastest first:
+The gate is a **registry**, not a script: every check is one row in `scripts/gate/steps.tsv` (id, CI job, tiers, blocking or advisory, timeout, the coverage rule, the command). Every local tier, every `make` gate target and every CI job runs the same rows through `scripts/gate/run.sh`, so the two cannot diverge. The old inline steps of `scripts/strict-gate.sh` map one to one onto registry ids (see `scripts/gate/README.md`); nothing was dropped.
 
-| Command | When | Scope | What it runs |
-|---------|------|-------|--------------|
-| pre-commit hook | every `git commit` | staged files | swiftformat + clang-format (auto-fix), swiftlint (errors block), clang-tidy |
-| `make lint` | anytime / editor | whole repo, no mutation | swiftformat `--lint`, `swiftlint --strict`, `clang-format --dry-run --Werror`, semgrep |
-| `make strict-gate` | before PR / merge | whole repo | tool check + version pins → `make lint` → suppression policy → the migrator never-erase and playlist reference-add guards → Kit-purity / Dynamic-Type guards → cppcheck (if installed) → **clang-tidy fail-on-any** (`Sources/AudioDSP` + `Sources/AudioDSPTestBridge` + `Tests/**`) → **Periphery** (dead code) → `swift build` → `swift test` → `make gate` → **`make main-thread-stall`** → **null-test source-list drift-guard** → **`-O2 -Werror` release compile** (`build-null-test.sh --release-strict`) → ASan/UBSan/TSan (`make sanitize` / `tsan` / `sanitize-library-store`) → **`make leak-check`** (`scripts/strict-gate.sh`) |
+**The four rules the gate enforces:**
+1. **Collect-all.** A failing step never stops the run. Every step runs to completion; a skip is recorded with its reason, never as green. Only a real dependency is skipped.
+2. **Every step has a ceiling.** Each step runs in its own process group under a watchdog (macOS has no `timeout`). A hang is killed and named: `timed out after 25m`.
+3. **Zero is a failure.** A step that covers 0 files or 0 tests fails. `swift test --filter` with a misspelt name runs 0 tests and exits 0 on its own; the gate turns that into a failure.
+4. **The exit code is the verdict**, and the summary is the table. Every failure's head is printed at once; full logs are in `.build/gate/<run>/logs/`.
 
-`make ci` == `make strict-gate`; the CI workflow (`.github/workflows/strict-ci.yml`) runs the
-identical command on GitHub-hosted **`macos-26`** (Apple Silicon, Xcode 26 — pinned, not
-`macos-latest`), so local and CI cannot diverge. Release builds (`.github/workflows/release.yml`,
-on a `v*` tag) use the same runner.
+**Parity runs first, always.** `toolchain-parity` is step one of every run. If it fails, every other step is skipped with the reason, because a verdict from the wrong tools means nothing.
 
-`make format` auto-formats in place (SwiftFormat + clang-format) — local convenience, never CI.
+| Tier | Command | When | What it runs (registry tiers) |
+|------|---------|------|-------------------------------|
+| T0 | pre-commit hook | each `git commit` | staged files: format (auto-fix), swiftlint, clang-tidy |
+| T1 | `.githooks/pre-push` | each push | parity; swiftformat, swiftlint, semgrep, suppressions, posture guards, actionlint |
+| T2 | `make check` | a lane says "done" | T1 + swift build, `swift test`, clang-format, cppcheck, clang-tidy, the debug null test |
+| T3 | `make combine-check` | before pushing an integration branch | T2 + Periphery, the whole-program steps, the verifiers, the null-test drift guard, the stall self-test |
+| T4 | `make strict-gate` == `make ci` == CI | each push, each PR, main | everything, as five parallel CI jobs |
+
+**Reading a run.** `make strict-gate` prints the table (`job | step | verdict | time | reason`) and the final line `GATE PASSED` or `GATE FAILED`, then `exit: <code>`. CI shows the same table as the job summary of the **`strict-gate`** check, which is the one check to read: a job that did not report (cancelled, timed out, crashed) is a failure, never an absence of failures. Advisory rows are marked `(advisory)` and never turn it red.
+
+**CI jobs** (`.github/workflows/strict-ci.yml`, all on the `xcode-27` runner (Xcode 27.1 selected by path), each with a `timeout-minutes`): `static`, `swift`, `cpp`, `asan`, `tsan`, then `strict-gate` on Linux. Cancellation applies to pull requests only: a run on `main` is never cancelled.
+
+| Command | What |
+|---------|------|
+| `make lint` | swiftformat, swiftlint, clang-format, semgrep (no mutation) |
+| `make check` | T2 |
+| `make combine-check` | T3, before pushing an integration branch |
+| `make strict-gate` / `make ci` | T4 |
+| `make gate` | the verifiers (`VerifyAUGraph`, `SRCQualityMeasure`, `VerifyLibraryStore`) and the debug null test |
+| `make sanitize` / `make tsan` / `make sanitize-library-store` / `make leak-check` | the sanitizer and leak steps by themselves |
+| `make main-thread-stall` | the stall self-test by itself |
+| `make toolchain` | install the pinned tools, then the parity table |
+| `make format` | auto-format in place (SwiftFormat + clang-format); local convenience, never CI |
+
+**`make stress`: repeat a test under the CI-like profile.** Before merging a new or changed timing test, stress it:
+
+```bash
+make stress TEST='ANALYZER-05' N=50          # Swift: swift test --skip-build --filter, every iteration must run >= 1 test
+make stress TEST='Loudness_WorkersSleepWhileIdle' N=20
+```
+
+The profile puts `ncpu − 3` CPU hogs in their own process group (a `trap` kills the group on any exit, so a leaked busy loop cannot outlive the run) and sets `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`. Each iteration has a hard cap (`STRESS_TIMEOUT`, default 600 s). The exit code is the verdict; put the pass rate in the PR (e.g. "ANALYZER-05 50/50 under the CI-like profile"). A C++ stress run (`KIND=cpp`) needs the repeat and filter flags of the C++ runner; until those land it refuses rather than faking a run. The nightly stress workflow (`.github/workflows/nightly-stress.yml`) runs the same command on a schedule and is advisory.
+
+`make ci` == `make strict-gate`: the same registry on your Mac and in CI, so a green local run means the same thing as a green CI run.
+
 
 ### Suppression policy
 

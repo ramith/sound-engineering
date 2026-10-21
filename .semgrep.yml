@@ -32,13 +32,13 @@ rules:
     languages: [swift]
     severity: ERROR
     message: "Do not use try!. Handle the error (do/catch, try?, or propagate)."
-    pattern-regex: '\btry!'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\btry!)'
 
   - id: swift-no-force-cast
     languages: [swift]
     severity: ERROR
     message: "Do not use as!. Use conditional casting (as?) and handle nil."
-    pattern-regex: '\bas!'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\bas!)'
 
   - id: swift-no-navigation-title
     languages: [swift]
@@ -47,7 +47,7 @@ rules:
       Do not use the navigation-title modifier — this app owns the window chrome (there is no
       native titlebar text to set). Put titles in-content via ScreenHeader
       (Sources/AdaptiveSound/UI/Shell/ScreenHeader.swift).
-    pattern-regex: '\.navigationTitle'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.navigationTitle)'
 
   - id: swift-no-keypress-delete
     languages: [swift]
@@ -57,7 +57,7 @@ rules:
       U+007F, but .delete is U+0008 (S10.8 founder bug — the queue's Delete was dead). Use
       .onDeleteCommand(perform:), the system Delete command (⌫, ⌦ and Edit ▸ Delete; a nil
       action disables it). .deleteForward is U+F728 — ⌦'s own NSDeleteFunctionKey — so not flagged.
-    pattern-regex: '\.onKeyPress\([^)\n]*\.delete\b'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.onKeyPress\([^)\n]*\.delete\b)'
 
   # S10.8 G (the disconnect freeze): the main thread must never wait on the audio side. Every
   # AVFAudio accessor on a node of a live engine (`.auAudioUnit` of an attached unit included) takes
@@ -85,8 +85,7 @@ rules:
         - 'Sources/AdaptiveSound/AudioEngineBridge*.swift'
         - 'Sources/AdaptiveSound/PureModeSession.swift'
         - 'Sources/AdaptiveSound/Debug/MainThreadStall*.swift'
-    pattern-regex: >-
-      \bAVAudio(?!File\b|Format\b|PCMBuffer\b|Time\b|ChannelLayout\b|FrameCount\b|FramePosition\b|Converter\b)[A-Z]\w*|\.auAudioUnit\b|\b(playerNodeRef|avEngineRef|effectsNode|playerNode|avEngine)\b|\bpureMode\w+\(|\bAudio(Object(Get|Set|Has|Add|Remove|Is)|Unit(Get|Set|Initialize|Uninitialize|Render|Reset)|OutputUnit(Start|Stop)|Device(Start|Stop|GetProperty|SetProperty|CreateIOProc|DestroyIOProc)|Hardware)\w*\(|\bDeviceHardwareVolume\.|\b(getDefaultOutputDeviceID|selectOutputDeviceC|enumerateOutputDevicesC|isListedOutputDeviceC)\(|\b(engineQueue|resampleQueue|configChangeQueue|deviceVolumeQueue)\.sync\b
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\bAVAudio(?!File\b|Format\b|PCMBuffer\b|Time\b|ChannelLayout\b|FrameCount\b|FramePosition\b|Converter\b)[A-Z]\w*|\.auAudioUnit\b|\b(playerNodeRef|avEngineRef|effectsNode|playerNode|avEngine)\b|\bpureMode\w+\(|\bAudio(Object(Get|Set|Has|Add|Remove|Is)|Unit(Get|Set|Initialize|Uninitialize|Render|Reset)|OutputUnit(Start|Stop)|Device(Start|Stop|GetProperty|SetProperty|CreateIOProc|DestroyIOProc)|Hardware)\w*\(|\bDeviceHardwareVolume\.|\b(getDefaultOutputDeviceID|selectOutputDeviceC|enumerateOutputDevicesC|isListedOutputDeviceC)\(|\b(engineQueue|resampleQueue|configChangeQueue|deviceVolumeQueue)\.sync\b)'
 
   - id: coreaudio-listener-not-on-main
     languages: [swift]
@@ -98,8 +97,8 @@ rules:
     # Two nets: a main queue named inside the call (or the AudioPropertyListener wrapper's), and an
     # allowlist on the raw call's queue argument — `let q = DispatchQueue.main` then `q` names no main.
     pattern-either:
-      - pattern-regex: '(AudioObject(Add|Remove)PropertyListenerBlock|AudioPropertyListener)\([\s\S]{0,160}?(DispatchQueue\.main|\.main\b|mainQueue)'
-      - pattern-regex: 'AudioObject(Add|Remove)PropertyListenerBlock\(\s*[^,()]+,\s*[^,()]+,(?!\s*(queue|deviceVolumeQueue|configChangeQueue)\s*,)'
+      - pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:(AudioObject(Add|Remove)PropertyListenerBlock|AudioPropertyListener)\([\s\S]{0,160}?(DispatchQueue\.main|\.main\b|mainQueue))'
+      - pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:AudioObject(Add|Remove)PropertyListenerBlock\(\s*[^,()]+,\s*[^,()]+,(?!\s*(queue|deviceVolumeQueue|configChangeQueue)\s*,))'
 
   # The rule above names the bridge's accessors, but a downcast reaches every other member of the
   # concrete class — `(engine as? AudioEngineBridge)?.applyMasterGain()` takes the engine-wide lock
@@ -138,7 +137,7 @@ rules:
       include:
         - 'Sources/AdaptiveSound/AudioEngineBridge*.swift'
         - 'Sources/AdaptiveSound/PureModeSession.swift'
-    pattern-regex: '(?m)^\s*@MainActor\b'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:^\s*@MainActor\b)'
 
   # S10.8 C1: the isolated test library is only isolated if NOTHING picks its own place to persist.
   - id: persist-one-location
@@ -153,7 +152,7 @@ rules:
     paths:
       include: ['Sources']
       exclude: ['Sources/AdaptiveSound/AppDataLocation.swift']
-    pattern-regex: '\bUserDefaults\.standard\b|\bUserDefaults\(\s*\)|UserDefaults\s*=\s*\.standard\b|\bdefaults:\s*\.standard\b|\b(applicationSupport|caches)Directory\b|@AppStorage\([^)\n]*\bstore:'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\bUserDefaults\.standard\b|\bUserDefaults\(\s*\)|UserDefaults\s*=\s*\.standard\b|\bdefaults:\s*\.standard\b|\b(applicationSupport|caches)Directory\b|@AppStorage\([^)\n]*\bstore:)'
 
   - id: cpp-no-unsafe-string-fn
     languages: [generic]
@@ -163,7 +162,7 @@ rules:
       strlcpy/strlcat, std::string, or std::span.
     paths:
       include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp']
-    pattern-regex: '\b(strcpy|strcat|sprintf|vsprintf|stpcpy|gets)\s*\('
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\b(strcpy|strcat|sprintf|vsprintf|stpcpy|gets)\s*\()'
 
   - id: cpp-no-thread-detach
     languages: [generic]
@@ -171,7 +170,7 @@ rules:
     message: "Do not detach threads. Use std::jthread or structured ownership (Audio Workgroups / GCD)."
     paths:
       include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp']
-    pattern-regex: '\.detach\s*\('
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.detach\s*\()'
 
   # --- S10.7 layer-policy tripwires (docs/sprints/s10-7-liquid-glass-design.md §3.1/§3.2/§7 R1).
   # Drift nets, not security boundaries (same posture as the migrator grep): helper indirection
@@ -191,7 +190,7 @@ rules:
     paths:
       include: ['Sources/AdaptiveSound']
       exclude: ['DesignSystem.swift', 'DesignSystemGlass.swift', 'Color+Brand.swift']
-    pattern-regex: '\.(ultraThin|thin|regular|thick|ultraThick)Material\b|\bMaterial\.|\bNSVisualEffectView\b|\.background\(\s*\.bar\b'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.(ultraThin|thin|regular|thick|ultraThick)Material\b|\bMaterial\.|\bNSVisualEffectView\b|\.background\(\s*\.bar\b)'
 
   - id: no-liquid-glass-api
     languages: [swift]
@@ -204,7 +203,7 @@ rules:
       header). Suppression = hack; rule edit + design review = policy evolution.
     paths:
       include: ['Sources']
-    pattern-regex: '\.glassEffect(ID|Union|Transition)?\s*\(|\bGlassEffectContainer\b|\bNSGlassEffectView\b|buttonStyle\(\s*\.glass'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.glassEffect(ID|Union|Transition)?\s*\(|\bGlassEffectContainer\b|\bNSGlassEffectView\b|buttonStyle\(\s*\.glass)'
 
   - id: ui-no-color-literal
     languages: [swift]
@@ -226,10 +225,10 @@ rules:
     pattern-either:
       # Colorspace prefix generalized (break-it hardening): `Color(.displayP3, red:)` evaded
       # the .sRGB-only group — and P3 is exactly what the R4 audit cannot model.
-      - pattern-regex: '\b(Color|NSColor)\(\s*(\.[A-Za-z0-9]+\s*,\s*)?(srgbRed|calibratedRed|deviceRed|red|white|hue)\s*:|#colorLiteral|\bColor\(\s*named:|\bColor\(\s*"'
-      - pattern-regex: '\.(foregroundStyle|foregroundColor|fill|tint|stroke|strokeBorder|background|overlay|border)\(\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
-      - pattern-regex: '\.shadow\(\s*color:\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
-      - pattern-regex: 'NSColor\.system(Red|Blue|Green|Orange|Yellow|Pink|Purple|Teal|Mint|Cyan|Indigo|Brown|Gray)\b'
+      - pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\b(Color|NSColor)\(\s*(\.[A-Za-z0-9]+\s*,\s*)?(srgbRed|calibratedRed|deviceRed|red|white|hue)\s*:|#colorLiteral|\bColor\(\s*named:|\bColor\(\s*")'
+      - pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.(foregroundStyle|foregroundColor|fill|tint|stroke|strokeBorder|background|overlay|border)\(\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b)'
+      - pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.shadow\(\s*color:\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b)'
+      - pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:NSColor\.system(Red|Blue|Green|Orange|Yellow|Pink|Purple|Teal|Mint|Cyan|Indigo|Brown|Gray)\b)'
 
   - id: ui-no-appearance-branching
     languages: [swift]
@@ -246,7 +245,7 @@ rules:
       exclude:
         - 'Sources/AdaptiveSound/DesignSystemGlass.swift'
         - 'Sources/AdaptiveSound/DesignSystemGlassControls.swift'
-    pattern-regex: '\\\.colorScheme\b|\.preferredColorScheme\s*\(|NSApp\.appearance\s*='
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\\\.colorScheme\b|\.preferredColorScheme\s*\(|NSApp\.appearance\s*=)'
 
   # --- S10.8 A2 accent-role tripwires (docs/sprints/s10-8-glass-sweep-plan.md §E, Sprint A).
   # Same posture as the ui-* rules above: single-line regex drift nets, not an AST check —
@@ -262,7 +261,7 @@ rules:
       (UI/Controls/PillButtonStyle.swift — dark-on-teal, audited by R4-TAB-01).
     paths:
       include: ['Sources/AdaptiveSound']
-    pattern-regex: '\.(borderedProminent|glassProminent)\b|\b(BorderedProminent|GlassProminent)ButtonStyle\('
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.(borderedProminent|glassProminent)\b|\b(BorderedProminent|GlassProminent)ButtonStyle\()'
 
   - id: ui-no-accent-as-text
     languages: [swift]
@@ -275,7 +274,7 @@ rules:
       not AST (like the other ui-* rules): it sees one foregroundStyle( call per line only.
     paths:
       include: ['Sources/AdaptiveSound']
-    pattern-regex: 'foregroundStyle\([^)\n]*(DesignSystem\.Color\.accent|Color\.asAccent|\.asAccent)\b'
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:foregroundStyle\([^)\n]*(DesignSystem\.Color\.accent|Color\.asAccent|\.asAccent)\b)'
 
   # --- S10.8 D2 (docs/sprints/s10-8-glass-sweep-plan.md §E, Sprint D): ONE filter field.
   - id: ui-no-raw-text-field

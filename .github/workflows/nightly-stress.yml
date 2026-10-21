@@ -1,0 +1,49 @@
+name: Nightly stress
+
+# Advisory (schedule and on demand): repeats the concurrency-sensitive Swift suites under the CI-like
+# profile (make stress). It never blocks a merge. A failure is a flake to FIX the same day, not retry.
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "swift --filter regex to stress (function or type names)"
+        required: true
+        default: "ANALYZER-05|Loudness_WorkersSleepWhileIdle"
+      n:
+        description: "iterations"
+        required: true
+        default: "20"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-stress
+  cancel-in-progress: false
+
+jobs:
+  stress:
+    name: stress (advisory)
+    runs-on: xcode-27
+    timeout-minutes: 120
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-gate
+      - name: Stress (CI-like profile, strict pool)
+        env:
+          TEST: ${{ inputs.test || 'ANALYZER-05|Loudness_WorkersSleepWhileIdle' }}
+          N: ${{ inputs.n || '20' }}
+        run: make stress
+      - name: Upload the stress logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-stress
+          path: .build/gate/
+          if-no-files-found: warn
