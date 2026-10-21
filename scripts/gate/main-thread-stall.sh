@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
 # Main-thread stall self-test (S10.8 G, the disconnect freeze): the real engine bridge and view model
-# on an OFFLINE engine, with AVFAudio's engine-wide lock held on purpose for 2.5 s, in four modes.
-# Any non-zero exit fails the step and names the mode.
-#
-# The oracle is Lane B/C's to change (judged by behaviour, not a 25 ms timer, per the sprint's
-# founder decision 6). This script only runs the binary and counts the modes it ran, so the
-# coverage rule holds: all four modes must run.
+# on an OFFLINE engine, with AVFAudio's engine-wide lock held on purpose until the TEST releases it,
+# in four modes. Judged by BEHAVIOUR, not a stopwatch (sprint decision 6): the run passes only if the
+# main thread keeps finishing its work while the lock is held; a main thread that touches the lock
+# cannot, and a hang cap fails the run naming what main was inside. Any non-zero exit fails the step
+# and names the mode; all four modes must run (the coverage rule).
 set -uo pipefail
 # shellcheck source=scripts/gate/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
