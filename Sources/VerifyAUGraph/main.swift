@@ -52,6 +52,7 @@
 //
 // Keep ALL gates green. Exit non-zero on any failure so this can gate commits/CI.
 
+import AudioDSP
 @preconcurrency import AVFAudio
 import AVFoundation
 import Foundation

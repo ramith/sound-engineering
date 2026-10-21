@@ -27,8 +27,8 @@ extension LibraryModel {
             try await MetadataScanner().run(
                 generation: generation, into: store, cache: cache, extractor: MetadataExtractor(),
                 inFolder: folderID,
-                progress: { snapshot in
-                    Task { @MainActor [weak self] in self?.metadataProgress = snapshot }
+                progress: { [weak self] snapshot in
+                    Task { @MainActor in self?.metadataProgress = snapshot }
                 }
             )
             metadataProgress = nil

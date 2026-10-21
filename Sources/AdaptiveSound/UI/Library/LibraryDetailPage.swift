@@ -28,8 +28,6 @@ struct LibraryDetailPage: View {
     @State private var content: LibraryDetailContent?
     /// The last layout that had songs — the list's, kept while a reload finds none.
     @State private var listLayout: DetailTrackLayout<LibraryTrackDisplay>?
-    /// The list has taken key focus on this page (once, when the page first has songs).
-    @State private var listTookFocus = false
     /// Non-nil while the searchable "Add to Playlist…" picker is open.
     @State private var addToPlaylistTarget: AddToPlaylistTarget?
     /// The page's one focus value: the song list is `.content`.
@@ -45,7 +43,7 @@ struct LibraryDetailPage: View {
             ZStack {
                 if let listLayout {
                     DetailTrackList(layout: listLayout, isShown: !showsNoSongs, albumArtist: content?.subtitle,
-                                    focus: $focus, tookFocus: $listTookFocus, choosePlaylist: choosePlaylist)
+                                    focus: $focus, choosePlaylist: choosePlaylist)
                 }
                 if showsNoSongs {
                     // A reachable page whose songs all left the library (e.g. after a rescan).

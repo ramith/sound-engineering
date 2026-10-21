@@ -1,5 +1,6 @@
 #if DEBUG
     import AppKit
+    import AudioDSP
     @preconcurrency import AVFoundation
     import Foundation
     import OutputDeviceKit

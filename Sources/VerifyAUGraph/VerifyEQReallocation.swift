@@ -18,6 +18,7 @@
 // as it within 0.1 dB (engine-plan §10). The -12 dBFS tones plus at most +6 dB stay below the
 // safety limiter.
 
+import AudioDSP
 @preconcurrency import AVFAudio
 import AVFoundation
 import Foundation

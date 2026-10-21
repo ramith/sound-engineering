@@ -10,7 +10,7 @@
 // and second-publish-plane entry points had none and were deleted (R1.1-A, council C-86).
 //
 // Must stay valid ISO C: no C++ namespaces, no <cstdint>, no Obj-C. This header is #included from
-// DeviceBridge.h (the single Swift bridging header) and from both AU .mm files (so their
+// DeviceBridge.h (the module's single Swift-visible header) and from both AU .mm files (so their
 // definitions are checked against these prototypes).
 //
 // <AudioToolbox/AudioComponent.h> is the C (not Obj-C) home of AudioComponentDescription, so

@@ -1,23 +1,24 @@
 #pragma once
 
 //
-// DeviceBridge.h — Pure C header for Swift bridging.
+// DeviceBridge.h — Pure C header for Swift.
 //
-// This header is included via the Swift bridging header and MUST be valid
-// ISO C11 (no C++ namespaces, no #include <cstdint>, no class declarations).
-// It declares only the CDeviceInfo struct and the C-ABI device functions.
+// This header is the AudioDSP module's one Swift-visible header (module.modulemap; Swift
+// writes `import AudioDSP`) and MUST be valid ISO C11 (no C++ namespaces, no
+// #include <cstdint>, no class declarations). It declares only the CDeviceInfo struct and
+// the C-ABI device functions.
 //
 
 #include "CApiNoexcept.h"
 #include <stdint.h>
 
-// Re-export the pure-C AU registration surface so the single Swift bridging header
+// Re-export the pure-C AU registration surface so the module's single Swift-visible header
 // (this file) also exposes registerAdaptiveAudioUnitSubclass() +
 // adaptiveAudioUnitComponentDescription() to Swift. Pure C; safe for all includers.
 #include "AudioUnitRegistrationBridge.h"
 
-// Re-export the pure-C Pure-Mode bridge so the same single SwiftPM bridging header
-// (Package.swift uses -import-objc-header DeviceBridge.h) exposes pureModeQueryCapability /
+// Re-export the pure-C Pure-Mode bridge so the same single Swift-visible header
+// (`import AudioDSP`) exposes pureModeQueryCapability /
 // pureModeEngine* / pureModeEvaluate to Swift. Pure C11; #pragma once guards double-include.
 #include "PureModeBridge.h"
 
@@ -63,7 +64,7 @@ typedef struct
     uint32_t transportType;   ///< kAudioDevicePropertyTransportType FourCC (0 = unknown)
     uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
     uint8_t isHeadphones;     ///< 1 = headphones (where crossfeed plays; classifyOutputDevice)
-    // Fixed-size C name buffer for the Swift bridging header. All four suppressed rules are
+    // Fixed-size C name buffer, for Swift (`import AudioDSP`). All four suppressed rules are
     // irreducible in THIS file, which must be valid ISO C11 (see the file header): the c-array
     // rules can't use std::array (not valid C / not Swift-bridgeable), and every way to NAME the
     // 256 bound trips a worse check under C11 — a macro fires macro-to-enum, and a plain enum

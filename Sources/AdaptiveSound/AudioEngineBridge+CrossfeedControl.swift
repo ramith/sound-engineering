@@ -1,3 +1,4 @@
+import AudioDSP
 @preconcurrency import AVFoundation
 import Foundation
 import SettingsKit

@@ -9,8 +9,9 @@
 // Realizer holds its own C++ instance directly.
 //
 // Must stay valid ISO C11 (no C++ namespaces, no <cstdint>, no class declarations): it is
-// re-exported through DeviceBridge.h, the single Swift bridging header. Fixed-size data travels as
-// (pointer, count) pairs in caller-owned buffers, keeping every struct POD (as PureModeBridge.h).
+// re-exported through DeviceBridge.h, the module's single Swift-visible header. Fixed-size data
+// travels as (pointer, count) pairs in caller-owned buffers, keeping every struct POD (as
+// PureModeBridge.h).
 //
 // Thread-safety: a designer is NOT thread-safe; use one per thread or serial queue. Every call is
 // off the real-time thread. asEqDesign allocates nothing and takes no locks.
