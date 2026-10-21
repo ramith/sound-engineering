@@ -1,3 +1,4 @@
+import AudioDSP
 import Foundation
 
 // MARK: - PureModeSession

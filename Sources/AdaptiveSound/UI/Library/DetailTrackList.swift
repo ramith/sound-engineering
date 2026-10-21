@@ -25,8 +25,6 @@ struct DetailTrackList: View {
     let albumArtist: String?
     /// The page's one focus value: the list is its `.content` stop.
     let focus: FocusState<CardFocus?>.Binding
-    /// The list has taken key focus on this page: it does once, when it first appears.
-    @Binding var tookFocus: Bool
     /// "Add to Playlist…": the page's searchable picker, for these songs.
     let choosePlaylist: ([Int64]) -> Void
 
@@ -34,6 +32,10 @@ struct DetailTrackList: View {
     @Environment(AudioViewModel.self) private var viewModel
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
+    /// The list has taken key focus on this page: it does once, when it first appears. The list's own
+    /// state is the page's: once the page has songs it keeps its list for its whole life (a reload
+    /// that finds none keeps the rows), so this list is never made again for the same page.
+    @State private var tookFocus = false
     @State private var selection = ListSelection<RowID>()
     @State private var infoTarget: LibraryTrackDisplay?
     /// The row area's scroll position: the KEYBOARD sets it, to keep the cursor in view (A3) — never a

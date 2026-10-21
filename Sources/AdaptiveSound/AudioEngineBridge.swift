@@ -1,4 +1,5 @@
 import Accelerate
+import AudioDSP
 @preconcurrency import AVFoundation
 import EQEditKit
 import Foundation

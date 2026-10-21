@@ -1,3 +1,4 @@
+import AudioDSPTestBridge
 import Darwin
 import Testing
 

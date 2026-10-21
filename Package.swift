@@ -36,19 +36,6 @@ let package = Package(
                 // `-suppress-warnings` debug flag (which masked ALL diagnostics) and
                 // the interim `-strict-concurrency=complete` warning flag. The compiler
                 // now guarantees the app target is data-race-free at build time.
-                // Explicitly import DeviceBridge.h as the Obj-C bridging header.
-                // The auto-discovered bridging header (AdaptiveSound-Bridging-Header.h)
-                // is not reliably processed by SPM for executable targets; the explicit
-                // flag guarantees CDeviceInfo, enumerateOutputDevicesC, and
-                // selectOutputDeviceC are visible to Swift source files.
-                .unsafeFlags([
-                    "-import-objc-header",
-                    "Sources/AudioDSP/include/DeviceBridge.h",
-                    // No bridging PCH: the driver precompiles it into a temp dir it then reports
-                    // missing ("<Bridge>.pch: No such file or directory" on every build). The
-                    // header is tiny, so the PCH bought no build time — only a warning.
-                    "-disable-bridging-pch",
-                ]),
                 // Opt the Swift Accelerate overlay into the new-LAPACK CBLAS headers so the
                 // `cblas_scopy` deprecation clears here too (the Spectrum* files import Accelerate). The
                 // flag reaches the underlying Clang module via `-Xcc`. No ILP64 (32-bit int
@@ -64,17 +51,7 @@ let package = Package(
         .executableTarget(
             name: "VerifyAUGraph",
             dependencies: ["AudioDSP", "AudioFormatKit"],
-            path: "Sources/VerifyAUGraph",
-            swiftSettings: [
-                .unsafeFlags([
-                    "-import-objc-header",
-                    "Sources/AudioDSP/include/DeviceBridge.h",
-                    // No bridging PCH: the driver precompiles it into a temp dir it then reports
-                    // missing ("<Bridge>.pch: No such file or directory" on every build). The
-                    // header is tiny, so the PCH bought no build time — only a warning.
-                    "-disable-bridging-pch",
-                ]),
-            ]
+            path: "Sources/VerifyAUGraph"
         ),
         // Persistent library store (Sprint 8; rebuilt on GRDB.swift in the GRDB refactor).
         // Built on GRDB.swift (DatabasePool, DatabaseMigrator, records, FTS5) over the SYSTEM
@@ -313,7 +290,6 @@ let package = Package(
             cxxSettings: [
                 .headerSearchPath("../AudioDSP"),
                 .headerSearchPath("../AudioDSP/include"),
-                .unsafeFlags(["-D_LIBCPP_DISABLE_AVAILABILITY"], .when(platforms: [.macOS])),
                 // Intentionally less strict than the production target: the stub module
                 // headers (Clarity, Loudness, etc.) have -Wunused-parameter warnings
                 // in their stub bodies which are expected.
@@ -326,21 +302,10 @@ let package = Package(
         .testTarget(
             name: "AudioDSPTests",
             dependencies: ["AudioDSPTestBridge"],
-            path: "Tests/AudioDSPTests",
-            swiftSettings: [
-                // Expose the EQTestBridge.h functions (eqStreamC, eqPlayedCentresC) to Swift.
-                .unsafeFlags([
-                    "-import-objc-header",
-                    "Sources/AudioDSPTestBridge/include/EQTestBridge.h",
-                    // No bridging PCH: the driver precompiles it into a temp dir it then reports
-                    // missing ("<Bridge>.pch: No such file or directory" on every build). The
-                    // header is tiny, so the PCH bought no build time — only a warning.
-                    "-disable-bridging-pch",
-                ]),
-                // swift-testing is provided natively by the toolchain under swift-tools 6.2;
-                // no manual Testing.framework linkage (see AudioViewModelTests for why the
-                // former CommandLineTools -F/-framework hack broke macro expansion).
-            ]
+            // swift-testing is provided natively by the toolchain under swift-tools 6.2; no manual
+            // Testing.framework linkage (see AudioViewModelTests for why the former
+            // CommandLineTools -F/-framework hack broke macro expansion).
+            path: "Tests/AudioDSPTests"
         ),
         // Pure-Swift format helpers (Sprint 5b, M2-a): maps a channel count to the AVAudioFormat
         // the engine graph is connected at (stereo standard-format path; 5.1 / 7.1 via CoreAudio
@@ -359,7 +324,6 @@ let package = Package(
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("include"),
-                .unsafeFlags(["-D_LIBCPP_DISABLE_AVAILABILITY"], .when(platforms: [.macOS])),
                 // Opt into the new-LAPACK CBLAS headers (macOS 13.3+). This clears the
                 // `cblas_scopy` deprecation without changing behaviour: the prototype is
                 // source-compatible (32-bit `int` counts/strides unchanged). We deliberately

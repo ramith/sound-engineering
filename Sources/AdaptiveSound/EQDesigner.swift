@@ -1,3 +1,4 @@
+import AudioDSP
 import EQEditKit
 import Foundation
 

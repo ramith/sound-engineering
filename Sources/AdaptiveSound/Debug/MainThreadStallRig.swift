@@ -1,4 +1,5 @@
 #if DEBUG
+    import AudioDSP
     import AudioToolbox
     @preconcurrency import AVFoundation
     import Foundation

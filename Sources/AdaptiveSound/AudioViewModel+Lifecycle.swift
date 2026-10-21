@@ -21,7 +21,8 @@ extension AudioViewModel {
         //     `isEngineReady` first, so a failed/lost engine still re-inits.
         guard !isInitializing, !isEngineReady else { return }
         isInitializing = true
-        Task {
+        // The start holds the view model until it finishes; the callback it installs does not.
+        Task { [self] in
             // Reset on EVERY completion path (success, the `!success` early return, and any throw
             // incl. `enumerateOutputDevices`) so the guard can never get stuck latched `true`.
             defer { isInitializing = false }

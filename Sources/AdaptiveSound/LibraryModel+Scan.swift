@@ -198,8 +198,8 @@ extension LibraryModel {
         do {
             let result = try await LibraryScanner().scan(
                 root: root.url, folderID: root.folderID, into: store,
-                progress: { snapshot in
-                    Task { @MainActor [weak self] in self?.scanProgress = snapshot }
+                progress: { [weak self] snapshot in
+                    Task { @MainActor in self?.scanProgress = snapshot }
                 }
             )
             publishScanResult(result)

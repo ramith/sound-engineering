@@ -4,9 +4,9 @@
 // PureModeBridge.h — Pure C header bridging the "Pure Mode" (bit-perfect HAL output) C++ layer
 // to Swift.
 //
-// This header is included via the Swift bridging header and MUST be valid ISO C11 (no C++
-// namespaces, no #include <cstdint>, no class declarations). It declares flat POD structs plus
-// the C-ABI Pure-Mode policy + engine functions.
+// This header reaches Swift through DeviceBridge.h (`import AudioDSP`) and MUST be valid
+// ISO C11 (no C++ namespaces, no #include <cstdint>, no class declarations). It declares flat
+// POD structs plus the C-ABI Pure-Mode policy + engine functions.
 //
 // Two implementation files back this surface:
 //   * PureModeBridgePolicy.cpp — CoreAudio-FREE; implements ONLY pureModeEvaluate(). Compiles into

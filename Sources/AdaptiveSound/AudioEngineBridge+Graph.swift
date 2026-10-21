@@ -1,4 +1,5 @@
 import Accelerate
+import AudioDSP
 import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
