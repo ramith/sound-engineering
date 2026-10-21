@@ -16,24 +16,7 @@
     // dying device, and times every main-thread entry. Adopted from the S10.8 G review's breaker
     // harness; the lock-holding techniques are the main-thread audit's experiments 1 and 2.
 
-    /// Seconds to sleep inside the engine-wide lock, armed once and taken by whichever holder runs.
-    final class StallGate: Sendable {
-        static let shared = StallGate()
-        private let armed = Mutex<Double>(0)
-
-        func arm(_ seconds: Double) {
-            armed.withLock { $0 = seconds }
-        }
-
-        func take() -> Double {
-            armed.withLock { seconds in
-                defer { seconds = 0 }
-                return seconds
-            }
-        }
-    }
-
-    /// A v3 AU whose `allocateRenderResources` sleeps when the gate is armed: `engine.start()` holds
+    /// A v3 AU whose `allocateRenderResources` holds when the hold is armed: `engine.start()` holds
     /// the engine lock while it allocates (audit experiment 2) — a slow Bluetooth start.
     final class StallSlowAU: AUAudioUnit {
         static let description = AudioComponentDescription(
@@ -63,10 +46,7 @@
 
         override func allocateRenderResources() throws {
             try super.allocateRenderResources()
-            let seconds = StallGate.shared.take()
-            if seconds > 0 {
-                Thread.sleep(forTimeInterval: seconds)
-            }
+            StallHold.shared.holdIfArmed()
         }
 
         override var internalRenderBlock: AUInternalRenderBlock {
@@ -79,14 +59,21 @@
         }
     }
 
-    /// Main-queue responsiveness: a background thread posts a stamped block every 2 ms and records
-    /// the longest wait.
+    /// Main-queue responsiveness: a background thread posts a block to the main queue every 2 ms. Each
+    /// block that RUNS is a round trip — the main queue is being served. The count is the oracle (the
+    /// longest wait is printed as information only).
     final class StallWatchdog: Sendable {
         private let worst = Mutex<Double>(0)
+        private let trips = Atomic<Int>(0)
         private let running = Atomic<Bool>(false)
 
         var worstMilliseconds: Double {
             worst.withLock { $0 } * 1000
+        }
+
+        /// Main-queue probes that came back.
+        var roundTrips: Int {
+            trips.load(ordering: .acquiring)
         }
 
         func start() {
@@ -100,10 +87,6 @@
             }
         }
 
-        func reset() {
-            worst.withLock { $0 = 0 }
-        }
-
         func stop() {
             running.store(false, ordering: .releasing)
         }
@@ -111,6 +94,7 @@
         private func record(_ wait: Duration) {
             let seconds = Double(wait.components.seconds) + Double(wait.components.attoseconds) * 1e-18
             worst.withLock { $0 = max($0, seconds) }
+            trips.wrappingAdd(1, ordering: .releasing)
         }
     }
 
@@ -148,7 +132,7 @@
                     Self.attachSlowUnit(to: engine, format: format) { built.signal() }
                 }
             }
-            built.wait()
+            StallVerdict.wait(built, for: "the offline graph to build")
             return success.load(ordering: .acquiring)
         }
 
@@ -197,7 +181,7 @@
                 bridge.enhancedPlayIntent = true
                 bridge.startTransportClock()
             }
-            started.wait()
+            StallVerdict.wait(started, for: "the engine to start playing")
             rendering.store(true, ordering: .releasing)
             Thread.detachNewThread { [self] in
                 guard let engine = bridge.avEngineRef,
@@ -227,30 +211,37 @@
             return buffer
         }
 
-        /// Hold the engine lock for `seconds`: `player.stop()` on `queue` runs a completion handler
-        /// that sleeps inside the lock (audit experiment 1) — the re-establish, pause or device-loss
-        /// stop.
-        func holdInStop(on queue: DispatchQueue, seconds: Double) {
+        /// Hold the engine lock until the test releases it: `player.stop()` on `queue` runs a completion
+        /// handler that waits inside the lock (audit experiment 1) — the re-establish, pause or
+        /// device-loss stop. `StallHold.shared.isInside` says when the holder is in.
+        func holdInStop(on queue: DispatchQueue) {
             guard let player = bridge.playerNodeRef,
                   let small = AVAudioPCMBuffer(pcmFormat: player.outputFormat(forBus: 0), frameCapacity: 4800)
             else { return }
             small.frameLength = 4800
             player.scheduleBuffer(small, completionCallbackType: .dataConsumed) { _ in
-                let hold = StallGate.shared.take()
-                if hold > 0 {
-                    Thread.sleep(forTimeInterval: hold)
-                }
+                StallHold.shared.holdIfArmed()
             }
-            StallGate.shared.arm(seconds)
+            StallHold.shared.arm()
             let bridge = bridge
             queue.async { bridge.playerNodeRef?.stop() }
         }
 
-        /// Hold the engine lock for `seconds` in `engine.start()` (the slow AU's allocation).
-        func holdInStart(seconds: Double) {
-            StallGate.shared.arm(seconds)
+        /// Hold the engine lock until the test releases it, in `engine.start()` (the slow AU's allocation).
+        func holdInStart() {
+            StallHold.shared.arm()
             let bridge = bridge
             bridge.engineQueue.async { try? bridge.avEngineRef?.start() }
+        }
+
+        /// Run `work` on `engineQueue` and tell the caller when it has run (a state, not a pause).
+        func onEngineQueue(_ what: String, _ work: @escaping @Sendable () -> Void) {
+            let done = DispatchSemaphore(value: 0)
+            bridge.engineQueue.async {
+                work()
+                done.signal()
+            }
+            StallVerdict.wait(done, for: what)
         }
     }
 #endif
