@@ -22,7 +22,6 @@
 //   • root identity (QS3) — addRoot dedups by on-disk (dev,inode), so a case-variant
 //     path for one directory on a case-insensitive volume isn't a second root.
 
-import Dispatch
 import Foundation
 import LibraryScan
 import LibraryStore
@@ -82,32 +81,23 @@ private func cancellationSkipsSweep(_ store: LibraryStore, number: Int) async th
     return true
 }
 
-/// Start a scan, park it in its progress closure after the first committed batch, cancel
-/// it while parked, then release it so the next per-file `checkCancellation()` throws.
+/// Start a scan and cancel it from INSIDE its progress closure, right after the first committed
+/// batch, so the next per-file `checkCancellation()` throws. The closure cancels the very task the
+/// scan runs in — no semaphore park, because a park inside a cooperative-pool thread starves the rest
+/// of the test when the pool is one thread wide (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`).
 /// Returns true iff the scan threw `CancellationError` (not a completion, not another error).
 private func cancelAfterFirstBatch(
     _ store: LibraryStore, root: URL, folderID: Int64, number: Int
 ) async throws -> Bool {
     let firstBatch = OneShotLatch()
-    let proceed = DispatchSemaphore(value: 0) // released after cancel; wait()ed in the SYNC closure only
-    let committed = AsyncStream<Void>.makeStream() // scanner → async: "first batch committed"
     let task = Task {
         try await LibraryScanner().scan(
             root: root, folderID: folderID, into: store,
             progress: { _ in
-                // Sync closure: DispatchSemaphore.wait() is legal here (not an async context).
-                firstBatch.runOnce {
-                    committed.continuation.yield(())
-                    committed.continuation.finish()
-                    awaitState(proceed, "the test's cancel of the scan") // parked mid-walk
-                }
+                firstBatch.runOnce { withUnsafeCurrentTask { $0?.cancel() } } // the next per-file check throws
             }
         )
     }
-    var batches = committed.stream.makeAsyncIterator()
-    _ = await batches.next() // async-await the first committed batch (no async-context semaphore wait)
-    task.cancel()
-    proceed.signal() // release → the next per-file checkCancellation() throws
     do {
         _ = try await task.value
         printFail(number, "cancel-sweep: cancelled re-scan did NOT throw"); return false

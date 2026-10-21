@@ -131,7 +131,9 @@
             print("while the engine lock was held: \(probe.rounds) probe rounds, \(roundTrips) main-queue round trips")
             print("main-queue longest wait (information)".padding(toLength: 52, withPad: " ", startingAt: 0)
                 + String(format: "    %8.3f ms", queueWait))
-            guard stillHeld else { return report("the control read finished during the hold: the lock was not held") }
+            guard stillHeld else {
+                return report("the control read finished during the hold: the lock was not held")
+            }
             return true
         }
 

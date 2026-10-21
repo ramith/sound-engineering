@@ -348,7 +348,7 @@ func checkGenreCoverAtScale(number: Int, url: URL) async -> Bool {
         var cheapest = Double.infinity
         var keys: [Int64: [String]] = [:]
         for _ in 0 ..< 5 {
-            cheapest = min(cheapest, try await cpuSeconds { keys = try await store.genreCoverArtworkKeys() })
+            cheapest = try min(cheapest, await cpuSeconds { keys = try await store.genreCoverArtworkKeys() })
         }
         let memberships = library.memberships
         let expected = referenceGenreCovers(memberships: memberships, covers: library.covers, perGenre: 4)
