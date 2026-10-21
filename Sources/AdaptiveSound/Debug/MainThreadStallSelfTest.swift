@@ -110,10 +110,12 @@
             waitFor("the holder to be inside the engine lock") { StallHold.shared.isInside }
             let control = StallControlRead()
             control.start(plan.control)
-            plan.trigger()
             let cap = StallHangCap()
             cap.begin("main finishing \(minRounds) probe rounds and \(minRoundTrips) main-queue round trips",
                       progress: probe.progress)
+            probe.progress.enter("the \(plan.label) trigger")
+            plan.trigger()
+            probe.progress.leave()
             repeat {
                 plan.step()
                 pump(0.004)
