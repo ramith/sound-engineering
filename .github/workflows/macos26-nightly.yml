@@ -1,0 +1,37 @@
+name: macOS 26 nightly
+
+# Nightly (and on demand): runs macos26-compat.yml. A failing run opens or updates ONE issue (H5); it never
+# blocks a merge. release.yml calls the same compat workflow directly and is blocked by it.
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compat:
+    uses: ./.github/workflows/macos26-compat.yml
+
+  issue:
+    name: open or update the nightly issue
+    needs: compat
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Write the issue body and open or update the one issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          body="$RUNNER_TEMP/body.md"
+          printf 'The nightly macOS 26 run failed (run %s, %s/%s/actions/runs/%s).\n\nThe logs are in the macos26-logs artifact of that run.\nA loader error ("Symbol not found" / "Library not loaded") means a binary built on macOS 27 needs a newer macOS.\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > "$body"
+          scripts/gate/nightly-issue.sh "Nightly: macOS 26 run is red" "$body"

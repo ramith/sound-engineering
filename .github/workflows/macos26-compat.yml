@@ -1,0 +1,79 @@
+name: macOS 26 compatibility
+
+# Builds the app and the C++ null test on the xcode-27 runner (macOS 27), then RUNS them on GitHub's macos-26
+# runner. A binary that needs a newer macOS fails to load there ("Symbol not found" / "Library not loaded"),
+# which is the _LIBCPP_DISABLE_AVAILABILITY incident. Triggers: nightly, on demand, and as a required step of
+# release.yml (workflow_call), which will not build or attest a release while this is red.
+# The nightly wrapper (macos26-nightly.yml) opens or updates the issue; a release call never does.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos26-compat-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build on xcode-27 (macOS 27)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - name: Select Xcode 27.1 (the runner's alias)
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app && xcodebuild -version
+      - name: Build the app, the verifier and the null test
+        run: |
+          set -euo pipefail
+          swift build -c debug -j 8 --product AdaptiveSound
+          swift build -c debug -j 8 --product VerifyAUGraph
+          bash scripts/build-null-test.sh --build
+      - name: Collect the binaries
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/macos26-binaries"
+          mkdir -p "$out"
+          bin="$(swift build --show-bin-path -c debug)"
+          cp "$bin/AdaptiveSound" "$bin/VerifyAUGraph" "$out/"
+          cp Tests/DSPKernelNullTest "$out/"
+          ls -la "$out"
+      - name: Upload the binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos26-binaries
+          path: ${{ runner.temp }}/macos26-binaries
+          overwrite: true
+          retention-days: 7
+
+  run-on-macos-26:
+    name: run on macos-26
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: macos26-binaries
+          path: ${{ runner.temp }}/macos26-binaries
+      - name: Run them (any dyld failure or non-zero exit is red)
+        env:
+          GATE_RUN_DIR: ${{ runner.temp }}/macos26-logs
+        run: |
+          chmod +x "$RUNNER_TEMP/macos26-binaries"/*
+          scripts/gate/macos26-run.sh "$RUNNER_TEMP/macos26-binaries"
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos26-logs
+          path: ${{ runner.temp }}/macos26-logs
+          overwrite: true
+          if-no-files-found: warn
