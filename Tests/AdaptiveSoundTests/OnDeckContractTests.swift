@@ -11,7 +11,7 @@ import Testing
 // ablation breaks a named scenario — so each piece of the design is necessary. `ArmSemantics.refuse`
 // is 672fc0a's: its rows are the D41 defect reproduced on the real view model.
 
-@Suite("AudioViewModel × engine — what plays next (council D41)", .serialized)
+@Suite("AudioViewModel × engine — what plays next (council D41)", .serialized, .timeLimit(.minutes(5)))
 @MainActor
 struct OnDeckContractTests {
     // MARK: The design holds

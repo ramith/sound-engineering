@@ -211,7 +211,7 @@ struct OnDeckExplorer {
     }
 }
 
-@Suite("AudioViewModel × engine — random schedules (council D41)", .serialized)
+@Suite("AudioViewModel × engine — random schedules (council D41)", .serialized, .timeLimit(.minutes(5)))
 @MainActor
 struct OnDeckExplorerTests {
     @Test("Explorer: 3000 random schedules under the design — no violation; A2 / A2′ counted apart")

@@ -11,7 +11,7 @@ import Testing
 // sub-path, the real effects chain). The old Normal converter played 20 kHz 8.25 dB down; the two
 // must now come out level.
 
-@Suite("Enhanced resampler — the treble reaches the output (C-26)", .serialized)
+@Suite("Enhanced resampler — the treble reaches the output (C-26)", .serialized, .timeLimit(.minutes(5)))
 struct EnhancedResamplerTests {
     /// Least-squares amplitude of the sinusoid at `frequency` in `samples` (48 kHz). The two tones
     /// are 19 kHz apart, so over 0.4 s neither leaks into the other's reading (< −80 dB).

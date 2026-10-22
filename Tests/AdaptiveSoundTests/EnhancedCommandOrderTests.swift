@@ -12,7 +12,10 @@ import Testing
 // nothing is heard, no device is opened) and send it a command numbered older than one it has begun.
 // (No stale start is sent: a start's device step is the one part the rig leaves out.)
 
-@Suite("Enhanced commands on the real bridge — an overtaken one is dropped (C-15)", .serialized)
+@Suite(
+    "Enhanced commands on the real bridge — an overtaken one is dropped (C-15)",
+    .serialized, .timeLimit(.minutes(5))
+)
 struct EnhancedCommandOrderTests {
     typealias SubPath = EnhancedTransportRig.SubPath
 

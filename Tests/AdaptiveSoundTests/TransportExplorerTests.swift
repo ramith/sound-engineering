@@ -218,7 +218,7 @@ struct TransportExplorer {
     }
 }
 
-@Suite("AudioViewModel × engine — random transport schedules (council C-15)", .serialized)
+@Suite("AudioViewModel × engine — random transport schedules (council C-15)", .serialized, .timeLimit(.minutes(5)))
 @MainActor
 struct TransportExplorerTests {
     @Test("Explorer: 3000 schedules, commands run as they arrived — the app and the engine always agree")

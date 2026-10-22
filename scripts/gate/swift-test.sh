@@ -34,9 +34,15 @@ case "${PART:-all}" in
 esac
 [[ -n "${TEST:-}" ]] && args+=(--filter "$TEST")
 
-out="$(swift test ${args[@]+"${args[@]}"} 2>&1)"
-rc=$?
-printf '%s\n' "$out"
+# H3: the output STREAMS to stdout (the step's log) while the tests run, so a step the watchdog kills
+# leaves a log that names the last test started. The same text is kept in a file for the counts below.
+scratch="${GATE_RUN_DIR:-$repo_root/.build/gate}"
+mkdir -p "$scratch" || fail "cannot create $scratch"
+tmp="$(mktemp "$scratch/swift-test.XXXXXX")" || fail "cannot create a scratch file for swift test's output"
+trap 'rm -f "$tmp"' EXIT
+swift test ${args[@]+"${args[@]}"} 2>&1 | tee "$tmp"
+rc=${PIPESTATUS[0]}
+out="$(cat "$tmp")"
 
 # Load failures: fatal whatever the totals say.
 if grep -qE 'Failed to open test bundle|Fatal error|Symbol not found' <<< "$out"; then
