@@ -339,3 +339,25 @@ rules:
       include: ['Sources']
       exclude: ['Sources/LibraryStore/Schema.swift']
     pattern-regex: '(?m)^(?!\s*//).*"Unknown Artist"'
+
+  # Test-rig redesign, rule 1: time only ever breaks hangs. A Swift test waits for a STATE (RigKit's
+  # `until`, `untilOnMainRunLoop`, `Hold`) and keeps blocking work off the cooperative pool (`blocking`),
+  # whose cap fails loudly naming the state. A sleep, a nested run-loop window, a semaphore with no
+  # timeout or a wall-clock deadline is a guess about the machine: a slow runner turns a positive check
+  # red and a negative one vacuously green (ANALYZER-05, LiveReadouts S5-S7, R4). Only RigKit itself
+  # (the primitives, each proven to fail loudly) may touch the raw clock. A clock INSTANT used as an
+  # injected `now` (`let start = ContinuousClock.now`, handed to a pure decision) is deterministic and
+  # not flagged: it is arithmetic on it (`now + …`, `now < …`) that makes a deadline.
+  - id: test-no-raw-time
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      A raw wait in a test. Wait for the STATE with RigKit — `try await until("what", cap:) { … }`
+      (`untilOnMainRunLoop` for a main-queue or timer source, `Hold`/`withHold` to keep a producer until
+      the test releases it, `blocking {}`/`OffPoolExecutor` for blocking code) — never Thread.sleep,
+      Task.sleep, usleep, `RunLoop.run(until:)`, a DispatchSemaphore, or a ClockInstant deadline. A negative
+      check ("X did not happen") needs a positive witness that X had its chance, not a window of time.
+    paths:
+      include: ['Tests']
+      exclude: ['Tests/RigKit']
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\bThread\.sleep\b|\bTask\.sleep\(|\busleep\(|\bRunLoop\.(?:main|current)\.run\(until|\bDispatchSemaphore\b|\b(?:Continuous|Suspending)Clock\.now\s*[-+<>])'
