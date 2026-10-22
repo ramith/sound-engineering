@@ -94,6 +94,25 @@ these**; the semgrep rule `test-no-raw-time` bans `Thread.sleep`, `Task.sleep`, 
   each block it waits (`untilBlocking`) until every completion due by the frames rendered has been handed
   on, then drains `resampleQueue`. No sleeps, no pacing.
 
+### One engine double, no mirrors
+
+A test of the view model drives the **real** `AudioViewModel` (`@testable import AdaptiveSound`). A double
+provides inputs, never logic; a pure decision is tested in its Kit (`PlaybackQueueKitTests` for the queue).
+
+- **`FakeEngine`** (`Tests/AdaptiveSoundTests/FakeEngine.swift`) is the one double of `AudioPlaybackEngine`.
+  Inputs a test sets in `engine.state`: the devices, the whole snapshot (transport, signal path, loudness,
+  the EQ's design rate), spectrum frames, and each call's outcome (an `initialize` that refuses or throws,
+  a start error, a refused pick). The record: `calls`, every command in the order sent, with per-kind views
+  (`starts`, `stops`, `picks`, `nextTracks`, …). The output choice is the product's `OutputDeviceSelection`.
+- **`OnDeckEngineModel`** composes one (`engine.fake`): it keeps only the scripted transport and on-deck
+  state machine (holds, hops, opens, seams, the ablations); everything else is the fake's.
+- **Two rigs.** `Rig` (OnDeck) for what plays next: the engine seams into what was armed, or ends.
+  `FakePlayer` for what the view model does with what the engine reports or answers: launched through
+  `initializeEngine`, `engineReports(position:transitionCount:ended:)` stamps the newest request's epoch.
+  Both fire the transport tick through `TickerBench`, so it runs only when the app's would.
+- `SheetEngine` (`Sources/AdaptiveSound/Debug`) is for `make sheets` only; no test uses it.
+- A new view-model test is first seen **failing against a planted bug** in the view model, then passing.
+
 ### How to write a waiting test
 
 1. Name the state in words, then wait for it: `try await until("the seam to be counted") { bridge.gaplessTransitionCount == 1 }`.
