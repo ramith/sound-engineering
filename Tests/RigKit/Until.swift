@@ -34,13 +34,15 @@ private let yieldsBeforeNapping = 64
 /// - Parameters:
 ///   - what: the STATE waited for, in words ("the engine to come up"); it is what a failure names.
 ///   - cap: a hang breaker, never a pass/fail line. Throws `RigTimeout` when it passes.
-///   - isolation: the caller's actor, so `condition` may read that actor's state.
+///   - isolation: the caller's actor. `condition` is `nonisolated(nonsending)`, so it runs ON that actor and
+///     may read its state: a plain async closure would hop to the global executor to be evaluated, and a
+///     test's main-actor model would be read from another thread.
 public func until(
     _ what: String,
     cap: Duration = .seconds(120),
     isolation: isolated (any Actor)? = #isolation,
     sourceLocation: SourceLocation = #_sourceLocation,
-    _ condition: () async throws -> Bool
+    _ condition: nonisolated(nonsending) () async throws -> Bool
 ) async throws {
     let deadline = SuspendingClock.now + cap
     var looks = 0
