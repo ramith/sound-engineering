@@ -50,7 +50,7 @@ public final class Hold: @unchecked Sendable {
     }
 
     /// Whether the producer gave up waiting at the hang cap.
-    var hasExpired: Bool {
+    public var hasExpired: Bool {
         condition.withLock { expired }
     }
 
