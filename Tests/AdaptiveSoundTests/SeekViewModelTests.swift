@@ -6,14 +6,14 @@ import Testing
 // MARK: - The view model's seek, placed by the one rule (council C-25)
 
 //
-// The real `AudioViewModel` over the recording engine: what the scrubber, its keys and Control Center
+// The real `AudioViewModel` over `FakeEngine`: what the scrubber, its keys and Control Center
 // send is placed by `SeekTarget.place` before it becomes the playhead, a resume point or an engine
 // request. A NaN used to become all three (and trap the engine).
 
 @MainActor
 @Suite("AudioViewModel — a seek is placed before it goes anywhere (C-25)", .timeLimit(.minutes(3)), .attachingLogTail)
 struct SeekViewModelTests {
-    private let engine = DeviceTestEngine()
+    private let engine = FakeEngine()
     private let viewModel: AudioViewModel
     /// A private, empty defaults suite, removed with the test: nothing here touches the app's own.
     private let world = IsolatedDefaults("SeekViewModelTests")

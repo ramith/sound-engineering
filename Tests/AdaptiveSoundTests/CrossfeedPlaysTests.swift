@@ -37,7 +37,7 @@ struct CrossfeedPlaysTests {
 
     @Test("the Mac's own headphone jack plays crossfeed; an AirPlay speaker holds it off")
     func crossfeedFollowsTheClassifier() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         engine.state.withLock {
             $0.devices = [Self.jack, Self.airPlay]
             $0.engineDevice = Self.jack.id

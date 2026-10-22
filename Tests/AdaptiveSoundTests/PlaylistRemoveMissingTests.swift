@@ -51,7 +51,7 @@ struct PlaylistRemoveMissingTests {
             let library = LibraryModel(storeless: ())
             library.store = store
             let defaults = try #require(UserDefaults(suiteName: "PlaylistRemoveMissingTests.\(UUID().uuidString)"))
-            let audio = AudioViewModel(defaults: defaults, engine: DeviceTestEngine())
+            let audio = AudioViewModel(defaults: defaults, engine: FakeEngine())
             let playlists = PlaylistsModel(library: library, audio: audio)
             await playlists.loadTree()
             await playlists.loadDetail(id: playlistID)
