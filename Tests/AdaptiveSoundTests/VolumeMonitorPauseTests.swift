@@ -1,4 +1,5 @@
 @testable import AdaptiveSound
+import Clocks
 import Foundation
 import LibraryBrowseKit
 import LibraryScan
@@ -17,7 +18,7 @@ import Testing
 // an unmounted volume's paths do.
 
 @MainActor
-@Suite("An unplugged folder reads paused, and says why (KI-LIB-02)", .serialized)
+@Suite("An unplugged folder reads paused, and says why (KI-LIB-02)", .timeLimit(.minutes(3)))
 struct VolumeMonitorPauseTests {
     /// A store with one music folder on a "drive", walked once, under the real library model (no
     /// watcher, no metadata pass: `storeless`, then the store).
@@ -41,7 +42,9 @@ struct VolumeMonitorPauseTests {
             let store = try await LibraryStore(url: base.appendingPathComponent("library.sqlite3"), appBuild: "test")
             let folderID = try await store.addRoot(music)
             _ = try await LibraryScanner().scan(root: music, folderID: folderID, into: store)
-            let library = LibraryModel(storeless: ())
+            // The reconcile debounce (the product's 1 s) settles at once on an ImmediateClock: the test awaits
+            // the walk it asks for, not a second of wall time per step.
+            let library = LibraryModel(storeless: (), clock: ImmediateClock())
             library.store = store
             await library.refreshWatchedRoots()
             return Fixture(base: base, drive: drive, folderID: folderID, library: library)
