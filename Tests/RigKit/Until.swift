@@ -5,8 +5,8 @@
 // for it. It never returns normally past a deadline, so no test can go on to assert on a half-finished
 // state (the ANALYZER-05 bug). The cap is cooperative: a task cancelled by `.timeLimit` ends the wait.
 
-public import Testing
 import Foundation
+import Testing
 
 /// What a wait threw at its cap: the state that never held.
 public struct RigTimeout: Error, CustomStringConvertible, Sendable {

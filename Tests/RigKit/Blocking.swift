@@ -5,8 +5,8 @@
 // render — takes a third of the pool from every other test, and a handful of them starves it (PR #91:
 // six-second fixtures took nineteen). `blocking` runs such work on a thread of its own and awaits it.
 
-public import Testing
 import Foundation
+import Testing
 
 /// Run `work` on a dedicated thread, named `name`, and return what it returns (or throw what it throws).
 /// The caller suspends meanwhile; no pool thread is held. `work` cannot be cancelled once started, so it
