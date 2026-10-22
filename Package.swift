@@ -138,7 +138,7 @@ let package = Package(
             path: "Sources/SRCQualityMeasure"
         ),
         // Pure queue/advance decision core (Sprint 9, S9-Q1). Extracted from AudioViewModel so
-        // BOTH the app and the AudioViewModelTests suite link the identical next/previous-index
+        // BOTH the app and the PlaybackQueueKitTests suite link the identical next/previous-index
         // logic — no hand-mirror to drift. Pure Swift, zero deps, off the audio path entirely.
         .target(
             name: "PlaybackQueueKit",
@@ -220,11 +220,13 @@ let package = Package(
             dependencies: ["RigKit"],
             path: "Tests/RigKitTests"
         ),
-        // Pure-Swift view-model tests (swift-testing, not XCTest): every file in the folder.
+        // The queue's pure decisions (PlaybackQueueKit), tested directly (swift-testing, not XCTest). It was
+        // AudioViewModelTests, which also held a hand-mirror of the view model; the view model itself is
+        // tested in AdaptiveSoundTests, on the real thing (test-rig redesign: one engine double, no mirrors).
         .testTarget(
-            name: "AudioViewModelTests",
+            name: "PlaybackQueueKitTests",
             dependencies: ["PlaybackQueueKit", "RigKit"],
-            path: "Tests/AudioViewModelTests"
+            path: "Tests/PlaybackQueueKitTests"
             // swift-testing is provided natively by the toolchain under swift-tools 6.2;
             // no manual Testing.framework linkage. (The former -F/-framework hack pointed
             // at CommandLineTools' Testing.framework, whose macro plugin was built against
@@ -249,7 +251,7 @@ let package = Package(
             ],
             path: "Tests/AdaptiveSoundTests"
         ),
-        // Pure Library-browse decision tests (S9.5) — swift-testing, mirrors AudioViewModelTests.
+        // Pure Library-browse decision tests (S9.5) — swift-testing, like PlaybackQueueKitTests.
         // Gates the sort-mapping, search-epoch newest-wins (incl. the cross-2-char boundary), the
         // ≥2-char gate, and the visible-subset row resolver directly (they used to be untested
         // UI-glue in the app target).
@@ -323,7 +325,7 @@ let package = Package(
             name: "AudioDSPTests",
             dependencies: ["AudioDSPTestBridge"],
             // swift-testing is provided natively by the toolchain under swift-tools 6.2; no manual
-            // Testing.framework linkage (see AudioViewModelTests for why the former
+            // Testing.framework linkage (see PlaybackQueueKitTests for why the former
             // CommandLineTools -F/-framework hack broke macro expansion).
             path: "Tests/AudioDSPTests"
         ),

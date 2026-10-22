@@ -4,16 +4,16 @@ import Testing
 // MARK: - QueueAdvance decision core (S9-Q1) — the REAL logic, tested directly
 
 //
-// These import the shipped `PlaybackQueueKit` target (NOT the hand-mirror), so a
-// regression in `nextIndex`/`previousIndex` is caught against the code that actually
-// ships. Exact-value cases use a deterministic injected picker; the production
+// These import the shipped `PlaybackQueueKit` target, so a regression in
+// `nextIndex`/`previousIndex` is caught against the code that actually ships (the view
+// model's use of it: `AutoAdvanceTests` and `ManualSkipTests` in AdaptiveSoundTests).
+// Exact-value cases use a deterministic injected picker; the production
 // `uniformRandomExcluding` is verified by property.
 
 @Suite("PlaybackQueueKit — QueueAdvance decision core (VM-QA)")
 struct QueueAdvanceTests {
-    /// The shared deterministic shuffle stand-in (linear walk avoiding `current`) — one
-    /// source of truth, reused by the mirror's state-machine tests too.
-    let det = MockAdvanceController.deterministicPick
+    /// The shared deterministic shuffle stand-in (`DeterministicPick.swift`).
+    let det = deterministicPick
 
     @Test("VM-QA-01: linear advance steps to current+1 mid-queue")
     func linearStep() {
