@@ -5,8 +5,8 @@
 // for it. It never returns normally past a deadline, so no test can go on to assert on a half-finished
 // state (the ANALYZER-05 bug). The cap is cooperative: a task cancelled by `.timeLimit` ends the wait.
 
-import Foundation
 public import Testing
+import Foundation
 
 /// What a wait threw at its cap: the state that never held.
 public struct RigTimeout: Error, CustomStringConvertible, Sendable {
@@ -40,7 +40,7 @@ private let yieldsBeforeNapping = 64
 public func until(
     _ what: String,
     cap: Duration = .seconds(120),
-    isolation: isolated (any Actor)? = #isolation,
+    isolation _: isolated (any Actor)? = #isolation,
     sourceLocation: SourceLocation = #_sourceLocation,
     _ condition: nonisolated(nonsending) () async throws -> Bool
 ) async throws {

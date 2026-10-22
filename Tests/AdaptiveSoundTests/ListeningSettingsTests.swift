@@ -12,7 +12,8 @@ import SettingsKit
 import Testing
 
 @MainActor
-@Suite("AudioViewModel — a faithful default, and the listener's settings kept", .timeLimit(.minutes(3)), .attachingLogTail)
+@Suite("AudioViewModel — a faithful default, and the listener's settings kept", .timeLimit(.minutes(3)),
+       .attachingLogTail)
 struct ListeningSettingsTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,

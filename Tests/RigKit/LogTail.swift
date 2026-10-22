@@ -4,8 +4,8 @@
 // add timing noise and bury the one failure line (hazard P3). A test target points the product's log
 // sink here; a suite that wants the tail on failure carries `.attachingLogTail`.
 
-import Synchronization
 public import Testing
+import Synchronization
 
 /// A bounded ring of the most recent log lines, shared by every test in the process.
 public final class LogTail: Sendable {

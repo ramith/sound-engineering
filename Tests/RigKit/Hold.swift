@@ -7,8 +7,8 @@
 // the test. The producer never records an issue itself: swift-testing attributes an issue to the
 // test of the calling task, and a producer runs on whatever thread the product chose.
 
-import Foundation
 public import Testing
+import Foundation
 
 /// A point a producer waits at, until the test releases it.
 public final class Hold: @unchecked Sendable {
@@ -62,7 +62,7 @@ public final class Hold: @unchecked Sendable {
     /// TEST side: wait until a producer has arrived, failing — naming this hold — if none ever does.
     public func arrived(
         cap: Duration = .seconds(120),
-        isolation: isolated (any Actor)? = #isolation,
+        isolation _: isolated (any Actor)? = #isolation,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
         try await until("\(name) to be reached by its producer", cap: cap, sourceLocation: sourceLocation) {
@@ -89,7 +89,7 @@ public func withHold<Result>(
     _ name: String,
     cap: Duration = .seconds(300),
     mayNotArrive: Bool = false,
-    isolation: isolated (any Actor)? = #isolation,
+    isolation _: isolated (any Actor)? = #isolation,
     sourceLocation: SourceLocation = #_sourceLocation,
     _ body: (Hold) async throws -> Result
 ) async throws -> Result {

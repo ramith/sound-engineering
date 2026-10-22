@@ -100,8 +100,8 @@ struct EnhancedEndOfQueueTests {
         let frames = Self.chunk * 8 + 4096
         let rig = try await Self.play(Case(rate: 44100, frames: frames, after: nil), name: "end-seek")
         let bridge = rig.bridge
-        let scheduled = try await rig.frames(until: { bridge.resampleQueue.sync { bridge.resampleSession?.reachedEnd ?? false } },
-                                   limit: 96000)
+        let streamFinished = { bridge.resampleQueue.sync { bridge.resampleSession?.reachedEnd ?? false } }
+        let scheduled = try await rig.frames(until: streamFinished, limit: 96000)
         try #require(scheduled != nil, "the stream never finished scheduling")
         let (error, _) = await rig.seek(to: 0.25)
         #expect(error == nil)
