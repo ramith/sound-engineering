@@ -12,13 +12,26 @@
 #
 #   scripts/gate/swift-test.sh                  # everything
 #   TEST=<regex> scripts/gate/swift-test.sh     # --filter; matches function/type names, NOT @Test display names
+#   PART=main scripts/gate/swift-test.sh        # everything but the heavy real-engine rig suites (parallel)
+#   PART=rig  scripts/gate/swift-test.sh        # only those suites, one test at a time (--no-parallel)
+#
+# The rig suites (the Enhanced* suites) each build a real offline AVAudioEngine graph, render it and
+# register AU subclasses process-wide; run beside ~950 parallel tests they load the runner and share
+# process state (hazard R10). The pattern is anchored on the type name: other tests mention "Enhanced".
 set -uo pipefail
 # shellcheck source=scripts/gate/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
 
+rig_suites='AdaptiveSoundTests\.Enhanced[A-Za-z]*Tests/'
 args=()
+case "${PART:-all}" in
+    all) ;;
+    main) args+=(--skip "$rig_suites") ;;
+    rig) args+=(--no-parallel --filter "$rig_suites") ;;
+    *) fail "PART must be all, main or rig (got '${PART}')" ;;
+esac
 [[ -n "${TEST:-}" ]] && args+=(--filter "$TEST")
 
 out="$(swift test ${args[@]+"${args[@]}"} 2>&1)"
@@ -44,6 +57,6 @@ n="${total%% *}"
 runs="${total##* }"
 [[ -n "$n" && -n "$runs" ]] || fail "could not read a test count from swift test's output: the step cannot prove anything ran"
 ((runs >= 1)) || fail "swift test printed no 'Test run' or 'Executed' line: nothing reported a run"
-((n >= 1)) || fail "swift test ran 0 tests in total (filter='${TEST:-<none>}'). A misspelt filter runs nothing and exits 0; that is a failure."
+((n >= 1)) || fail "swift test ran 0 tests in total (part='${PART:-all}', filter='${TEST:-<none>}'). A misspelt filter runs nothing and exits 0; that is a failure."
 echo "swift test: $n tests across $runs target run line(s)."
 covered "$n" tests

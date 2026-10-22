@@ -34,6 +34,7 @@ Nothing was dropped. The left column is the old inline step, in its old order.
 | Periphery (hostile, strict) | `periphery` | static | combine, ci |
 | Swift build (debug) | `swift-build` | swift | check, combine, ci |
 | Swift test | `swift-test` (zero-tests guard) | swift | check, combine, ci |
+| (new) the heavy real-engine rig suites, one test at a time (hazard R10) | `swift-test-rig` (`swift-test` skips them) | swift | check, combine, ci |
 | `make gate`: null test | `null-debug` | cpp | check, combine, ci, gate |
 | `make gate`: VerifyAUGraph | `verify-au-graph` | cpp | combine, ci, gate |
 | `make gate`: SRCQualityMeasure | `src-quality` | cpp | combine, ci, gate |
