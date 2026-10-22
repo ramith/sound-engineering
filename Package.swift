@@ -244,7 +244,7 @@ let package = Package(
             name: "AdaptiveSoundTests",
             dependencies: [
                 "AdaptiveSound", "AudioDSP", "AudioFormatKit", "PlaybackQueueKit", "SettingsKit", "LibraryStore",
-                "LibraryScan", "LibraryBrowseKit", "RigKit",
+                "LibraryScan", "LibraryBrowseKit", "OutputDeviceKit", "RigKit",
                 .product(name: "Clocks", package: "swift-clocks"),
             ],
             path: "Tests/AdaptiveSoundTests"

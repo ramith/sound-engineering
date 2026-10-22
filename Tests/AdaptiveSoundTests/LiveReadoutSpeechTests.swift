@@ -34,7 +34,7 @@ struct LiveReadoutSpeechTests {
     @Test("the scrubber's time changes once a second while the playhead moves 20 times a second")
     func elapsedTimeIsQuantised() throws {
         let defaults = try #require(UserDefaults(suiteName: "AdaptiveSoundTests.LiveReadoutSpeech"))
-        let viewModel = AudioViewModel(defaults: defaults, engine: DeviceTestEngine())
+        let viewModel = AudioViewModel(defaults: defaults, engine: FakeEngine())
         viewModel.playbackPosition = 80
         var changes = 0
         for tick in 1 ... 20 { // one second of the transport tick: 80.05 … 81.0

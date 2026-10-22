@@ -1,5 +1,5 @@
 // R1.1-A (council C-51 D57, C-52; KI-UI-02): live readouts move in real time and cost nothing while
-// nothing plays or shows them. On the real `AudioViewModel` over a recording engine.
+// nothing plays or shows them. On the real `AudioViewModel` over `FakeEngine`.
 //
 // - The peak caps hold 0.6 s, then fall 1.25 of full scale a second — in real time. Frames arrive
 //   once per tap buffer (100 ms); before R1.1 each frame advanced the caps by a nominal 1/20 s, so
@@ -38,7 +38,7 @@ struct LiveReadoutsTests {
     }
 
     /// The view model, its engine ready, one song queued and selected.
-    private func readyViewModel(_ engine: DeviceTestEngine) async throws -> AudioViewModel {
+    private func readyViewModel(_ engine: FakeEngine) async throws -> AudioViewModel {
         let viewModel = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         viewModel.initializeEngine()
         try await until("the engine to come up") { viewModel.isEngineReady || viewModel.errorMessage != nil }
@@ -68,7 +68,7 @@ struct LiveReadoutsTests {
 
     @Test("a peak cap holds 0.6 s, then falls 1.25 of full scale a second, as frames arrive every 100 ms")
     func peakCapsMoveInRealTime() {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         let sampler = viewModel.spectrum
         let start = Date(timeIntervalSinceReferenceDate: 1000)
@@ -95,7 +95,7 @@ struct LiveReadoutsTests {
 
     @Test("paused, the lens shows the latest frame as it is: it draws once, so never part-way through an ease")
     func pausedLensShowsTheLatestFrame() {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         engine.state.withLock { $0.spectrumFrames = [Self.frame(0.5)] }
         let shown = viewModel.spectrum.lens(at: Date(), isPlaying: false, isPure: false, reduceMotion: false)
@@ -106,7 +106,7 @@ struct LiveReadoutsTests {
 
     @Test("with no view showing the spectrum nothing reads it, playing or paused")
     func spectrumUnreadWhileHidden() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = try await readyViewModel(engine)
         let ticker = try await startPlaying(viewModel)
         let spectrumBefore = engine.state.withLock { $0.spectrumReads }
@@ -125,7 +125,7 @@ struct LiveReadoutsTests {
 
     @Test("the transport tick runs while a song plays and stops once a pause has settled")
     func transportTickStopsWhenPaused() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = try await readyViewModel(engine)
         let ticker = try await startPlaying(viewModel)
         let playingFrom = engine.state.withLock { $0.snapshotReads }
@@ -147,7 +147,7 @@ struct LiveReadoutsTests {
 
     @Test("a play after a pause starts a tick again")
     func playAfterPauseTicksAgain() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = try await readyViewModel(engine)
         let first = try await startPlaying(viewModel)
         try await pauseAndFinishTheLastTick(viewModel, first)
@@ -172,7 +172,7 @@ struct LiveReadoutsTests {
 
     @Test("paused, the scrubber follows the paused song at once: a scrub moves it, another song zeroes it")
     func pausedScrubberNeedsNoTick() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = try await readyViewModel(engine)
         let url = URL(fileURLWithPath: "/nonexistent/live-readouts-2.flac")
         viewModel.queue.append(QueueItem(file: AudioFile(name: "Next", relativePath: "", absoluteURL: url,
@@ -191,7 +191,7 @@ struct LiveReadoutsTests {
 
     @Test("paused, turning crossfeed on shows in the hero at once")
     func pausedIntentReachesTheHero() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let headphones = AudioDeviceModel(id: 7, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
                                           uid: "hp", modelUID: nil, transportType: 0, type: .builtin,
                                           isHeadphones: true)

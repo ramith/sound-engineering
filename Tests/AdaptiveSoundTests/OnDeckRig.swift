@@ -41,6 +41,9 @@ struct Outcome: CustomStringConvertible {
 struct Rig {
     let vm: AudioViewModel
     let engine: OnDeckEngineModel
+    /// The view model's transport tick, fired by hand (`tick()`): it runs when the app's would — while a
+    /// song plays or a start, pause or stop is on its way — and never because a run loop got round to it.
+    let bench = TickerBench()
     /// This rig's defaults suite, its own and removed with it: rigs run in parallel tests, and what one
     /// sets another must never read.
     private let world = IsolatedDefaults("OnDeck")
@@ -50,13 +53,14 @@ struct Rig {
         engine = OnDeckEngineModel(semantics: semantics, commands: commands, incompatible: incompatible,
                                    unreadable: unreadable)
         QuietLog.install()
-        vm = AudioViewModel(defaults: world.defaults, engine: engine)
+        vm = AudioViewModel(defaults: world.defaults, engine: engine, makeTicker: bench.maker)
         // A fresh suite holds no settings, so the view model starts from the faithful default; the modes
         // a scenario assumes are set explicitly all the same.
         vm.shuffleEnabled = false
         vm.repeatMode = 0
         vm.pureModeEnabled = false
         vm.isEngineReady = true
+        vm.armTransportTick() // as at engine-ready: the tick runs whenever something plays
         vm.queue = (0 ..< tracks).map { QueueItem(file: audioFile($0)) }
     }
 
@@ -107,10 +111,11 @@ struct Rig {
         try await until(what, sourceLocation: sourceLocation, condition)
     }
 
-    /// The clock samples, and the view model's 20 Hz tick reads the sample.
+    /// The clock samples, and the view model's 20 Hz tick reads the sample — when its tick is going, as
+    /// in the app: with nothing playing and nothing on its way there is no tick.
     func tick() {
         engine.clockTick()
-        vm.tickTransport()
+        bench.current?.fire()
     }
 
     /// What a tick made of a seam the engine reported (the explorers' accounting, council D41).

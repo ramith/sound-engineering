@@ -38,14 +38,14 @@ struct ListeningSettingsTests {
     }
 
     /// A launch: the view model the app builds, over this suite's defaults.
-    private func launch(_ engine: DeviceTestEngine = DeviceTestEngine()) -> AudioViewModel {
+    private func launch(_ engine: FakeEngine = FakeEngine()) -> AudioViewModel {
         AudioViewModel(defaults: defaults, engine: engine)
     }
 
     /// A launch that brings the engine up on `device`, with `devices` connected.
     private func launchReady(on device: AudioDeviceModel, devices: [AudioDeviceModel]) async throws
-        -> (AudioViewModel, DeviceTestEngine) {
-        let engine = DeviceTestEngine()
+        -> (AudioViewModel, FakeEngine) {
+        let engine = FakeEngine()
         engine.state.withLock {
             $0.devices = devices
             $0.engineDevice = device.id
@@ -177,7 +177,7 @@ struct ListeningSettingsTests {
 
     @Test("turned down, the view model still asks for Pure: the engine turns the device down, or waits")
     func pureIsAskedForAtAnyLevel() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = launch(engine)
         viewModel.isEngineReady = true
         queueOneSong(viewModel)
@@ -193,7 +193,7 @@ struct ListeningSettingsTests {
 
     @Test("a pause reaches the engine as a pause, so Pure keeps the device's volume; a stop ends playback")
     func pauseIsNotAStop() async throws {
-        let engine = DeviceTestEngine()
+        let engine = FakeEngine()
         let viewModel = launch(engine)
         viewModel.isEngineReady = true
         queueOneSong(viewModel)

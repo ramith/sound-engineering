@@ -26,7 +26,7 @@ struct OutputDeviceViewModelTests {
         uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true
     )
 
-    private let engine = DeviceTestEngine()
+    private let engine = FakeEngine()
     private let viewModel: AudioViewModel
     /// This test's own defaults suite, never the app's, removed with it: the view model keeps the
     /// listener's settings there (a pick is remembered).

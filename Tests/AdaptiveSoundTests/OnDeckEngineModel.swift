@@ -1,6 +1,7 @@
 @testable import AdaptiveSound
 import Foundation
 import PlaybackQueueKit
+import SettingsKit
 import Synchronization
 
 // MARK: - A scripted model of the bridge's on-deck semantics (council D41)
@@ -31,12 +32,19 @@ import Synchronization
 // `semantics` selects the arm behaviour: the design, or one of the behaviours it replaced — the
 // ablations that show each piece of the design is necessary. `commands` does the same for the
 // transport commands (council C-15): the design drops one older than a command already begun.
+//
+// Everything else the protocol asks for — the lifecycle, the devices, the levels, the DSP, the rest
+// of the snapshot (the signal path, the loudness, the EQ's design rate), the spectrum — is the one
+// engine double's (`fake`): it serves what a test sets there and records what the view model sends.
 
 final class OnDeckEngineModel: AudioPlaybackEngine {
     typealias Heard = OnDeckEngineState.Heard
     typealias Seam = OnDeckEngineState.Seam
 
     private let state: Mutex<OnDeckEngineState>
+    /// Everything but the transport and the on-deck: inputs a test sets (a lost device's signal path,
+    /// the devices) and the record of what the view model sent.
+    let fake = FakeEngine()
 
     init(semantics: ArmSemantics = .design, commands: CommandSemantics = .dropsOvertaken,
          incompatible: Set<URL> = [], unreadable: Set<URL> = []) {
@@ -45,12 +53,6 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
     }
 
     // MARK: AudioPlaybackEngine — the transport
-
-    func initialize() async throws -> Bool {
-        true
-    }
-
-    func shutdown() async throws {}
 
     func startAudio(fileURL: URL, pureMode: Bool, startAt _: Double, epoch: UInt64) async throws {
         if await transport(.start(fileURL, pure: pureMode, epoch: epoch)) {
@@ -92,39 +94,11 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         }
     }
 
+    /// The transport as this model published it; the rest of the snapshot is the fake's.
     func snapshot() -> EngineSnapshot {
-        EngineSnapshot(transport: state.withLock { $0.published })
-    }
-
-    // MARK: AudioPlaybackEngine — nothing else plays a part
-
-    func publishEQ(points _: [Float], isOn _: Bool) {}
-
-    func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
-        []
-    }
-
-    func selectDevice(_: UInt32) async throws -> Bool {
-        true
-    }
-
-    var onOutputDevicesChanged: (@MainActor () -> Void)? {
-        get { nil }
-        set { _ = newValue }
-    }
-
-    @discardableResult
-    func readSpectrumBands(into _: inout [Float]) -> Bool {
-        false
-    }
-
-    var monitorChannelCount: Int {
-        0
-    }
-
-    @discardableResult
-    func readMonitorBands(_: MonitorTap, channel _: Int, into _: inout [Float]) -> Bool {
-        false
+        var snapshot = fake.snapshot()
+        snapshot.transport = state.withLock { $0.published }
+        return snapshot
     }
 
     // MARK: The engine's side, stepped by a scenario
@@ -227,6 +201,11 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         state.withLock { $0.opened }
     }
 
+    /// Whether the playback the engine is in plays on Pure (as its start asked).
+    var playsPure: Bool {
+        state.withLock { $0.pure }
+    }
+
     /// The view model's callers the engine owes a resumption to: held ops, undelivered requests, opens.
     var owedCallers: Int {
         heldEpochs.count + inboundCount + openingCount
@@ -278,5 +257,88 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         state.withLock { model in
             model.arrivals.count == Int(sequence) && model.receivedEpochs.count == Int(epoch)
         }
+    }
+}
+
+// MARK: AudioPlaybackEngine — everything else is the fake's
+
+extension OnDeckEngineModel {
+    func initialize() async throws -> Bool {
+        try await fake.initialize()
+    }
+
+    func shutdown() async throws {
+        try await fake.shutdown()
+    }
+
+    func publishMasterGain(decibels: Float) {
+        fake.publishMasterGain(decibels: decibels)
+    }
+
+    func keepPureVolumeLoans(in journal: PureVolumeLoanJournal) {
+        fake.keepPureVolumeLoans(in: journal)
+    }
+
+    func publishEQ(points: [Float], isOn: Bool) {
+        fake.publishEQ(points: points, isOn: isOn)
+    }
+
+    func publishIntensity(_ intensity: Float) {
+        fake.publishIntensity(intensity)
+    }
+
+    func publishOutputTransport(_ transportType: UInt32) {
+        fake.publishOutputTransport(transportType)
+    }
+
+    func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) {
+        fake.publishCrossfeed(enabled: enabled, strength: strength)
+    }
+
+    func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
+        try await fake.enumerateOutputDevices()
+    }
+
+    func selectDevice(_ deviceID: UInt32) async throws -> Bool {
+        try await fake.selectDevice(deviceID)
+    }
+
+    func currentOutputDeviceID() -> UInt32 {
+        fake.currentOutputDeviceID()
+    }
+
+    func setPinPlaybackToSelectedDevice(_ pin: Bool) {
+        fake.setPinPlaybackToSelectedDevice(pin)
+    }
+
+    func restoreChosenOutput(uid: String?) {
+        fake.restoreChosenOutput(uid: uid)
+    }
+
+    func chosenOutputUID() -> String? {
+        fake.chosenOutputUID()
+    }
+
+    var onOutputDevicesChanged: (@MainActor () -> Void)? {
+        get { fake.onOutputDevicesChanged }
+        set { fake.onOutputDevicesChanged = newValue }
+    }
+
+    @discardableResult
+    func readSpectrumBands(into out: inout [Float]) -> Bool {
+        fake.readSpectrumBands(into: &out)
+    }
+
+    var monitorChannelCount: Int {
+        fake.monitorChannelCount
+    }
+
+    @discardableResult
+    func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
+        fake.readMonitorBands(tap, channel: channel, into: &out)
+    }
+
+    func setMonitorAnalysis(_ isOn: Bool) {
+        fake.setMonitorAnalysis(isOn)
     }
 }
