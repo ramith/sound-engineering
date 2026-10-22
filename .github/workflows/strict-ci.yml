@@ -9,6 +9,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # On demand, on any branch: a planted-failure proof or a debugging run, without opening a PR.
+  workflow_dispatch:
 
 # A superseded PR run is cancelled to save runner time. A run on main is NEVER cancelled: main's run
 # on the merge commit is the real gate, and the founder merges by hand, sometimes mid-run.
