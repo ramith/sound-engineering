@@ -74,7 +74,7 @@ struct RigKitTests {
     }
 
     @MainActor
-    @Test("RIG-15: until evaluates its condition on the CALLER's actor — a main-actor model is never read from another thread")
+    @Test("RIG-15: until evaluates its condition on the CALLER's actor, never off the main thread")
     func untilRunsItsConditionOnTheCallersActor() async throws {
         var looks = 0
         var offMainLooks = 0
@@ -174,7 +174,7 @@ struct RigKitTests {
     }
 
     @Test("RIG-10: a hold reached but never released by the test fails the test")
-    func holdLeftHeld() async throws {
+    func holdLeftHeld() async {
         await withKnownIssue("a hold left held is the test forgetting to release") {
             try? await withHold("a forgotten point") { hold in
                 let producer = Task { try await blocking("forgotten") { hold.wait() } }
@@ -185,7 +185,7 @@ struct RigKitTests {
     }
 
     @Test("RIG-11: a hold whose producer gave up at the hang cap fails the test — it never goes quietly")
-    func holdExpired() async throws {
+    func holdExpired() async {
         await withKnownIssue("a producer that gave up at the cap proved nothing") {
             try? await withHold("a short-capped point", cap: .milliseconds(50)) { hold in
                 try await blocking("expires") { hold.wait() } // the cap frees it

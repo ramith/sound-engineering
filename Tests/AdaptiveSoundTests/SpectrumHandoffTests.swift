@@ -60,7 +60,8 @@ struct SpectrumHandoffTests {
             var copy = [Float](repeating: 0, count: count)
             var seen = Seen()
             var iterations = 0
-            while seen.reads < Self.readsWanted || seen.overlapped < Self.overlapsWanted, iterations < Self.iterationCeiling {
+            while seen.reads < Self.readsWanted || seen.overlapped < Self.overlapsWanted,
+                  iterations < Self.iterationCeiling {
                 iterations += 1
                 let shared = copy // the read must copy `copy` before it writes into it: a slow read
                 let before = writer.writes.load(ordering: .acquiring)

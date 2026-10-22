@@ -111,7 +111,7 @@ struct TransportExplorer {
                 trace.append("tick")
                 judge(rig.tickJudgingSeam(), rig: rig, trace: trace, residualSince: &residualSince)
             } else {
-                trace.append(try await engineStep(move, rig: rig, seams: &seams))
+                try trace.append(await engineStep(move, rig: rig, seams: &seams))
             }
         }
         for verb in script {

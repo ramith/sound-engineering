@@ -28,7 +28,6 @@ struct SettingsStoreTests {
         SettingsStore(defaults: defaults).load()
     }
 
-
     /// Every setting away from its default.
     private static let changed = ListeningSettings(
         pureMode: true, masterGainDecibels: -17, crossfeed: true, crossfeedStrength: .relaxed, shuffle: true,
