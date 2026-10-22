@@ -7,16 +7,21 @@
 # Xcode 27's SwiftPM uses the "swiftbuild" engine, so a plain `periphery scan` (which looks for
 # .build/debug/index/store) fails. The working recipe, verified: build the tests with the index store
 # enabled, then scan with --skip-build against the index in the build's own bin path. The index is
-# written only while files COMPILE, so this step needs a build that compiled them (it does, here).
-# The bin path comes from `swift build --show-bin-path`, never a hardcoded directory.
+# written only while files COMPILE, so the step builds in a scratch path of its OWN (.build/periphery):
+# every compile there indexes, so the index is always whole. Sharing .build with a build made without
+# the index store left it partial — only the files recompiled since were indexed — and Periphery then
+# reported declarations as unused that are not. The bin path comes from `--show-bin-path`, never a
+# hardcoded directory.
 set -uo pipefail
 # shellcheck source=scripts/gate/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
 
-swift build --build-tests --enable-index-store -c debug -j 8 || fail "the build with the index store failed (Periphery cannot run without it)"
-bin="$(swift build --show-bin-path -c debug)" || fail "swift build --show-bin-path failed"
+scratch="$repo_root/.build/periphery"
+swift build --scratch-path "$scratch" --build-tests --enable-index-store -c debug -j 8 \
+    || fail "the build with the index store failed (Periphery cannot run without it)"
+bin="$(swift build --scratch-path "$scratch" --show-bin-path -c debug)" || fail "swift build --show-bin-path failed"
 index="$bin/index/store"
 [[ -d "$index" ]] || fail "no index store at $index: periphery has nothing to analyse (the index is written by compiling)"
 

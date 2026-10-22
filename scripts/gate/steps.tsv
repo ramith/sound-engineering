@@ -32,7 +32,8 @@ periphery	static	combine,ci	yes	15m	-	-	scripts/gate/periphery.sh
 actionlint	static	push,check,combine,ci	yes	3m	files	-	scripts/gate/actionlint.sh
 swift-build	swift	check,combine,ci	yes	25m	-	-	swift build -c debug
 deployment-target	swift	check,combine,ci	yes	5m	products	swift-build	scripts/gate/deployment-target.sh
-swift-test	swift	check,combine,ci	yes	35m	tests	-	scripts/gate/swift-test.sh
+swift-test	swift	check,combine,ci	yes	35m	tests	-	PART=main scripts/gate/swift-test.sh
+swift-test-rig	swift	check,combine,ci	yes	20m	tests	-	PART=rig scripts/gate/swift-test.sh
 main-thread-stall	swift	combine,ci	yes	10m	-	-	scripts/gate/main-thread-stall.sh
 null-debug	cpp	combine,ci,gate	yes	60m	tests	-	scripts/gate/null-run.sh --shards 3 --tier all
 null-perf-O2	cpp	ci,gate	yes	30m	tests	-	scripts/gate/null-run.sh --opt-run
