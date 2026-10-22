@@ -22,8 +22,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Required before anything is built or attested: the release binaries must RUN on macOS 26, the
+  # oldest system the product supports (review H1). A dyld failure here blocks the release.
+  macos26:
+    uses: ./.github/workflows/macos26-compat.yml
+
   release:
+    needs: macos26
     name: build, attest, publish
+    timeout-minutes: 60
     # The same runner as strict-ci (xcode-27: the Xcode 27.1 image), so the release builds with
     # the toolchain the merge gate verified.
     runs-on: xcode-27
