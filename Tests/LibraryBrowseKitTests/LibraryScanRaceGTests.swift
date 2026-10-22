@@ -1,6 +1,7 @@
 import Foundation
 import LibraryScan
 import LibraryStore
+import RigKit
 import Testing
 
 // MARK: - Sprint G break-it: two REAL walks of one music folder at once (G-LIB-01b)
@@ -15,21 +16,8 @@ import Testing
 /// overtakes it, and its end-of-walk sweep deletes files that are on disk.
 ///
 /// Needs the LibraryScan target, a test-only dependency of LibraryBrowseKitTests (Package.swift).
-@Suite("Sprint G break-it — two walks of one folder on disk")
+@Suite("Sprint G break-it — two walks of one folder on disk", .timeLimit(.minutes(3)))
 struct LibraryScanRaceGTests {
-    /// Set once, read by the polling test: the first walk has written its first batch.
-    private final class Signal: @unchecked Sendable {
-        private let lock = NSLock()
-        private var raised = false
-        func raise() {
-            lock.withLock { raised = true }
-        }
-
-        var isRaised: Bool {
-            lock.withLock { raised }
-        }
-    }
-
     @Test("G-LIB-01b: an overlapping later walk never sweeps a file that is on disk", arguments: [false, true])
     func overlappingRealWalksKeepEveryFile(folderAlreadyScanned: Bool) async throws {
         let base = FileManager.default.temporaryDirectory
@@ -50,21 +38,24 @@ struct LibraryScanRaceGTests {
             _ = try await LibraryScanner().scan(root: music, folderID: root, into: store)
         }
 
-        // Walk A (the add-scan) leads, and is the slower walk.
-        let firstBatch = Signal()
-        let walkA = Task {
-            try await LibraryScanner().scan(root: music, folderID: root, into: store, progress: { _ in
-                firstBatch.raise()
-                Thread.sleep(forTimeInterval: 0.2)
-            })
+        // Walk A (the add-scan) leads, and is the slower walk: held at its first batch, on a thread of its own
+        // (it blocks inside the scan), until walk B has finished entirely. So B overtakes A for certain — not
+        // when a sleep happens to make it likely — and the hold ends only when the test releases it.
+        let executor = OffPoolExecutor("walk-A")
+        let (resultA, resultB) = try await withHold("walk A at its first batch") { firstBatch in
+            let walkA = Task(executorPreference: executor) {
+                try await LibraryScanner().scan(root: music, folderID: root, into: store, progress: { _ in
+                    firstBatch.wait()
+                })
+            }
+            try await firstBatch.arrived()
+            // Walk B (the reconcile) starts once A has written a batch, so it takes the higher generation, and
+            // it runs to its end — its sweep included — while A is still held.
+            let resultB = try await Task { try await LibraryScanner().scan(root: music, folderID: root, into: store) }
+                .value
+            firstBatch.release()
+            return try await (walkA.value, resultB)
         }
-        while !firstBatch.isRaised {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        // Walk B (the reconcile) starts once A has written a batch, so it takes the higher generation.
-        let walkB = Task { try await LibraryScanner().scan(root: music, folderID: root, into: store) }
-        let resultA = try await walkA.value
-        let resultB = try await walkB.value
 
         #expect(resultB.generation > resultA.generation)
         #expect(resultA.orphansSwept + resultB.orphansSwept == 0,
