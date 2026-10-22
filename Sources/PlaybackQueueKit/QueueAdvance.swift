@@ -3,7 +3,7 @@
 // Extracted from `AudioViewModel` so the advance logic is exercised by tests against
 // the REAL code. `AudioViewModel` lives in the `AdaptiveSound` EXECUTABLE target,
 // which SPM cannot `@testable import`, so its next/previous-index logic was previously
-// re-implemented in a hand-mirror (`MockAdvanceController`) that could silently drift.
+// re-implemented in a hand-mirror (`MockAdvanceController`, since deleted) that could silently drift.
 // Moving the decision core into this library target lets both the app AND the tests
 // import the identical implementation.
 //

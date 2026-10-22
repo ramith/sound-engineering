@@ -9,7 +9,8 @@ import SettingsKit
 ///
 /// Conforming types provide all I/O operations needed by AudioViewModel.
 /// The protocol enables unit-testing of AudioViewModel without a live
-/// AVFAudio engine: tests inject a `MockAudioEngine` instead.
+/// AVFAudio engine: tests inject the one test double, `FakeEngine` (or `OnDeckEngineModel`, which
+/// composes it), instead.
 ///
 /// Concurrency contract: all methods may be called from a background Task.
 /// Implementations are responsible for dispatching UI-bound side-effects to
