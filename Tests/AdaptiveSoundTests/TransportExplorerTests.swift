@@ -111,7 +111,7 @@ struct TransportExplorer {
                 trace.append("tick")
                 judge(rig.tickJudgingSeam(), rig: rig, trace: trace, residualSince: &residualSince)
             } else {
-                trace.append(await engineStep(move, rig: rig, seams: &seams))
+                trace.append(try await engineStep(move, rig: rig, seams: &seams))
             }
         }
         for verb in script {
@@ -149,7 +149,7 @@ struct TransportExplorer {
 
     /// One step the engine (or the view model's own tasks, or the tick) takes in its own time; returns
     /// it for the trace.
-    private mutating func engineStep(_ move: Move, rig: Rig, seams: inout Int) async -> String {
+    private mutating func engineStep(_ move: Move, rig: Rig, seams: inout Int) async throws -> String {
         switch move {
         case .run:
             let held = rig.engine.heldEpochs
@@ -164,7 +164,7 @@ struct TransportExplorer {
             seams += 1
             rig.engine.trackEnds()
         case .tick, .yield, .user:
-            await rig.yieldToViewModel(8)
+            try await rig.runViewModelOut()
         }
         return move.rawValue
     }

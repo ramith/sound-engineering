@@ -1,6 +1,7 @@
 @testable import AdaptiveSound
 import Foundation
 import PlaybackQueueKit
+import Testing
 
 // MARK: - Play, pause and stop against a busy engine (council C-15, P4-2)
 
@@ -30,7 +31,7 @@ enum TransportScenarios {
         if order == .overtaken {
             for epoch in rig.engine.heldEpochs.sorted(by: >) {
                 rig.engine.runHeld(epoch: epoch)
-                await rig.yieldToViewModel()
+                try await rig.runViewModelOut()
             }
         }
         try await rig.quiesce()

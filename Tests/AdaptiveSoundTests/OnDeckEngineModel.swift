@@ -227,6 +227,11 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         state.withLock { $0.opened }
     }
 
+    /// The view model's callers the engine owes a resumption to: held ops, undelivered requests, opens.
+    var owedCallers: Int {
+        heldEpochs.count + inboundCount + openingCount
+    }
+
     var inboundCount: Int {
         state.withLock { $0.inbound.count }
     }

@@ -1,6 +1,8 @@
 @testable import AdaptiveSound
 import Foundation
 import PlaybackQueueKit
+import RigKit
+import Testing
 
 // MARK: - The real view model on the engine model (council D41)
 
@@ -19,12 +21,9 @@ func name(_ url: URL?) -> String {
     url?.trackName ?? "none"
 }
 
-struct RigTimeout: Error, CustomStringConvertible {
+/// A scenario that could not set itself up.
+struct ScenarioError: Error {
     let what: String
-
-    var description: String {
-        "timed out waiting for \(what)"
-    }
 }
 
 /// A scenario's verdict: whether the user hears what the app shows, and what happened.
@@ -42,15 +41,18 @@ struct Outcome: CustomStringConvertible {
 struct Rig {
     let vm: AudioViewModel
     let engine: OnDeckEngineModel
+    /// This rig's defaults suite, its own and removed with it: rigs run in parallel tests, and what one
+    /// sets another must never read.
+    private let world = IsolatedDefaults("OnDeck")
 
     init(tracks: Int, semantics: ArmSemantics = .design, commands: CommandSemantics = .dropsOvertaken,
          incompatible: Set<URL> = [], unreadable: Set<URL> = []) {
         engine = OnDeckEngineModel(semantics: semantics, commands: commands, incompatible: incompatible,
                                    unreadable: unreadable)
-        vm = AudioViewModel(defaults: UserDefaults(suiteName: "AdaptiveSoundTests.OnDeck") ?? .standard,
-                            engine: engine)
-        // The view model restores the listener's settings from its defaults, which every rig shares
-        // and rigs in parallel tests write: each rig starts from the modes its scenario assumes.
+        QuietLog.install()
+        vm = AudioViewModel(defaults: world.defaults, engine: engine)
+        // A fresh suite holds no settings, so the view model starts from the faithful default; the modes
+        // a scenario assumes are set explicitly all the same.
         vm.shuffleEnabled = false
         vm.repeatMode = 0
         vm.pureModeEnabled = false
@@ -100,18 +102,9 @@ struct Rig {
         return !engine.heldEpochs.contains(epoch)
     }
 
-    func waitUntil(_ what: String, _ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(20)
-        var spins = 0
-        while !condition() {
-            guard ContinuousClock.now < deadline else { throw RigTimeout(what: what) }
-            spins += 1
-            if spins < 200 {
-                await Task.yield()
-            } else {
-                try await Task.sleep(for: .microseconds(50))
-            }
-        }
+    func waitUntil(_ what: String, sourceLocation: SourceLocation = #_sourceLocation,
+                   _ condition: () -> Bool) async throws {
+        try await until(what, sourceLocation: sourceLocation, condition)
     }
 
     /// The clock samples, and the view model's 20 Hz tick reads the sample.
@@ -175,10 +168,22 @@ struct Rig {
 
     // MARK: Transport commands (council C-15)
 
-    /// Let the view model's tasks run as far as they can before the engine does anything.
-    func yieldToViewModel(_ yields: Int = 40) async {
-        for _ in 0 ..< yields {
+    /// Let the view model's tasks run as far as they can before the engine does anything: until each is
+    /// finished or suspended in a call the engine owes it (a held op, a request not yet delivered, an
+    /// open). The main actor runs a yielded-to job before the yielder resumes, so a round of yields in
+    /// which nothing the view model or the engine shows has changed means nothing is runnable.
+    func runViewModelOut(sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        var stableRounds = 0
+        var last: [String] = []
+        try await until("the view model's tasks to run as far as they can", sourceLocation: sourceLocation) {
+            if vm.work.isIdle {
+                return true
+            }
             await Task.yield()
+            let now = fingerprint
+            stableRounds = now == last ? stableRounds + 1 : 0
+            last = now
+            return engine.owedCallers > 0 && stableRounds >= 3
         }
     }
 
@@ -201,28 +206,15 @@ struct Rig {
     }
 
     /// The end state: everything the view model sent lands — held commands in the order they reached
-    /// the engine (`engineQueue` is FIFO), every request and open — and the view model's tasks finish,
-    /// again and again until nothing moves.
+    /// the engine (`engineQueue` is FIFO), every request and open — and the view model's tasks finish.
     func quiesce() async throws {
-        var last: [String] = []
-        var stableRounds = 0
-        for round in 0 ..< 4000 {
+        try await until("the end state (everything landed, the view model settled)") {
             engine.runAllHeld()
             engine.drain()
-            await yieldToViewModel(4)
-            let now = fingerprint
-            let landed = engine.isIdle && viewModelSettled
+            try await runViewModelOut()
+            return vm.work.isIdle && engine.isIdle && viewModelSettled
                 && engine.hasReceivedEverything(sequence: vm.onDeckSequence, epoch: vm.transportEpoch)
-            stableRounds = landed && now == last ? stableRounds + 1 : 0
-            if stableRounds >= 2 {
-                return
-            }
-            last = now
-            if !landed, round >= 50 { // a call is still on its hop to the engine, or back: a slow one
-                try await Task.sleep(for: .microseconds(50))
-            }
         }
-        throw RigTimeout(what: "the end state (everything landed, the view model settled)")
     }
 
     /// What a view-model task that has not finished could still change.
