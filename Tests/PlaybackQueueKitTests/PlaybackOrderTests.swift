@@ -18,7 +18,7 @@ struct PlaybackOrderTests {
     private static let shuffleOne = PlaybackOrder(shuffle: true, repeatMode: 2)
 
     /// The deterministic shuffle stand-in shared with the other queue suites.
-    private let pick = MockAdvanceController.deterministicPick
+    private let pick = deterministicPick
 
     /// A picker that records its calls, and picks the song BEFORE `current` — never the song in order,
     /// so a pick it made is told apart from a pick kept.
