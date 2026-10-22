@@ -1,6 +1,7 @@
 @testable import AdaptiveSound
 import Foundation
 import PlaybackQueueKit
+import Testing
 
 // MARK: - The D41 scenarios, as functions of the arm semantics (council D41)
 
@@ -90,7 +91,7 @@ enum OnDeckScenarios {
                                + "promised \(name(promised)), armed after \(name(armedAfter)); after the end "
                                + "HEARS \(name(heard)) / SHOWS \(name(rig.shown))")
         }
-        throw RigTimeout(what: "a shuffle pick other than the armed one")
+        throw ScenarioError(what: "no shuffle pick other than the armed one came up")
     }
 
     /// Race 1: two quick Play Next (t10, then t11) while t1 is armed. Admission in the order made,
