@@ -12,7 +12,10 @@ import Testing
 // song again. The ablation shows the engine's half is necessary: with the view model fixed, an engine
 // that still runs an overtaken stop plays nothing while the app shows Playing.
 
-@Suite("AudioViewModel × engine — play, pause and stop on a busy engine (council C-15)", .serialized)
+@Suite(
+    "AudioViewModel × engine — play, pause and stop on a busy engine (council C-15)",
+    .serialized, .timeLimit(.minutes(5))
+)
 @MainActor
 struct TransportContractTests {
     @Test("STOP-THEN-PLAY: Stop, then a click on another song while the engine is busy — that song plays",

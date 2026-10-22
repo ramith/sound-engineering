@@ -18,7 +18,7 @@ import Testing
 // count says how far it had played when the flag rose, and a tap on the player records what it
 // played. A user's stop or seek must still cut at once.
 
-@Suite("Enhanced end of queue — the last frame plays before the end (S-1)", .serialized)
+@Suite("Enhanced end of queue — the last frame plays before the end (S-1)", .serialized, .timeLimit(.minutes(5)))
 struct EnhancedEndOfQueueTests {
     typealias Rig = EnhancedTransportRig
 

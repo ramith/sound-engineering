@@ -23,7 +23,10 @@ import Testing
 // gap. The seam's count, title, playhead and loudness gain all moved when A's decode ended, up to a
 // chunk before B was heard (D40).
 
-@Suite("Enhanced gapless — one converter across a same-rate seam (C-22, KI-GAP-04)", .serialized)
+@Suite(
+    "Enhanced gapless — one converter across a same-rate seam (C-22, KI-GAP-04)",
+    .serialized, .timeLimit(.minutes(5))
+)
 struct EnhancedSeamTests {
     typealias Rig = EnhancedTransportRig
 

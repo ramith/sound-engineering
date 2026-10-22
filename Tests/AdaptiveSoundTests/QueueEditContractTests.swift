@@ -12,7 +12,10 @@ import Testing
 // cycle, a one-song shuffle plus an append stopped, an append during the last song's prime was never
 // armed, and play-now of the playing song moved an earlier copy instead of restarting.
 
-@Suite("AudioViewModel × engine — what plays next after a queue edit (council C-17)", .serialized)
+@Suite(
+    "AudioViewModel × engine — what plays next after a queue edit (council C-17)",
+    .serialized, .timeLimit(.minutes(5))
+)
 @MainActor
 struct QueueEditContractTests {
     @Test("An edit while a song plays: the queue's next song plays next, and shows",

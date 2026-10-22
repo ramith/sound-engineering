@@ -12,7 +12,7 @@ import Testing
 // duration (P3 breaker D37, 93 % of track lengths). These run the real bridge on an offline engine
 // (`EnhancedTransportRig`) on BOTH Enhanced sub-paths and read what the view model reads.
 
-@Suite("Enhanced seek — the real bridge, both sub-paths (C-25)", .serialized)
+@Suite("Enhanced seek — the real bridge, both sub-paths (C-25)", .serialized, .timeLimit(.minutes(5)))
 struct EnhancedSeekTests {
     typealias SubPath = EnhancedTransportRig.SubPath
 
