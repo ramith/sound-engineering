@@ -195,7 +195,7 @@ Swift runs on the **UI/control plane** (not the audio render thread), so the con
 
 ### MUST DO
 
-✅ **Reach the engine only through `AudioPlaybackEngine`, injected as `any AudioPlaybackEngine`.** The view model holds it as a plain injected `let engine` (`AudioViewModel.swift`; a mock conforms in `Tests/AudioViewModelTests/MockAudioEngine.swift`, and since R1 scripted engines in `Tests/AdaptiveSoundTests/` — `OnDeckEngineModel`, `DeviceTestEngine` — drive the shipped view model). Outside the bridge's own files (`AudioEngineBridge*.swift`, `PureModeSession.swift`) never name the concrete `AudioEngineBridge` — semgrep `main-thread-no-concrete-bridge` fails the gate.
+✅ **Reach the engine only through `AudioPlaybackEngine`, injected as `any AudioPlaybackEngine`.** The view model holds it as a plain injected `let engine` (`AudioViewModel.swift`; in tests the one double, `Tests/AdaptiveSoundTests/FakeEngine.swift`, conforms, and `OnDeckEngineModel` composes it — both drive the shipped view model; see [testing.md](testing.md#one-engine-double-no-mirrors)). Outside the bridge's own files (`AudioEngineBridge*.swift`, `PureModeSession.swift`) never name the concrete `AudioEngineBridge` — semgrep `main-thread-no-concrete-bridge` fails the gate.
 
 ✅ **Read engine state from one snapshot.** `engine.snapshot()` returns an `EngineSnapshot` (transport, signal path, loudness, EQ design rate) that the engine publishes from its own queues; the 20 Hz tick reads it and nothing else.
 
