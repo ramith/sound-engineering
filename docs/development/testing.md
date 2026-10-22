@@ -55,8 +55,68 @@ Swift tests use swift-testing. Two rules the gate enforces:
   test bundle that did not load.
 - Every suite with waits has a `.timeLimit`, and every wait names its state.
 
-The Swift rig primitives (the `until` helper, `Hold`, `TestPoints`, the under-load trait) are documented
-with the Swift rig when that lane lands.
+### RigKit: the one way a Swift test waits
+
+`Tests/RigKit` is a plain library target that test targets (never a product target) depend on. It
+`import`s Testing, so a failure it records lands on the caller's line. Every primitive has a
+`withKnownIssue` proof in `Tests/RigKitTests` that it fails loudly. **A test here waits only through
+these**; the semgrep rule `test-no-raw-time` bans `Thread.sleep`, `Task.sleep`, `usleep`,
+`RunLoop.run(until:)`, `DispatchSemaphore` and `ContinuousClock.now +`/`<` in `Tests/` outside RigKit.
+
+| Primitive | Use it for |
+|---|---|
+| `until("the state", cap:) { … }` | Any wait. Looks, yields, then naps; at its cap it **throws** `RigTimeout` naming the state and the line. The condition runs on the caller's actor (it may read a `@MainActor` model). Caps run on `SuspendingClock`, so a sleeping Mac cannot trip one. |
+| `untilOnMainRunLoop("the state") { … }` | A state only a main-run-loop timer or main-queue block brings about. |
+| `untilBlocking("the state") { … }` | The synchronous twin, only inside `blocking {}`. |
+| `blocking("name") { … }` | Blocking test code (a render, a queue `sync`, a semaphore-like wait). Runs on a thread of its own: swift-testing's pool is one thread per core (three on CI), and a blocked pool thread starves every other test. |
+| `OffPoolExecutor` | `Task(executorPreference:)` for an *async* body that blocks (a scan whose progress callback is held). |
+| `Hold` / `withHold("what") { hold in … }` | Keep a producer at a point until the **test** releases it. The scope fails the test if the hold expired (its 300 s hang cap), was left held, or was never reached (`mayNotArrive:` opts out). The producer never records an issue itself. |
+| `IsolatedDefaults("label")` | A `UserDefaults` suite named by a UUID and removed when released. Never a fixed suite name. |
+| `LogTail`, `.attachingLogTail` | The product's `[UX]` log, kept in a ring while tests run (see below) and attached to every issue of a suite that carries the trait. |
+
+### Product seams the rig drives (defaults are the app's behaviour)
+
+- **The transport tick**: `AudioViewModel(makeTicker:)`. The app's is `RunLoopTicker` (a `.common`-mode
+  `RunLoop.main` timer). A test passes `TickerBench().maker` and calls `ticker.fire()`.
+- **Fire-and-forget work**: every view-model `Task` is spawned through `WorkTracker`. Wait with
+  `try await viewModel.settled()` (work idle and the settings write landed). Never yield N times.
+- **Clocks**: `clock: any Clock<Duration> = ContinuousClock()` on `AudioViewModel`, `LibraryModel`,
+  `ShellToastSlot`, `EQBringBackMessage` and `SongsView`. Tests use swift-clocks (test targets only):
+  `ImmediateClock()` makes a debounce a no-op (then await the task it started); `TestClock` only when the
+  coalescing itself is under test, after `until` shows the sleep is pending.
+- **Settings write**: `SettingsStore.pendingWrite`; `await store.pendingWrite?.value`.
+- **The `[UX]` log**: `logUX` writes through `UXLog.sink` (`NSLog` in the app). `QuietLog.install()`
+  (Tests/AdaptiveSoundTests) points it at the ring; the rigs and `IsolatedDefaults`-using view-model tests
+  call it. Keep the sink a *struct holding a closure*: a bare closure in a `Mutex` is re-wrapped on every
+  access and overflowed the stack after ~100,000 lines.
+- **The Enhanced completion chain** (`StreamObserver`, `StreamLedger`): AVFAudio reports a buffer consumed
+  ~150 µs *after* the render whose frames reach its end. `EnhancedTransportRig` renders in lock-step: after
+  each block it waits (`untilBlocking`) until every completion due by the frames rendered has been handed
+  on, then drains `resampleQueue`. No sleeps, no pacing.
+
+### How to write a waiting test
+
+1. Name the state in words, then wait for it: `try await until("the seam to be counted") { bridge.gaplessTransitionCount == 1 }`.
+2. To prove something does **not** happen, first wait for a **positive witness** that it had its chance (a
+   count that moved, the stop's own completions delivered), then assert. A sleep window is never the proof.
+3. To force an interleaving, **hold** the producer (`withHold`) until the other side has done its part. The
+   hold ends only when the test releases it.
+4. Code under test that blocks goes in `blocking {}` / `OffPoolExecutor`, never on the cooperative pool.
+5. Give the suite `.timeLimit(.minutes(3))` (minutes is the granularity) and, for view-model suites,
+   `.attachingLogTail`. Use `IsolatedDefaults`, never a fixed suite name or fixed path.
+6. No wall-clock thresholds. Performance belongs to the C++ `-O2` timing tier, or thread CPU time with a
+   ≥ 10× tripwire.
+
+### Heavy real-engine suites run on their own
+
+The `Enhanced…Tests` suites build a real offline `AVAudioEngine` graph and register AU subclasses
+process-wide. Select them by type name: `--filter 'AdaptiveSoundTests\.Enhanced[A-Za-z]*Tests/'`. The
+registry runs that selection with `--no-parallel` and the main run with the same pattern in `--skip`.
+
+### Stressing a Swift test
+
+`make stress TEST=<function or type name> N=10` (below). Strict pool width 1 plus hogs is the harshest
+local profile. The exit code is the verdict, and every iteration must run at least one test.
 
 ## Repeating a test under load
 
