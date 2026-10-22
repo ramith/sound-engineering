@@ -103,7 +103,10 @@ cxx_lang_flags() {
 # and the pre-commit hook) and installed pinned in .github/workflows/strict-ci.yml
 # (`brew install llvm@N`). A deliberate upgrade bumps this pin + the workflow's llvm@N and
 # fixes the new findings in the SAME commit (last bumped 22→23, S10.8 part 2).
-CXX_CLANG_TIDY_MAJOR_PIN=23
+# ONE source for the major: toolchain/toolchain.env (LLVM_MAJOR). Read here, not re-typed, so the
+# manifest and the analysis library cannot disagree.
+CXX_CLANG_TIDY_MAJOR_PIN="$(sed -nE 's/^LLVM_MAJOR=([0-9]+).*/\1/p' "$_cxx_repo_root/toolchain/toolchain.env" | head -1)"
+[[ -n "$CXX_CLANG_TIDY_MAJOR_PIN" ]] || { echo "cxx-analysis-flags.sh: toolchain/toolchain.env has no LLVM_MAJOR" >&2; return 1 2>/dev/null || exit 1; }
 
 # cxx_clang_tidy_path — the pinned clang-tidy binary, or nothing (exit 1) when absent.
 # Order: the versioned Homebrew keg (opt/llvm@N — what `llvm@N` installs once N is no longer
@@ -112,6 +115,7 @@ CXX_CLANG_TIDY_MAJOR_PIN=23
 cxx_clang_tidy_path() {
     local candidate
     for candidate in \
+        "${ADAPTIVESOUND_TOOL_BIN:-/nonexistent}/clang-tidy" \
         "/opt/homebrew/opt/llvm@${CXX_CLANG_TIDY_MAJOR_PIN}/bin/clang-tidy" \
         /opt/homebrew/opt/llvm/bin/clang-tidy; do
         if [[ -x "$candidate" ]]; then
