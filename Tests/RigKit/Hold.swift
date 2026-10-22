@@ -7,8 +7,8 @@
 // the test. The producer never records an issue itself: swift-testing attributes an issue to the
 // test of the calling task, and a producer runs on whatever thread the product chose.
 
-public import Testing
 import Foundation
+import Testing
 
 /// A point a producer waits at, until the test releases it.
 public final class Hold: @unchecked Sendable {
