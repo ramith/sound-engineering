@@ -8,10 +8,11 @@
 
 import AVFoundation
 import Foundation
+import RigKit
 import Testing
 @testable import TrackLoudnessKit
 
-@Suite("TrackLoudnessAnalyzer — prefix then whole, cache, latest-wins, failure")
+@Suite("TrackLoudnessAnalyzer — prefix then whole, cache, latest-wins, failure", .timeLimit(.minutes(5)))
 struct TrackLoudnessAnalyzerTests {
     @Test("ANALYZER-01: the prefix (~25 s) is published first, then the whole track")
     func prefixThenWhole() async throws {
@@ -155,13 +156,14 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
 
     private let lock = NSLock()
     private var recorded: [Event] = []
-    private let gate = NSCondition()
-    private var held: UInt64? // the token whose prefix waits for `release()`; nil once released
-    private var expired = false // the hold gave up before `release()` — the test's premise broke
+    /// The token whose prefix waits for `release()`, and the hold that keeps it (RigKit: released only by
+    /// the test; a hold that gave up at its hang cap is reported by `holdExpired`).
+    private let heldToken: UInt64?
+    private let hold = Hold("a job held at its prefix")
 
     /// `holdingPrefixOf`: a token whose job waits, after publishing its prefix, until `release()`.
     init(holdingPrefixOf held: UInt64? = nil) {
-        self.held = held
+        heldToken = held
     }
 
     var events: [Event] {
@@ -172,29 +174,15 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
         let event = Event(token: token, isWhole: profile.info.wholeTrack, isFailure: false,
                           seconds: profile.info.analysedSeconds, profile: ObjectIdentifier(profile))
         lock.withLock { recorded.append(event) }
-        guard !event.isWhole else { return }
-        // This is the job's own thread (it decodes synchronously there); the coordinator stays
-        // free. The hold lasts until `release()`: on a CI runner busy with the whole suite, the
-        // requests the test sends meanwhile can take longer than any short deadline to be handled,
-        // and a hold that quietly gave up let the prefetch finish early (ANALYZER-05, PR #91 run
-        // 39208624633: two whole profiles). Bounded only against a real hang, and then recorded —
-        // `holdExpired` fails the test instead of letting it count a broken interleaving.
-        let hangLimit = Date().addingTimeInterval(300)
-        gate.lock()
-        while held == token {
-            if !gate.wait(until: hangLimit) {
-                expired = held == token
-                break
-            }
-        }
-        gate.unlock()
+        guard !event.isWhole, token == heldToken else { return }
+        // On the decode queue (never the cooperative pool), so blocking here starves nothing. The hold
+        // lasts until the test releases it; only a real hang frees it, and `holdExpired` then fails the test.
+        hold.wait()
     }
 
-    /// Whether a held prefix gave up waiting before `release()` (only on a real hang).
+    /// Whether the held prefix gave up at the hang cap before `release()` (only on a real hang).
     var holdExpired: Bool {
-        gate.lock()
-        defer { gate.unlock() }
-        return expired
+        hold.hasExpired
     }
 
     func reportLoudnessAnalysisFailure(token: UInt64) {
@@ -205,10 +193,7 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
 
     /// Let the held job run on to the whole track.
     func release() {
-        gate.lock()
-        held = nil
-        gate.broadcast()
-        gate.unlock()
+        hold.release()
     }
 
     /// The events once `done` holds for them, keeping `analyzer` alive meanwhile (dropping it cancels
@@ -220,7 +205,11 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
     func wait(keeping _: TrackLoudnessAnalyzer,
               sourceLocation: SourceLocation = #_sourceLocation,
               until done: ([Event]) -> Bool) async -> [Event] {
-        await waitUntil("the analyzer reached the awaited state", sourceLocation: sourceLocation) { done(events) }
+        do {
+            try await until("the analyzer reached the awaited state", sourceLocation: sourceLocation) { done(events) }
+        } catch {
+            Issue.record(error, sourceLocation: sourceLocation)
+        }
         return events
     }
 }
@@ -249,21 +238,13 @@ final class LogRecorder: @unchecked Sendable {
     func wait(keeping _: TrackLoudnessAnalyzer,
               sourceLocation: SourceLocation = #_sourceLocation,
               forLineContaining text: String) async {
-        await waitUntil("a log line containing \"\(text)\"", sourceLocation: sourceLocation) {
-            count(containing: text) > 0
+        do {
+            try await until("a log line containing \"\(text)\"", sourceLocation: sourceLocation) {
+                count(containing: text) > 0
+            }
+        } catch {
+            Issue.record(error, sourceLocation: sourceLocation)
         }
-    }
-}
-
-/// Wait until `done` holds. Time only breaks a hang: after 300 s the test fails, naming `what`.
-func waitUntil(_ what: String, sourceLocation: SourceLocation, _ done: () -> Bool) async {
-    let hangLimit = ContinuousClock.now + .seconds(300)
-    while !done() {
-        if ContinuousClock.now >= hangLimit {
-            Issue.record("\(what): not so after 300 s", sourceLocation: sourceLocation)
-            return
-        }
-        try? await Task.sleep(for: .milliseconds(10))
     }
 }
 
