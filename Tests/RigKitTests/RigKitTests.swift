@@ -196,3 +196,26 @@ struct LogTailAttachmentTests {
         }
     }
 }
+
+@Suite("RigKit — OffPoolExecutor", .timeLimit(.minutes(1)))
+struct OffPoolExecutorTests {
+    @Test("RIG-14: a task on an OffPoolExecutor runs, and blocking it starves nothing else")
+    func offPoolTaskBlocksOnlyItself() async throws {
+        let executor = OffPoolExecutor("probe")
+        let hold = Hold("the off-pool task")
+        let ranOnItsQueue = Atomic<Bool>(false)
+        let task = Task(executorPreference: executor) {
+            ranOnItsQueue.store(true, ordering: .releasing)
+            hold.wait() // blocks the executor's thread, not the cooperative pool
+        }
+        try await hold.arrived()
+        let plain = Atomic<Bool>(false)
+        await Task { plain.store(true, ordering: .releasing) }.value
+        let plainRan = plain.load(ordering: .acquiring)
+        #expect(plainRan, "a plain task could not run beside the blocked off-pool task")
+        hold.release()
+        await task.value
+        let onItsQueue = ranOnItsQueue.load(ordering: .acquiring)
+        #expect(onItsQueue)
+    }
+}

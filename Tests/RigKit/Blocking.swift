@@ -45,3 +45,23 @@ public func untilBlocking(
         usleep(naps < 200 ? 50 : 1000)
     }
 }
+
+/// A thread of its own to run a whole ASYNC task on (`Task(executorPreference: executor) { … }`), for code
+/// under test that blocks inside an async function it runs — a scanner's progress callback held by a test —
+/// where `blocking {}` (sync work only) does not fit. The task's non-isolated async code, and its resumptions
+/// after each `await`, run on this executor's queue instead of the cooperative pool.
+public final class OffPoolExecutor: TaskExecutor, @unchecked Sendable {
+    private let queue: DispatchQueue
+
+    /// - Parameter name: the queue's (and thread's) label.
+    public init(_ name: String) {
+        queue = DispatchQueue(label: "rig.offpool.\(name)", qos: .userInitiated)
+    }
+
+    public func enqueue(_ job: consuming ExecutorJob) {
+        let unowned = UnownedJob(job)
+        queue.async {
+            unowned.runSynchronously(on: self.asUnownedTaskExecutor())
+        }
+    }
+}
