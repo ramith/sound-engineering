@@ -66,6 +66,28 @@ struct RigKitTests {
         }
     }
 
+    /// A main-actor helper that FORWARDS a condition it was given, as `Rig.waitUntil` does: a closure written
+    /// inline in a main-actor test is main-actor-isolated anyway, one handed on as a value is not.
+    @MainActor
+    private func forwarding(_ condition: () -> Bool) async throws {
+        try await until("a condition that is read three times", condition)
+    }
+
+    @MainActor
+    @Test("RIG-15: until evaluates its condition on the CALLER's actor — a main-actor model is never read from another thread")
+    func untilRunsItsConditionOnTheCallersActor() async throws {
+        var looks = 0
+        var offMainLooks = 0
+        try await forwarding {
+            looks += 1
+            if pthread_main_np() == 0 {
+                offMainLooks += 1
+            }
+            return looks >= 3
+        }
+        #expect(offMainLooks == 0, "the condition ran off the main thread \(offMainLooks) of \(looks) times")
+    }
+
     @MainActor
     @Test("RIG-04: untilOnMainRunLoop sees a main-queue block run, and throws at its cap otherwise")
     func untilOnMainRunLoopSeesMainQueueWork() async throws {
