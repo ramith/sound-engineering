@@ -78,10 +78,14 @@ struct TrackEndTests {
     func removingThePlayingSongStops() async throws {
         let rig = try await Rig.playing(tracks: 3, at: 1, pure: false)
         rig.engine.holdTransport(true)
+        let commands = rig.vm.transportEpoch
         rig.vm.removeTrack(at: 1)
+        #expect(rig.vm.transportEpoch == commands + 1 && !rig.vm.playIntent, "no stop was asked for the removed song")
         try await rig.waitForCommands() // the stop waits on the busy engine
+        let seams = rig.vm.lastTransitionCount
         rig.engine.trackEnds() // t1 seams into the armed t2 before the stop runs
         rig.tick()
+        #expect(rig.vm.lastTransitionCount == seams, "the tick took a seam while the stop was on its way")
         rig.engine.holdTransport(false)
         try await rig.quiesce()
         rig.tick()
