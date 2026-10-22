@@ -131,6 +131,7 @@ export GATE_RUN_DIR="$run_dir" GATE_MODE="$mode" GATE_SELECTOR="${selector:-${st
 
 # The installed toolchain goes first on PATH, exactly as CI and the parity check see it.
 tool_bin="$(env -u TOOLCHAIN_ENV "$repo_root/scripts/toolchain/install.sh" --print-bin)"
+[[ -n "$tool_bin" ]] || die "install.sh printed no tool directory: the toolchain cannot be located"
 export PATH="$tool_bin:$PATH"
 
 # ----------------------------------------------------------------- process control
@@ -173,7 +174,7 @@ timeout_seconds() {
 # (a `make check` beside a `make ci`). A lock held by a dead pid is stale and is taken over.
 null_lock="$repo_root/.build/gate/null-test.lock"
 acquire_null_lock() {
-    local waited=0
+    local waited=0 cap=14400
     mkdir -p "$(dirname "$null_lock")"
     until mkdir "$null_lock" 2>/dev/null; do
         local holder
@@ -182,6 +183,10 @@ acquire_null_lock() {
             rm -rf "$null_lock"; continue
         fi
         if ((waited % 60 == 0)); then echo "    waiting: another null-test run holds $null_lock (pid ${holder:-?})"; fi
+        if ((waited >= cap)); then
+            red "null-test lock still held by pid ${holder:-?} after $((cap / 60)) min: a stuck run. Stop it and re-run."
+            exit 1
+        fi
         sleep 5; waited=$((waited + 5))
     done
     echo $$ > "$null_lock/pid"
@@ -194,6 +199,7 @@ release_null_lock() {
 run_step() {
     local sid="$1" limit="$2" coverage="$3" command="$4"
     local locked=0
+    export GATE_STEP_ID="$sid"
     if [[ "$command" == *build-null-test.sh* || "$command" == *null-run.sh* ]]; then
         acquire_null_lock; locked=1
     fi
@@ -234,10 +240,11 @@ run_step() {
     if [[ -f "$flag" ]]; then
         STEP_STATUS=timeout
         STEP_REASON="timed out after $limit (watchdog killed the step)"
-    elif ((rc == 134)); then
-        # The null test's own watchdog aborted (a test ran past its ceiling). Named, never generic.
+    elif grep -q '^\[HANG\]' "$log"; then
+        # The null test's watchdog named the test that ran past its ceiling. Classified by that line,
+        # never by the exit code: 134 also means a plain abort, such as an ASan report.
         STEP_STATUS=timeout
-        STEP_REASON="named hang: exit 134 (a test ran past its ceiling; see the [HANG] line)"
+        STEP_REASON="named hang: $(grep -m1 '^\[HANG\]' "$log" | cut -c1-160)"
     elif ((rc != 0)); then
         STEP_STATUS=fail
         STEP_REASON="exit $rc"
@@ -306,6 +313,9 @@ for row in "${ordered[@]}"; do
         yellow "SKIPPED ($skip_reason)"
     else
         run_step "$sid" "$limit" "$coverage" "$command"
+        if [[ "$STEP_STATUS" == fail || "$STEP_STATUS" == timeout ]] && [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+            echo "::error title=$sid::$STEP_STATUS: $STEP_REASON"
+        fi
         case "$STEP_STATUS" in
             pass)    green "PASS    ${STEP_SECS}s${STEP_REASON:+  ($STEP_REASON)}" ;;
             timeout) red   "TIMEOUT ${STEP_SECS}s  $STEP_REASON" ;;
@@ -365,8 +375,7 @@ else
     rc=0
     green "GATE PASSED: every blocking step passed ($total steps, $mode ${selector:-${steps_req[*]}})."
 fi
-python3 -c 'import json,sys; json.dump({"mode":sys.argv[1],"selector":sys.argv[2],"exit_code":int(sys.argv[3])}, open(sys.argv[4]+"/run.json","w"), indent=2)' \
-    "$mode" "${selector:-${steps_req[*]}}" "$rc" "$run_dir"
+python3 "$result_py" runjson "$run_dir" "$mode" "${selector:-${steps_req[*]}}" "$rc"
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
 echo "exit: $rc  (this code is the verdict)"
 exit "$rc"

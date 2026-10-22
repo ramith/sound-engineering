@@ -8,13 +8,14 @@
 #   - exit 134 with NO JSON is a named hang: the null test's watchdog printed a "[HANG] <test>" line and
 #     aborted. The runner reports it as a hang (not a generic failure).
 #
-# The JSON goes to $GATE_RUN_DIR/null/ (or .build/gate/null/ outside a gate run), so sharded and
-# serial files for one run stay together and are not mixed with an older run.
+# The JSON goes to $GATE_RUN_DIR/null/<step-id>/ (or .build/gate/null/adhoc outside a gate run), so sharded
+# and serial files for one run stay together, and another step never deletes them.
 set -uo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
 
-out_dir="${GATE_RUN_DIR:-$repo_root/.build/gate}/null"
+# One directory per step: a later null-test step must not delete an earlier step's JSON (M7).
+out_dir="${GATE_RUN_DIR:-$repo_root/.build/gate}/null/${GATE_STEP_ID:-adhoc}"
 rm -rf "$out_dir"
 mkdir -p "$out_dir" || { echo "ERROR: cannot create $out_dir" >&2; exit 1; }
 json="$out_dir/result.json"

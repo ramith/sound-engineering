@@ -15,7 +15,10 @@ on:
 # A superseded PR run is cancelled to save runner time. A run on main is NEVER cancelled: main's run
 # on the merge commit is the real gate, and the founder merges by hand, sometimes mid-run.
 concurrency:
-  group: strict-ci-${{ github.ref }}
+  # Pull requests: one run per ref, a newer push cancels the older. Everything else (main, dispatch): each
+  # run gets its OWN group, so a pending main run is never replaced by a later push (GitHub keeps one
+  # pending run per group and cancels it when a third arrives). Main runs are never cancelled.
+  group: strict-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -25,26 +28,30 @@ jobs:
   static:
     name: static (parity, format, lint, analysis, dead code)
     runs-on: xcode-27
-    timeout-minutes: 100
+    timeout-minutes: 130
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-gate
       - name: Run the static steps
+        env:
+          # The gate's output lives outside .build: a PR cache can never restore an old run's results.
+          GATE_RUN_DIR: ${{ runner.temp }}/gate/static
         run: scripts/gate/run.sh --job static
       - name: Upload the gate logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-static
-          path: .build/gate/
+          path: ${{ runner.temp }}/gate/static
+          overwrite: true
           if-no-files-found: warn
 
   swift:
     name: swift (build, swift test, main-thread stall)
     runs-on: xcode-27
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,17 +69,21 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: build-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.run_id }}
+          key: build-swift-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.run_id }}
           restore-keys: |
-            build-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+            build-swift-${{ hashFiles('Package.swift', 'Package.resolved') }}-
       - name: Run the swift steps
+        env:
+          # The gate's output lives outside .build: a PR cache can never restore an old run's results.
+          GATE_RUN_DIR: ${{ runner.temp }}/gate/swift
         run: scripts/gate/run.sh --job swift
       - name: Upload the gate logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-swift
-          path: .build/gate/
+          path: ${{ runner.temp }}/gate/swift
+          overwrite: true
           if-no-files-found: warn
 
   cpp:
@@ -96,17 +107,21 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: build-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.run_id }}
+          key: build-cpp-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.run_id }}
           restore-keys: |
-            build-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+            build-cpp-${{ hashFiles('Package.swift', 'Package.resolved') }}-
       - name: Run the cpp steps
+        env:
+          # The gate's output lives outside .build: a PR cache can never restore an old run's results.
+          GATE_RUN_DIR: ${{ runner.temp }}/gate/cpp
         run: scripts/gate/run.sh --job cpp
       - name: Upload the gate logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-cpp
-          path: .build/gate/
+          path: ${{ runner.temp }}/gate/cpp
+          overwrite: true
           if-no-files-found: warn
 
   asan:
@@ -119,13 +134,17 @@ jobs:
           submodules: recursive
       - uses: ./.github/actions/setup-gate
       - name: Run the asan steps
+        env:
+          # The gate's output lives outside .build: a PR cache can never restore an old run's results.
+          GATE_RUN_DIR: ${{ runner.temp }}/gate/asan
         run: scripts/gate/run.sh --job asan
       - name: Upload the gate logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-asan
-          path: .build/gate/
+          path: ${{ runner.temp }}/gate/asan
+          overwrite: true
           if-no-files-found: warn
 
   tsan:
@@ -138,13 +157,17 @@ jobs:
           submodules: recursive
       - uses: ./.github/actions/setup-gate
       - name: Run the tsan steps
+        env:
+          # The gate's output lives outside .build: a PR cache can never restore an old run's results.
+          GATE_RUN_DIR: ${{ runner.temp }}/gate/tsan
         run: scripts/gate/run.sh --job tsan
       - name: Upload the gate logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-tsan
-          path: .build/gate/
+          path: ${{ runner.temp }}/gate/tsan
+          overwrite: true
           if-no-files-found: warn
 
   # The single summary check. Runs on Linux (no macOS slot) and always runs, so a job that was
