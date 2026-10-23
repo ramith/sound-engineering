@@ -162,13 +162,7 @@ namespace
     // never comes near its ceiling. The clock is the time the Mac was AWAKE (rig::AwakeClock), so a
     // laptop that sleeps through a run does not trip it.
     // ---------------------------------------------------------------------------
-#if __has_feature(thread_sanitizer)
-    constexpr int kCeilingScale = 8;
-#elif __has_feature(address_sanitizer)
-    constexpr int kCeilingScale = 3;
-#else
-    constexpr int kCeilingScale = 1;
-#endif
+    constexpr int kCeilingScale = rig::kSanitizerSlowdown; // one slowdown factor, TestSupport.h
 
     constexpr auto baseCeiling(Tier tier) -> std::chrono::seconds
     {
