@@ -58,6 +58,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-LIB-03 | A failed first metadata pass leaves "No Music Yet", with no retry | MEDIUM | pool | US-R1F-03 |
 | KI-LIB-04 | Dragging a multi-selection onto a playlist adds one song | MEDIUM | pool | US-R1F-04 |
 | KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5) | US-ENG-07 |
+| KI-ENG-05 | A library scan or metadata pass can starve the app's background work on a Mac with few cores | LOW | pool (recommended R1.1-B) | US-R1F-18 |
 | KI-PB-07 | Next / Previous while paused keep the old song's duration | LOW | R1.1-A | US-R1F-01 |
 | KI-PB-13 | Two quick tile Plays can land out of order | LOW | pool | US-R1F-04 |
 | KI-PB-14 | Stalled ticks count as heard time (play counts) | LOW | pool | US-R1F-01 |
@@ -79,6 +80,9 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-UI-01 | VoiceOver keeps the app fairly busy while a song plays — its code causes are fixed (R1.1-A, live readouts); not yet confirmed with VoiceOver | LOW | R1.1-A (founder's VoiceOver check) | US-R1F-15 |
 | KI-ENG-02 | The main-thread stall self-test lacks the breaker's two extra modes and the 5 ms bound | internal | pool | US-R1F-07 |
 | KI-ENG-04 | The `eq-light-folded` picture sheet flakes in the renderer | internal | pool | US-R1F-07 |
+| KI-ENG-08 | A dead "Already in Queue" toast, and a negative index into `playTrack(at:)` | LOW | next time the file is touched | US-R1F-18 |
+| KI-ENG-06 | Gaps left in the test seams (device-menu sort, two view countdowns, `FFmpegOptIn.isOn` shared in tests) | internal | pool | US-R1F-18 |
+| KI-ENG-07 | `research/eq-engine-break-it/build-measure.sh` does not build | internal | pool | US-R1F-18 |
 
 **Known limitations (by design or not yet built — not defects):** see [the last section](#known-limitations-by-design-or-not-yet-built).
 
@@ -458,8 +462,50 @@ run (or Activity Monitor's CPU) with VoiceOver on, Now Playing showing, a song p
 **Status:** OPEN · **Severity:** internal · **Source:** freeze "Logged post-R1";
 [evidence README](../architecture/evidence/main-thread-stall-2026-10/README.md) · **Scheduled (2026-10-14):** pool · **Forward:** US-R1F-07.
 
-`Debug/MainThreadStallSelfTest.swift:27-43` runs `stop`, `start`, `device-loss` and `ended-advance` with a 25 ms bound
-(1% may exceed 5 ms). Port the breaker harness's engineQueue-holder and first-play modes and tighten to <5 ms.
+*(Narrowed in the test-rig redesign, 2026-10: the stopwatch is gone. The check holds the engine lock on purpose and
+passes only if main keeps finishing its work during the hold — judged by behaviour, the founder's decision.)* What is
+left: `Debug/MainThreadStallSelfTest.swift` runs `stop`, `start`, `device-loss` and `ended-advance`; port the breaker
+harness's engineQueue-holder and first-play modes.
+
+### KI-ENG-05 — A library scan or metadata pass can starve the app's background work on a Mac with few cores
+
+**Status:** OPEN · **Severity:** LOW · **Source:** test-rig redesign, lane C's audit
+([lane C report](../reviews/2026-10-testrig/lane-c-report.md)) · **Scheduled (2026-10-23):** pool (recommended: R1.1-B) ·
+**Forward:** US-R1F-18.
+
+`MetadataScanner.run` runs up to `min(cores, 6)` tasks on Swift's cooperative pool, each doing synchronous
+AVFoundation tag reads and ImageIO thumbnails. `LibraryScanner.walk` does synchronous file enumeration there too. On a
+3-core Mac a metadata pass can occupy the whole pool for its duration. The track-loudness analyser had the same shape
+and was moved to its own queue in the redesign. Fix the same way: the synchronous work on a dedicated queue, the task
+awaiting it. (The test suites don't hit this; they pass with one cooperative thread.)
+
+### KI-ENG-06 — Gaps left in the test seams
+
+**Status:** OPEN · **Severity:** internal · **Source:** test-rig redesign, lanes C and D · **Scheduled (2026-10-23):**
+pool · **Forward:** US-R1F-18.
+
+- The output-device menu's sort lives in the bridge, with no function a test can call; three old tests sorted a copy
+  written in the test file (they are gone). Pull the sort into a function.
+- `EQBringBackMessage` and `SongsView` keep their countdowns in private view code, so their injected clocks have no
+  test; move each into a small model, as `ShellToastSlot` already is.
+- `FFmpegOptIn.isOn` is process-global: a test that turns FFmpeg on shares it with every test in the process.
+
+### KI-ENG-07 — `research/eq-engine-break-it/build-measure.sh` does not build
+
+**Status:** OPEN · **Severity:** internal · **Source:** test-rig redesign, lane B · **Scheduled (2026-10-23):** pool ·
+**Forward:** US-R1F-18.
+
+Already broken before the redesign: its link list lacks `FFmpegLoader.cpp` and `DeviceListPolicy.cpp`. It now also
+needs GoogleTest, because `TestSupport.h` includes it. Not gated (a research script).
+
+### KI-ENG-08 — A dead "Already in Queue" toast, and a negative index into `playTrack(at:)`
+
+**Status:** OPEN · **Severity:** LOW · **Source:** test-rig redesign, lane D (the mirror had drifted) ·
+**Scheduled (2026-10-23):** next time the file is touched · **Forward:** US-R1F-18.
+
+The app has allowed the same song in the queue twice since S10.2 (the founder keeps that), so the "Already in Queue"
+toast can no longer appear for a real add: remove it. `playTrack(at:)` would trap on a negative index; no caller can
+pass one today. Add `index >= 0` to its guard, with a test.
 
 ### KI-ENG-04 — The `eq-light-folded` picture sheet flakes in the renderer
 
@@ -584,6 +630,7 @@ These are not defects; each is a decision or a planned feature. They are listed 
 
 | Limitation | Why / where decided | Forward link |
 |---|---|---|
+| **The FFmpeg fallback works only with the FFmpeg major version it was built against** (today 9.x): with another major installed, files Apple can't open stay unplayable | FFmpeg guarantees its library ABI only within a major; the backend refuses a mismatch rather than crash (`FileDecodeSource.cpp`). The founder wants any version to work: researched 2026-10-22, scheduled later | US-R1F-17 ([research](../reviews/2026-10-testrig/ffmpeg-research.md)) |
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 — release readiness, deferred (FD-7, 2026-10-14) |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, d540c5c; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
