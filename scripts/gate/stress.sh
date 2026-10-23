@@ -11,7 +11,7 @@
 #   3. HARD CAP per iteration (STRESS_TIMEOUT, default 600s): a hang is killed and named.
 #
 # Swift: loops `swift test --skip-build --filter TEST`, and every iteration must run >= 1 test.
-# C++:   scripts/build-null-test.sh with --shards 3 --gtest_filter=TEST --gtest_repeat=N
+# C++:   scripts/gate/null-run.sh (unsharded) with --gtest_filter=TEST --gtest_repeat=N --gtest_shuffle
 #        --gtest_shuffle and a printed --gtest_random_seed (TEST is a GoogleTest filter, e.g.
 #        'Concurrent.*' for the Concurrent tier or 'Concurrent.Loudness_*').
 #

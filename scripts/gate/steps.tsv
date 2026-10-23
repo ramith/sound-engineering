@@ -30,6 +30,10 @@ cppcheck	static	check,combine,ci	yes	10m	files	-	scripts/gate/cppcheck.sh
 clang-tidy	static	check,combine,ci	yes	30m	files	-	scripts/gate/clang-tidy.sh
 periphery	static	combine,ci	yes	15m	-	-	scripts/gate/periphery.sh
 actionlint	static	push,check,combine,ci	yes	3m	files	-	scripts/gate/actionlint.sh
+report-selftest	static	push,check,combine,ci	yes	3m	tests	-	scripts/gate/report-selftest.sh
+timelimit-guard	static	push,check,combine,ci	yes	2m	tests	-	scripts/gate/timelimit-guard.sh
+availability-ban	static	push,check,combine,ci	yes	2m	files	-	scripts/gate/availability-ban.sh
+registry-lint	static	push,check,combine,ci	yes	2m	rows	-	scripts/gate/registry-lint.sh
 swift-build	swift	check,combine,ci	yes	25m	-	-	swift build -c debug
 deployment-target	swift	check,combine,ci	yes	5m	products	swift-build	scripts/gate/deployment-target.sh
 swift-test	swift	check,combine,ci	yes	35m	tests	-	PART=main scripts/gate/swift-test.sh

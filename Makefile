@@ -43,7 +43,8 @@ run: build
 # target's find|head, which is ambiguous once both debug and release builds exist).
 # Produces an UNSIGNED .app — code-signing + notarization is a separate downstream step.
 release:
-	swift build -c release -j 8
+	# The app product only: the test-only RigKit target (import Testing) is not part of the shipped build (review L13).
+	swift build -c release -j 8 --product AdaptiveSound
 	@BIN="$$(swift build -c release --show-bin-path)"; \
 		APP_BUNDLE="$$BIN/AdaptiveSound.app"; \
 		python3 scripts/bundle-app.py \
