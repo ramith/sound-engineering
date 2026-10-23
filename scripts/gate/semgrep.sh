@@ -33,7 +33,7 @@ PY
 )"
 printf '%s\n' "$(grep -v '^SCANNED ' <<< "$scanned")"
 if grep -q '^UNREADABLE' <<< "$scanned"; then
-    fail "semgrep's JSON report could not be read: $(sed 's/^UNREADABLE //' <<< "$scanned")"
+    fail "semgrep's JSON report could not be read: ${scanned#UNREADABLE }"
 fi
 ((rc == 0)) || fail "semgrep found problems (exit $rc). Each finding is listed above."
 

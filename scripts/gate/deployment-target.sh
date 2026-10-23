@@ -43,4 +43,4 @@ for f in "${macho[@]}"; do
     done < <(vtool -show-build "$f" 2>/dev/null | awk '/minos/ {print $2}')
 done
 ((bad == 0)) || fail "a built product declares a newer minimum macOS than the target ($target)"
-covered "${#macho[@]}" products-within-macOS-$target
+covered "${#macho[@]}" "products-within-macOS-$target"

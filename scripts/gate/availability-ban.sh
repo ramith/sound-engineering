@@ -23,7 +23,7 @@ scan() {
 
 hits="$(scan Package.swift scripts Makefile .github)"
 if [[ -n "$hits" ]]; then
-    echo "$hits" | sed 's/^/RED /'
+    while IFS= read -r line; do echo "RED $line"; done <<< "$hits"
     echo "ERROR: a build flag switches off availability checking. Remove it; the macOS 26 job catches what it hid." >&2
     exit 1
 fi

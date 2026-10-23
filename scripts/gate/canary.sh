@@ -88,9 +88,11 @@ for step in swiftformat swiftlint semgrep actionlint; do
     if "${cmd[@]}" >"$log" 2>&1; then verdict="passes"; else verdict="FAILS (see the head below)"; fi
     printf -- '- **%s** with the latest binary: %s\n' "$step" "$verdict" >> "$report"
     if [[ "$verdict" != passes ]]; then
-        printf '\n```\n' >> "$report"
-        grep -iE 'error|warning|fail|violation' "$log" | head -30 >> "$report"
-        printf '```\n\n' >> "$report"
+        {
+            printf '\n```\n'
+            grep -iE 'error|warning|fail|violation' "$log" | head -30
+            printf '```\n\n'
+        } >> "$report"
     fi
 done
 

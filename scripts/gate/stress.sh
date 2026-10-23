@@ -30,7 +30,9 @@ STRESS_TIMEOUT="${STRESS_TIMEOUT:-600}"
 PROFILE="${PROFILE:-ci-like}"
 
 [[ -n "$TEST" ]] || fail "make stress needs TEST=<filter> (a function or type name, not a display name), e.g. make stress TEST=prefetchPromoted N=50"
-[[ "$N" =~ ^[0-9]+$ ]] && ((N >= 1)) || fail "N must be a positive integer (got '$N')"
+if ! [[ "$N" =~ ^[0-9]+$ ]] || ((N < 1)); then
+    fail "N must be a positive integer (got '$N')"
+fi
 
 ncpu="$(sysctl -n hw.ncpu)"
 hogs="${STRESS_HOGS:-$((ncpu - 3))}"

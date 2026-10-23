@@ -139,20 +139,10 @@ export PATH="$tool_bin:$PATH"
 # whole tree is signalled as one unit and the watchdog can be killed without touching the step.
 set -m
 current_pgid=""
-kill_group() {
-    if [[ -n "$1" ]]; then
-        kill -TERM -- "-$1" 2>/dev/null
-        sleep 2
-        kill -KILL -- "-$1" 2>/dev/null
-    fi
-}
-on_signal() {
-    kill_group "$current_pgid"
-    release_null_lock
-    red "gate interrupted: running step killed; partial results are in $run_dir"
-    exit 130
-}
-trap on_signal INT TERM
+# The signal handler is inline: the running step's whole process group gets TERM, then KILL after 2 s, the
+# null-test lock is released, and the run says it was interrupted. (A named handler here was only ever called
+# from the trap, which shellcheck cannot see as a call.)
+trap 'if [[ -n "$current_pgid" ]]; then kill -TERM -- "-$current_pgid" 2>/dev/null; sleep 2; kill -KILL -- "-$current_pgid" 2>/dev/null; fi; release_null_lock; red "gate interrupted: running step killed; partial results are in $run_dir"; exit 130' INT TERM
 
 # timeout_seconds <spec>: 90s | 5m | 1h -> seconds
 timeout_seconds() {
