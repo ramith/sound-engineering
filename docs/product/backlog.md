@@ -1847,7 +1847,7 @@ As a **Ramith** I want the FFmpeg fallback to work with whatever FFmpeg I have i
 
 As a **developer** I want the gaps the test-rig redesign left closed, so that every product behaviour has a test on the real code and the gate stays honest.
 
-**Covers:** KI-ENG-05 (the scan and metadata pass on the cooperative pool), KI-ENG-06 (test seams: the device-menu sort, two view countdowns, `FFmpegOptIn.isOn`), KI-ENG-07 (`build-measure.sh`), KI-ENG-08 (the dead toast, the `playTrack(at:)` guard); the review's M8 (expected test-count floors from the first CI run's counts) and L15 (per-variant test-data folders, so plain, ASan and TSan can run in parallel locally).
+**Covers:** KI-ENG-05 (the scan and metadata pass on the cooperative pool), KI-ENG-06 (test seams: the device-menu sort, two view countdowns, `FFmpegOptIn.isOn`), KI-ENG-07 (`build-measure.sh`), KI-ENG-08 (the dead toast, the `playTrack(at:)` guard); the review's M8 (expected test-count floors from the first CI run's counts) and L15 (per-variant test-data folders, so plain, ASan and TSan can run in parallel locally). Also: make `WorkTracker`'s in-flight count readable (`private(set) var inFlight`), so the OnDeck rig's quiescence heuristic can become an exact witness (review L4).
 **Priority:** Should / Could | **Estimate:** 3 sp | **Scheduled (2026-10-23):** pool (KI-ENG-05 recommended for R1.1-B) · [the redesign record](../sprints/testrig-redesign.md#follow-ups-each-in-known-issues-or-the-backlog).
 
 #### US-QA-07 — THD+N oracle

@@ -116,6 +116,6 @@ Later answers:
 ## Mini-retro
 - **Prove a flake diagnosis by reproducing CI's exact failure before fixing it.** ANALYZER-05 and ANALYZER-04 were both reproduced by injecting the delay.
 - **A gate that has never run where it will run isn't proven.** The review found a summary that would have been red on every CI run, and three scripts committed without the executable bit. Run the CI path (the draft PR) before trusting it.
-- **Worktrees hide configuration** (SwiftFormat's walk-up, an absolute `core.hooksPath`). Check tools from inside a worktree, not only from the main checkout.
+- **Worktrees hide configuration** (SwiftFormat's walk-up, an absolute `core.hooksPath`, and git exporting an absolute `GIT_DIR` to hooks, which made the new pre-push gate read the wrong commit for a submodule and refuse every push from a worktree). Check tools and hooks from inside a worktree, not only from the main checkout.
 - **A commit message must not claim evidence that doesn't exist yet.** One did, here ("10/10" before it was true); it was reworded when combined.
 - **One-thread stress (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`) finds blocked-pool bugs nothing else finds:** the analyser decode, and the verifier's deadlock.

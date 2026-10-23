@@ -18,4 +18,6 @@ Paths are relative to the repository root. `<worktree name>/` and `scratchpad/` 
 | [lane-d-report.md](lane-d-report.md) | Lane D: one FakeEngine; the coverage map for every deleted mirror test; where the mirror had drifted from the app |
 | [testrig-review.md](testrig-review.md) | The architecture review of the combined redesign: blocking, high, medium and low findings |
 | [lane-a-review-fixes.md](lane-a-review-fixes.md) | How each review finding was fixed and proven |
+| [lane-a-shellcheck.md](lane-a-shellcheck.md) | ShellCheck pinned and run over every tracked script and hook; findings fixed at the root |
+| [lane-c-review-fixes.md](lane-c-review-fixes.md) | The review's Swift-rig items: a suspend-aware hold cap, an O(1) log ring, the default ticker's common-mode test, the OnDeck quiescence heuristic documented |
 | [ffmpeg-research.md](ffmpeg-research.md) | How to make FFmpeg work with any installed version: what Firefox, Audacity, Qt and others do; licensing; options (backlog US-R1F-17) |
