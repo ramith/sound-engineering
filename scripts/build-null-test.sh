@@ -92,7 +92,7 @@ while (($#)); do
     shift
     case "$arg" in
         --build)    BUILD_ONLY=1 ;;
-        --sanitize) SAN_FLAGS=(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+        --sanitize) SAN_FLAGS=("-fsanitize=address,undefined" -fno-omit-frame-pointer -g)
                     SAN_LABEL="ASan+UBSan"; VARIANT="asan" ;;
         --tsan)     SAN_FLAGS=(-fsanitize=thread -fno-omit-frame-pointer -g)
                     SAN_LABEL="TSan"; VARIANT="tsan" ;;
@@ -189,9 +189,9 @@ xcrun clang \
 
 echo "Compiling GoogleTest 1.18.0 ($VARIANT flags) ..."
 GTEST_OBJ="$WORK_DIR/gtest-$VARIANT.o"
-# shellcheck disable=SC2046  # intentional word-splitting of the space-separated core flags
+read -r -a CORE_FLAGS <<< "$(cxx_analysis_core_flags)"
 xcrun clang++ \
-    $(cxx_analysis_core_flags) \
+    "${CORE_FLAGS[@]}" \
     -Wall -Wextra \
     ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \
     ${RELEASE_STRICT_FLAGS[@]+"${RELEASE_STRICT_FLAGS[@]}"} \
@@ -220,9 +220,9 @@ mkdir -p "$REPO_ROOT/test-data"
 # The C99 libebur128 oracle is compiled SEPARATELY above (-x c), so it never sees ARC / -x c++.
 # strict-gate's drift-guard greps this compile list — do not reference Sources/AudioDSP/*.{mm,cpp,cc}
 # paths in comments outside it (the grep is scoped to this xcrun clang++ … -o "$OUTPUT" block).
-# shellcheck disable=SC2046  # intentional word-splitting of the space-separated core flags
+read -r -a CORE_FLAGS <<< "$(cxx_analysis_core_flags)"
 xcrun clang++ \
-    $(cxx_analysis_core_flags) \
+    "${CORE_FLAGS[@]}" \
     -Wall -Wextra \
     -fobjc-arc -fblocks \
     ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \

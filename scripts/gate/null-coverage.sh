@@ -27,7 +27,7 @@ null_test_allowlist=(
 # Production sources, and the set the null test really compiles: grepped out of the compile block
 # of build-null-test.sh (scoped by sed, so a comment mentioning a path cannot mask a gap).
 production="$(find Sources/AudioDSP -type f \( -name '*.mm' -o -name '*.cpp' -o -name '*.cc' \) | sort -u)"
-compiled="$(sed -n '/xcrun clang++/,/-o "\$OUTPUT"/p' scripts/build-null-test.sh | grep -oE 'Sources/AudioDSP/[^"]+\.(mm|cpp|cc)' | sort -u)"
+compiled="$(sed -n '/xcrun clang++/,/-o "[$]OUTPUT"/p' scripts/build-null-test.sh | grep -oE 'Sources/AudioDSP/[^"]+\.(mm|cpp|cc)' | sort -u)"
 [[ -n "$production" ]] || { echo "ERROR: found 0 production DSP sources under Sources/AudioDSP: the scope is broken" >&2; exit 1; }
 [[ -n "$compiled" ]] || { echo "ERROR: could not read the null test's compile list from scripts/build-null-test.sh" >&2; exit 1; }
 
