@@ -53,7 +53,7 @@ Swift tests use swift-testing. Two rules the gate enforces:
 - `swift test --filter` matches **function or type names**, not `@Test` display names. A misspelt filter
   runs zero tests and exits 0; `scripts/gate/swift-test.sh` turns that into a failure, and it also fails a
   test bundle that did not load.
-- Every suite with waits has a `.timeLimit`, and every wait names its state.
+- Every suite in a file that waits has a `.timeLimit`, and every wait names its state. `scripts/gate/timelimit-guard.sh` fails the gate otherwise (proven on a planted suite).
 
 ### RigKit: the one way a Swift test waits
 
@@ -143,7 +143,7 @@ Before merging a new or changed timing test, repeat it under the CI-like profile
 
 ```bash
 make stress TEST=prefetchPromoted N=50        # Swift: swift test --skip-build --filter, every iteration must run ≥ 1 test
-make stress KIND=cpp TEST='Loud*' N=50        # C++: shards, repeat, shuffle, with a printed seed
+make stress KIND=cpp TEST='Loud*' N=50        # C++: one process, repeat, shuffle, with a printed seed
 ```
 
 The profile puts `ncpu − 3` CPU hogs in their own process group, each killed by a trap on any exit, and
