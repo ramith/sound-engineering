@@ -170,7 +170,7 @@ struct LiveReadoutsTests {
         #expect(!ticker.timer.isValid, "a stopped ticker's timer is still scheduled")
     }
 
-    @Test("the app's default ticker is a 20 Hz run-loop timer that fires in tracking mode too (.common)")
+    @Test("the app's default ticker is a 20 Hz run-loop timer that is in the common run-loop modes")
     func defaultTickerIsACommonModeTimer() async throws {
         let engine = FakeEngine()
         let viewModel = AudioViewModel(defaults: world.defaults, engine: engine) // the product's default maker
@@ -186,9 +186,13 @@ struct LiveReadoutsTests {
         }
         let ticker = try #require(viewModel.transportTicker as? RunLoopTicker, "the default ticker is not the run loop's")
         #expect(abs(ticker.timer.timeInterval - 1.0 / 20.0) < 1e-9, "the tick is not 20 Hz")
+        // In the COMMON modes, so the tick also fires during tracking (a slider drag, a scroll): the common-mode
+        // set holds the timer. (Spinning only .eventTracking proves nothing here: the test's own yields run the
+        // loop in its default mode, which fires the timer either way.)
+        #expect(CFRunLoopContainsTimer(CFRunLoopGetMain(), ticker.timer, .commonModes),
+                "the tick's timer is not in the run loop's common modes: it would stall while a slider drags")
         let readsBefore = engine.state.withLock { $0.snapshotReads }
-        // Only the TRACKING mode is spun (a slider drag, a scroll): a timer added in `.common` still fires.
-        try await untilOnMainRunLoop("a tick to read the engine in event-tracking mode", mode: .eventTracking) {
+        try await untilOnMainRunLoop("a tick to read the engine") {
             engine.state.withLock { $0.snapshotReads } > readsBefore
         }
         viewModel.disarmTransportTick()
