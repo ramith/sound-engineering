@@ -95,9 +95,9 @@ FRAMEWORKS=(
 compile() {
     local out="$1"
     shift
-    # shellcheck disable=SC2046  # intentional word-splitting of the space-separated core flags
+    read -r -a CORE_FLAGS <<< "$(cxx_analysis_core_flags)"
     xcrun clang++ \
-        $(cxx_analysis_core_flags) \
+        "${CORE_FLAGS[@]}" \
         -Wall -Wextra \
         -g -fno-omit-frame-pointer \
         -DADAPTIVE_FIXTURES_DIR="\"$FIXTURES_DIR\"" \

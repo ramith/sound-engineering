@@ -106,7 +106,7 @@ cxx_lang_flags() {
 # ONE source for the major: toolchain/toolchain.env (LLVM_MAJOR). Read here, not re-typed, so the
 # manifest and the analysis library cannot disagree.
 CXX_CLANG_TIDY_MAJOR_PIN="$(sed -nE 's/^LLVM_MAJOR=([0-9]+).*/\1/p' "$_cxx_repo_root/toolchain/toolchain.env" | head -1)"
-[[ -n "$CXX_CLANG_TIDY_MAJOR_PIN" ]] || { echo "cxx-analysis-flags.sh: toolchain/toolchain.env has no LLVM_MAJOR" >&2; return 1 2>/dev/null || exit 1; }
+# An empty pin is reported by the parity check's "clang-tidy pin" row, which compares it with the manifest.
 
 # cxx_clang_tidy_path — the pinned clang-tidy binary, or nothing (exit 1) when absent.
 # Order: the versioned Homebrew keg (opt/llvm@N — what `llvm@N` installs once N is no longer
