@@ -639,9 +639,20 @@ namespace rig
         const char* previous_;
     };
 
+    // How many times slower this build runs than a plain one: the sanitizers instrument every
+    // memory access. Every time cap in the rig scales by it — this wait cap and the per-test
+    // ceilings (NullTestRunner.h) — so a slow but passing run never reads as a hang.
+#if __has_feature(thread_sanitizer)
+    inline constexpr int kSanitizerSlowdown = 8;
+#elif __has_feature(address_sanitizer)
+    inline constexpr int kSanitizerSlowdown = 3;
+#else
+    inline constexpr int kSanitizerSlowdown = 1;
+#endif
+
     // One wait's hang cap. Generous: a passing run never comes near it, so only a hang reaches it
     // (and under the per-test ceiling, so the wait names its state before the watchdog fires).
-    inline constexpr std::chrono::seconds kHangCap{60};
+    inline constexpr std::chrono::seconds kHangCap{60 * kSanitizerSlowdown};
 
     // What one step of a pump did (rig::pumpUntil).
     enum class Pump : uint8_t

@@ -297,7 +297,9 @@ if ((SHARDS == 1)); then
 fi
 
 # Sharded: each process's exit code goes to a file BEFORE its output is prefixed (a pipe's own
-# exit code would hide it); the run fails if any process failed.
+# exit code would hide it); the run fails if any process failed. A process the watchdog aborted
+# (134, its "[HANG] <test>" line above) makes the whole run exit 134, as an unsharded run would,
+# so the gate names it a hang rather than a plain failure.
 RUN_DIR="$(mktemp -d "$WORK_DIR/shards.XXXXXX")"
 run_process() {
     local label="$1"
@@ -317,7 +319,11 @@ status=0
 for rc_file in "$RUN_DIR"/*.rc; do
     rc="$(cat "$rc_file")"
     echo "$(basename "$rc_file" .rc): exit $rc"
-    [[ "$rc" == "0" ]] || status=1
+    if [[ "$rc" == "134" ]]; then
+        status=134
+    elif [[ "$rc" != "0" && "$status" != "134" ]]; then
+        status=1
+    fi
 done
 expected=$((SHARDS + 1))
 found="$(find "$RUN_DIR" -name '*.rc' | wc -l | tr -d ' ')"
