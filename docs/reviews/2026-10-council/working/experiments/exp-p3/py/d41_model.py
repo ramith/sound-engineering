@@ -1,4 +1,4 @@
-# Exhaustive interleaving model (sequentially consistent) of GaplessSource @ f93b08e:
+# Exhaustive interleaving model (sequentially consistent) of GaplessSource @ 1ebf323:
 #   RT  : pullFloat's true-EOF branch (GaplessSource.cpp:273-310)
 #   CTRL: the bridge's re-arm = clearNext() then armNext(C) (GaplessSource.cpp:117-185),
 #         optionally the poll plane's reapRetired() in between.

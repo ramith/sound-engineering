@@ -1,7 +1,7 @@
 # Sprint EQ: DSP plan, adversarial review (Reviewer 1, "the Breaker")
 
 *2026-10-09. Under test: `eq-plan/dsp/dsp-plan-check.md`. The UI plan was read for the contract and state
-model only. Code was read on `feat/s10-8-eq` @ 6a51eb1 in the main checkout; nothing in the repo was
+model only. Code was read on `feat/s10-8-eq` @ f563437 in the main checkout; nothing in the repo was
 built or edited.*
 
 *Method. I built my own prototype from the papers and first principles:*

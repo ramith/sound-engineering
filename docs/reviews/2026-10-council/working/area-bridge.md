@@ -1,6 +1,6 @@
 # Area review: the audio engine bridge and its concurrency (Swift)
 
-Reviewer: area code reviewer, council Stage 2. Repo `/Users/ramith/code/sound-engineering` @ a206107, read-only.
+Reviewer: area code reviewer, council Stage 2. Repo `/Users/ramith/code/sound-engineering` @ 7d7c2cd, read-only.
 Scope: `AudioEngineBridge*.swift` (23 files, 4,130 LOC), `AudioPlaybackEngine.swift`, `EngineSnapshot.swift`,
 `PureModeSession.swift`, the Swift side of the C-ABI. Nothing was built or run. SFBAudioEngine and Cog were
 opened from `main` into `scratchpad/council/exp-bridge/{sfb,cog}`. Apple's `AVAudioPlayerNode.h` was read from the local SDK.

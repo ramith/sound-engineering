@@ -14,7 +14,7 @@ The rig is `exp-p4/vm-d41/`:
 - Logs: `cases.log`, `monocases.log`, `ablate.log`, `scoped.log`.
 
 How it is built:
-- **The VM is real.** It is the real `AudioViewModel` sources from main @ a206107, with the design's VM side applied to the copies only (§2.3 M1/M2, §3):
+- **The VM is real.** It is the real `AudioViewModel` sources from main @ 7d7c2cd, with the design's VM side applied to the copies only (§2.3 M1/M2, §3):
   - `armOnDeck` is the only producer and stamps the ticket;
   - `onDeckSession` is set at `startPlayback`;
   - a superseded start does not prime;

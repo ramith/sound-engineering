@@ -1,6 +1,6 @@
 # Council Stage 2: architecture review (macro)
 
-Reviewer: architect-reviewer (with the-fool pre-mortem and dialectic). Repo `main` @ a206107, read-only.
+Reviewer: architect-reviewer (with the-fool pre-mortem and dialectic). Repo `main` @ 7d7c2cd, read-only.
 Scope: module boundaries, layering, state ownership, the concurrency model, testability as architecture, macro patterns,
 error handling and observability, extension sprawl, the Kit pattern, R2 readiness, and the founder's new **EP-MCP**
 requirement (backlog on `docs/council-recon-product` @ 28683e7, FR-AGENT-01).

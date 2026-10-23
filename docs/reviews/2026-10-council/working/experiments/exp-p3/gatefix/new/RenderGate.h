@@ -26,7 +26,7 @@
 // The first version (one state, close = CAS Open -> Closed, polled every 50 µs) promised the same
 // in its comment but did not keep it: close() could only win in the instant between one pass's
 // leave() and the next pass's tryEnter(), so a render re-entering back to back starved it. The null
-// test's back-to-back render made a GitHub runner's close() time out after 1 s (main a206107);
+// test's back-to-back render made a GitHub runner's close() time out after 1 s (main 7d7c2cd);
 // a periodic HAL IO thread leaves most of its period open, which hid it in the app.
 //
 // Ordering: tryEnter's acquire pairs with open()'s release (the control plane's writes — a moved

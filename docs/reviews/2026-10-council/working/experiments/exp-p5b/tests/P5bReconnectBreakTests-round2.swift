@@ -17,7 +17,7 @@ struct P5bOutputPolicyBreakTests {
     static let events: [OutputDeviceEvent] = [.devicesChanged, .defaultChanged, .targetAliveChanged,
                                               .engineReconfigured, .enhancedStarting]
 
-    // MARK: The pre-fix rule (a206107), kept verbatim as the baseline for "follow is unchanged"
+    // MARK: The pre-fix rule (7d7c2cd), kept verbatim as the baseline for "follow is unchanged"
 
     static func oldRule(_ event: OutputDeviceEvent, _ f: OutputDeviceFacts) -> (pause: Bool, adopt: UInt32?, reassert: Bool, re: Bool) {
         let starting = event == .enhancedStarting

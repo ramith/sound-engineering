@@ -1,5 +1,5 @@
 // Council P4 (queue / transport) — a SCRIPTED model of AudioEngineBridge, compiled beside the REAL
-// AudioViewModel sources (run.sh copies them verbatim from the panel-p4 worktree @ a206107).
+// AudioViewModel sources (run.sh copies them verbatim from the panel-p4 worktree @ 7d7c2cd).
 //
 // Modelled from the bridge source (file:line in comments), not from the VM's expectations:
 // - engineQueue is a serial FIFO: start / stop / seek / the Pure arm / the clock sample run there

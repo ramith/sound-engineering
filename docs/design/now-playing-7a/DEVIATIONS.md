@@ -3,7 +3,7 @@
 **For: Claude (fable 5) session in VS Code, repo `ramith/sound-engineering`.**
 Visual truth: `Player Layout Variants.dc.html` → card **8a** (turn 8). Material recipes: `README.md` §"Liquid Glass adoption layer". Screenshot audited: 2026-07-19 implementation build.
 
-General verdict: layout skeleton is right (hero title + analyzer, queue left, inspector right, footer transport). The deviations are mostly **material language (glass), control styling, and queue-row treatment**. Work through the numbered items; each lists the likely code home (verify — some views may have moved since commit `82bc287`).
+General verdict: layout skeleton is right (hero title + analyzer, queue left, inspector right, footer transport). The deviations are mostly **material language (glass), control styling, and queue-row treatment**. Work through the numbered items; each lists the likely code home (verify — some views may have moved since commit `ec8bedc`).
 
 ---
 

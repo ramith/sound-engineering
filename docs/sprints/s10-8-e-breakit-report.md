@@ -1,6 +1,6 @@
 # Sprint E break-it — detail pages and playlists
 
-**Base:** `sprint/s10-8-e-detail` @ `9dc00a0`. **Red tests:** `Tests/LibraryBrowseKitTests/DetailPageBreakItTests.swift`, commits `239be5d`, `7d6ded3` and `d6a8542` on `worktree-agent-a02b7b1638fab4495`.
+**Base:** `sprint/s10-8-e-detail` @ `c16364a`. **Red tests:** `Tests/LibraryBrowseKitTests/DetailPageBreakItTests.swift`, commits `239be5d`, `7d6ded3` and `d6a8542` on `worktree-agent-a02b7b1638fab4495`.
 **`swift test`: exit 1** — 589 tests, 581 pass, 8 fail (13 issues). Every failure is one of the eight new tests. A code review and its fix rounds ran in parallel; findings here are behaviour, not style.
 
 **Result:** no crash and no data loss found. One MAJOR (wrong play order), twelve MINOR. No BLOCKER.

@@ -1,7 +1,7 @@
 # The disconnect freeze (2026-10-13): evidence
 
 Switching Bluetooth headphones off froze the app for 3–7 s. This was found in the founder's final check of Sprint G,
-and fixed by PR #86 (merged as f115cca).
+and fixed by PR #86 (merged as dd5e02d).
 
 **Before you change the app ↔ engine threading, read:**
 - the threading rules in [architecture.md](../../architecture.md);

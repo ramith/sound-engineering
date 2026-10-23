@@ -1,7 +1,7 @@
 # D41 design: one contract for "what plays next" (newest request wins, per playback, applied at once)
 
 Author: Plan agent (read-only), saved verbatim-in-substance by the coordinator 2026-10-14.
-Base: `main` @ a206107, built on top of `fix/pure-safety` (672fc0a). Scope: D41's six Pure sequences, PURE-REARM-ORDER, NEXT-NEXT/Pure.
+Base: `main` @ 7d7c2cd, built on top of `fix/pure-safety` (672fc0a). Scope: D41's six Pure sequences, PURE-REARM-ORDER, NEXT-NEXT/Pure.
 
 ## 0. The decision
 

@@ -1,6 +1,6 @@
 # Area review: view models and app state (@Observable)
 
-Reviewer: swift-expert. Repo @ main (a206107), read-only. One experiment in `scratchpad/council/exp-viewmodels/` (no repo build).
+Reviewer: swift-expert. Repo @ main (7d7c2cd), read-only. One experiment in `scratchpad/council/exp-viewmodels/` (no repo build).
 Files read in full: all 14 `AudioViewModel*` files, `EQViewModel*` (3), `AdaptiveSound.swift`, `AppDelegate.swift`, `AppDataLocation.swift`,
 `MonitoringViewModel`, `NowPlayingController` (the refresh half), `AudioPlaybackEngine.swift`, `EngineSnapshot`, `SignalPathInfo`,
 `PlaybackQueueKit/TransportSnapshot`, the footer scrubber, the spectrum views, the Debug fixtures' use of the VM.

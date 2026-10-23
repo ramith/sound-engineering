@@ -2,8 +2,8 @@
 
 # Sprint G break-it, breaker B: playback, transport, EQ, Settings, shell, lifecycle
 
-Base: f3a1add (origin/main). Branch: breakit/s10-8-g-playback-shell (worktree agent-a1f9195e6f4bd466a), not pushed.
-Red evidence commits: 6033e92 (VM harness + engine probe), 83fb5ea (Master Gain launch scenario). No Sources/ or docs/ change.
+Base: bfd0d19 (origin/main). Branch: breakit/s10-8-g-playback-shell (worktree agent-a1f9195e6f4bd466a), not pushed.
+Red evidence commits: 3013962 (VM harness + engine probe), 562e885 (Master Gain launch scenario). No Sources/ or docs/ change.
 Never launched the app, never played audio, never touched the real library or the app defaults.
 
 ## How the evidence was produced

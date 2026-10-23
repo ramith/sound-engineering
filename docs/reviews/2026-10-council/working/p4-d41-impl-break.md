@@ -1,11 +1,11 @@
-# P4: breaking the IMPLEMENTED D41 fix (`fix/r1-blockers` @ f93b08e, PR #88)
+# P4: breaking the IMPLEMENTED D41 fix (`fix/r1-blockers` @ 1ebf323, PR #88)
 
 **Verdict: SHIP (D41), with one-line follow-up F-P4-1 recommended.**
 - D41 is implemented as designed, both amendments landed, and I found no regression.
 - **F-P4-1 is a wrong-song bug that was already there before D41** (D41 did not cause it). The shipped tests cannot see it, and D41's own invariant A1 says it should not happen. It can ride this PR, or go straight after it.
 
 How I ran this:
-- in my worktree `.claude/worktrees/panel-p4`, detached at f93b08e;
+- in my worktree `.claude/worktrees/panel-p4`, detached at 1ebf323;
 - builds at `-j 2` and `nice`; targeted `swift test --filter` only;
 - nothing built in `r1-blockers`. The two scratch test files are the only untracked changes.
 
@@ -75,12 +75,12 @@ How the rig is built:
 
 ## 5. Interaction with the other R1 fixes
 
-- **Pure-safety (b81d170).** The compatibility check sits after the "ended" check and before `armNext` in `pureModeEngineArmOpenedNextTrack`.
+- **Pure-safety (4c8b77b).** The compatibility check sits after the "ended" check and before `armNext` in `pureModeEngineArmOpenedNextTrack`.
   - An incompatible or untranslatable pick leaves the slot empty. The track ends, the VM starts the pick fresh, and Pure-safety's policy then decides Pure or Enhanced (new session, new prime).
   - Covered by REARM-INCOMPATIBLE, which passes in both rigs.
   - Side note: that fresh start can switch Pure→Enhanced, which exposes the pre-existing N13b count-domain leak (out of scope).
-- **RenderGate teardown parking (a4050c3 / 2840e39).** Teardown detaches the session first (`detachPureEngineForTeardown`: the field is nil under the lock), so `withPureEngine` returns nil afterwards. D41's clear and arm never reach a parked session; an in-flight open is destroyed. No interaction.
-- **N92 device changes (4fddf17 / 2a79914).** A device move or return goes through the VM's `startPlayback(resumeFrom:)` (new session, new prime). Device loss is covered above. No interaction found.
+- **RenderGate teardown parking (db636af / b624f05).** Teardown detaches the session first (`detachPureEngineForTeardown`: the field is nil under the lock), so `withPureEngine` returns nil afterwards. D41's clear and arm never reach a parked session; an in-flight open is destroyed. No interaction.
+- **N92 device changes (2c937d9 / 556beeb).** A device move or return goes through the VM's `startPlayback(resumeFrom:)` (new session, new prime). Device loss is covered above. No interaction found.
 
 ## F-P4-1: Play Next during a start's prime plays the old pick and skips the Play Next song. Already there before D41; LOCAL, one line.
 

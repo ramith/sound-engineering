@@ -1,7 +1,7 @@
 # Council code reviewer brief (Stage 2): read fully before starting
 
 1. Read **CHARTER.md** (the bar: six criteria, severity, rules) and **00-map.md** (the shared codebase map) in this
-   directory. The repo is `/Users/ramith/code/sound-engineering` @ main (a206107). READ-ONLY on Sources/Tests/scripts.
+   directory. The repo is `/Users/ramith/code/sound-engineering` @ main (7d7c2cd). READ-ONLY on Sources/Tests/scripts.
    Never launch the app or play audio. If you must build or run an experiment, make your own worktree
    (`git -C /Users/ramith/code/sound-engineering worktree add --detach .claude/worktrees/rev-<you> origin/main`) and
    put scratch files under `scratchpad/council/exp-<you>/`.

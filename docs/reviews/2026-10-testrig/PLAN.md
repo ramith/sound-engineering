@@ -16,7 +16,7 @@ collect-all §2.2, CI job graph §2.3, blocking vs advisory §2.5, manifest §3,
    as early warning (each finding → fix immediately).
 
 ## Shape: one sprint, one PR
-- Branch `testrig/integration` off `r1.1a/integration` @ f5d1329 (the migrated tests include R1.1-A's); rebase onto main
+- Branch `testrig/integration` off `r1.1a/integration` @ 0fb9ddb (the migrated tests include R1.1-A's); rebase onto main
   once PR #91 merges. Lanes branch off it in their own worktrees; I combine; ONE local run of the NEW gate; push; CI.
 - ≤ 2 agents at a time. No product behaviour changes except the test seams (clock injection, WorkTracker, TestPoints).
 - Docs: `docs/development/testing.md` (the four rules + how to write a test here), DEVELOPMENT.md (toolchain install),

@@ -10,16 +10,16 @@ pass.
 
 | PR | Commit | Scope | Founder cells |
 |---|---|---|---|
-| A | `c96eca8` | Lift the shared `MiniEqualizer` out of `PlaylistItemRow` (scaffolding, no visual change) | ☐ n/a |
-| B | `3182fd1` | Window base + single teal glow behind the cards (`GlowField.libraryGlows`) + `R4-GLOW-LIB-01` audit | ☐ dark glow ☐ RT/light fallback |
-| C | `b6c31ca` | Nav rail → floating glass card (`NavRow`, inline folders, shared `huggingGlassPanel`) | ☐ dark ☐ light ☐ hover ☐ VO ☐ keyboard/drop/rename |
-| polish | `dd55025` | Idle nav labels → dedicated `labelNav` ~72% tier (matches the mock) | ☐ founder validated the ~72% look |
-| D | `5f4f007` + `b6c6070` (default column order) | Songs list → custom column-customizable glass card (replaces the SwiftUI `Table`) | ☐ default view ☐ playing eq ☐ columns show/hide ☐ click-sort ☐ h-scroll ☐ RM/RT/light |
+| A | `2dff0d6` | Lift the shared `MiniEqualizer` out of `PlaylistItemRow` (scaffolding, no visual change) | ☐ n/a |
+| B | `5a37440` | Window base + single teal glow behind the cards (`GlowField.libraryGlows`) + `R4-GLOW-LIB-01` audit | ☐ dark glow ☐ RT/light fallback |
+| C | `0b5c2e7` | Nav rail → floating glass card (`NavRow`, inline folders, shared `huggingGlassPanel`) | ☐ dark ☐ light ☐ hover ☐ VO ☐ keyboard/drop/rename |
+| polish | `90f7378` | Idle nav labels → dedicated `labelNav` ~72% tier (matches the mock) | ☐ founder validated the ~72% look |
+| D | `b6d2998` + `51eaf80` (default column order) | Songs list → custom column-customizable glass card (replaces the SwiftUI `Table`) | ☐ default view ☐ playing eq ☐ columns show/hide ☐ click-sort ☐ h-scroll ☐ RM/RT/light |
 
 Hashes are `main`'s (PR #63 was rebase-merged, so they differ from the old
 `sprint/s10-8-polish` hashes). Two tooling commits rode along in that PR, both caused by brew
-moving on during the Jul→Oct idle gap, neither touching the Library: `1dba11a` (swiftformat
-0.63.0 / swiftlint 0.65.1 pins) and `71ffbda` (clang-tidy major pinned to LLVM 23, its new
+moving on during the Jul→Oct idle gap, neither touching the Library: `67c9b94` (swiftformat
+0.63.0 / swiftlint 0.65.1 pins) and `96f1a4c` (clang-tidy major pinned to LLVM 23, its new
 checks adopted across the C++). **Not yet built:** the "Fast-follows" list, deviations 6 and 8,
 and the guide's PR-E / PR-F / final pass — these land on a fresh branch off `main`, not on the
 merged sprint branch.

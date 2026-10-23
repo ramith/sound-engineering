@@ -1,8 +1,8 @@
 # Test-rig redesign: QA expert (flake science, test design, framework support)
 
-Reviewed: `r1.1a/integration` @ 22287da (read-only worktree `testrig-review`). Note: `Loudness_WorkersSleepWhileIdle`
-was fixed after that commit (f5d1329, a per-worker `isParked()` plus a wake counter). Below it is listed as FIXED and used as
-the model pattern. Line numbers are from 22287da.
+Reviewed: `r1.1a/integration` @ b080a29 (read-only worktree `testrig-review`). Note: `Loudness_WorkersSleepWhileIdle`
+was fixed after that commit (0fb9ddb, a per-worker `isParked()` plus a wake counter). Below it is listed as FIXED and used as
+the model pattern. Line numbers are from b080a29.
 
 Evidence I opened is listed in the Sources section at the end. Probes are under `scratchpad/testrig/qa/probe` (swift-testing
 behaviour) and `scratchpad/testrig/probe-cpu` (wall time vs thread CPU time).
@@ -99,7 +99,7 @@ OnDeckEngineModel.swift:39). That is exactly what makes the OnDeck rigs mostly d
 
 | ID | Where | What | Class | Mode | Risk |
 |---|---|---|---|---|---|
-| N1 | LoudnessTests.inc:280-391 `Loudness_WorkersSleepWhileIdle` | counted process-wide context switches (`getrusage`, :290, voluntary + involuntary) after a 350 ms settle, limit 10 (:286). CI saw 11. **FIXED in f5d1329**: it now waits for `parked()`, then checks over 300 ms that the worker's *own* `wakes()` count stands still. The window is still a negative window, but a slow machine can only lower that count, never raise it | C5 process-global counter | RED | High → fixed |
+| N1 | LoudnessTests.inc:280-391 `Loudness_WorkersSleepWhileIdle` | counted process-wide context switches (`getrusage`, :290, voluntary + involuntary) after a 350 ms settle, limit 10 (:286). CI saw 11. **FIXED in 0fb9ddb**: it now waits for `parked()`, then checks over 300 ms that the worker's *own* `wakes()` count stands still. The window is still a negative window, but a slow machine can only lower that count, never raise it | C5 process-global counter | RED | High → fixed |
 | N2 | EqTransitionTests.inc:355-400 `tdEqCpuPercent` (used by `EQ_Cpu_7_1_192k` :637-660 and EqEngineFixTests.inc:924-951 `EQ_Cpu_7_1_AboveSupportedRates`) | CPU% from **wall** `steady_clock`. Apple libc++'s steady_clock is CLOCK_MONOTONIC_RAW, which "also counts cycles when the system is asleep" (src-libcxx/chrono.cpp:175-183). Hence 90 600 % across a Mac sleep. At -O0 the budget is a 1000 % tripwire | C4 measures the machine | RED | Medium (High if an optimised budget is ever gated) |
 | N3 | EqDesignerTests.inc:1566-1626 `Designer_Timing` | wall time per design; -O0 budget 3000 µs, CI took 1192 µs (2.5x headroom) | C4 | RED | Medium |
 | N4 | TrackLoudnessTests.inc:2063-2200 `Profiler_Timing` | wall; feed budget 250 ms/s (CI 85, 2.9x); **predict budget 40 ms, CI 21 ms (1.9x)** | C4 | RED | **High** |
@@ -126,7 +126,7 @@ Already right in the null test (keep these as models):
   hand-off. This is the PR #89 fix.
 - **RenderGateTests.inc:1-37, :255-380**: interleavings forced with atomics, `kWaitForever`, and an iteration-bounded
   `spinUntil` that fails instead of hanging; the wall clock is info only.
-- **N1 after f5d1329**: count the code's own wake-ups.
+- **N1 after 0fb9ddb**: count the code's own wake-ups.
 
 Not gated: EqEngineBreakItMeasurements.inc (wall-clock CPU, a 6 s storm), report only.
 
@@ -396,7 +396,7 @@ Each feature below covers: what it does, which of our classes it removes, and wh
    - `Realizer::barrier()` (exists);
    - `resampleQueue.sync {}` (exists, but only drains what has already arrived);
    - `CoalescingWriter.flush()` (exists);
-   - **f5d1329's `isParked()` + wake counter** (the model for C++ workers).
+   - **0fb9ddb's `isParked()` + wake counter** (the model for C++ workers).
    New hooks to add:
    - a `LoudnessModule` processed-frames counter or `drainForTest()` for N11-N13. Each paced block then becomes "push, then
      wait until processed ≥ pushed".
@@ -413,7 +413,7 @@ Each feature below covers: what it does, which of our classes it removes, and wh
    - the completion chain has run past the frame (R6, R8).
    Otherwise a slow machine passes the test vacuously (GREEN*).
 5. **Count the code, not the machine.** Never use process-wide counters (`getrusage`), never "context switches", never
-   "reads in one second" as a pass criterion. Count per-object events (N1 → f5d1329).
+   "reads in one second" as a pass criterion. Count per-object events (N1 → 0fb9ddb).
 6. **Performance gets its own lane.**
    - The functional gate keeps only *catastrophic tripwires* with ≥ 10x headroom, measured in **thread CPU time**
      (`CLOCK_THREAD_CPUTIME_ID`) and reported as the **minimum** of N runs, never the maximum (N2-N7, S1, V3).
@@ -508,7 +508,7 @@ Ordered by cost per avoided CI cycle, cheapest insurance first.
    - cut the `[UX]` log volume in tests (P3), e.g. send test runs' NSLog to a file.
 4. **The free-running chains (2-3 days, the High item R4):**
    - the Enhanced rig waits on completions-delivered instead of pacing (R4, R9, R7);
-   - LoudnessModule processed-frame hooks for N11-N13 (the same idea as f5d1329).
+   - LoudnessModule processed-frame hooks for N11-N13 (the same idea as 0fb9ddb).
 5. **Fixed settles:** an injected tick/clock for S5-S7; a debounce flush for N8; a witness or condition for V7.
 6. **Carry-on deadlines and short polls:** N9, N10, N15, N18 fail naming the state; R5, R7, N16 and N17 get hang-guard
    budgets.

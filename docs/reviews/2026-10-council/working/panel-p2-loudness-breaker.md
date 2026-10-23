@@ -1,6 +1,6 @@
 # Panel P2: loudness, limiter, crossfeed, spatial, blend. BREAKER report
 
-Repo `main` @ a206107. I built and ran everything in my own worktree (`.claude/worktrees/panel-p2-breaker`), with
+Repo `main` @ 7d7c2cd. I built and ran everything in my own worktree (`.claude/worktrees/panel-p2-breaker`), with
 scratch in `scratchpad/council/exp-p2-breaker/`. I did not edit Sources/Tests, launch the app or play audio. The
 AVAudioEngine probes ran in offline manual-rendering mode, so no device was touched.
 

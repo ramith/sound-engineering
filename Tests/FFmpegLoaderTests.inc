@@ -64,7 +64,7 @@ namespace
 
 // Off is the default, and off loads nothing: no decode backend, no metadata read, no dlopen — even
 // when a backend is forced (ADAPTIVESOUND_DECODER=ffmpeg) and even if FFmpeg was loaded earlier in
-// the process. Red on cf861d4: FFmpeg opened the forced decode and the FLAC's tags.
+// the process. Red on d2b689a: FFmpeg opened the forced decode and the FLAC's tags.
 static auto testFFmpegOffByDefaultLoadsNothing() -> void
 {
     constexpr const char* kName = "FFmpeg_OffByDefault_LoadsNothing";

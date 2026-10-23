@@ -1,4 +1,4 @@
-// P2 breaker harness: drives the REAL AdaptiveSound DSP code (main @ a206107) with adversarial
+// P2 breaker harness: drives the REAL AdaptiveSound DSP code (main @ 7d7c2cd) with adversarial
 // inputs and dumps raw float32 outputs for the independent Python oracles (p2oracle.py).
 // Read-only use of Sources/. Built by build.sh into this scratch directory only.
 #include "DSPKernel.h"

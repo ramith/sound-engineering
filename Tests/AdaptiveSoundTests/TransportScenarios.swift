@@ -94,7 +94,7 @@ enum TransportScenarios {
         rig.vm.play()
         try await rig.waitForEngineCall(after: calls)
         rig.vm.nextTrack()
-        try await rig.waitForCommands() // (b5c4cd3: Next during a start only re-selected — no command)
+        try await rig.waitForCommands() // (532ab79: Next during a start only re-selected — no command)
         try await land(rig, order)
         let ok = rig.engine.current == track(1) && !rig.engine.ended && rig.vm.isPlaying && rig.shown == track(1)
         return Outcome(ok: ok, detail: "PLAY-THEN-NEXT on \(OnDeckScenarios.pathName(pure)), \(order) [\(commands)]: "

@@ -1,6 +1,6 @@
 # EQ3a break-it — adversarial pass
 
-Target: `feat/s10-8-eq` @ `7e7d740` (EQ3a: the EQ’s editing logic, view model, `eqStateV2` persistence,
+Target: `feat/s10-8-eq` @ `1c5c3b8` (EQ3a: the EQ’s editing logic, view model, `eqStateV2` persistence,
 the v1 migration, slots, Edge 5 and the output toast). Branch with the red tests:
 `test/s10-8-eq3a-break-it` @ `5b91e14` (no product code changed).
 
@@ -78,7 +78,7 @@ can’t fire yet. Those become live with EQ4. One of them, finding 5 (C1), would
 
 ## What held up
 
-- **Migration (v1 → v2), checked against v1’s own writer at `70ed785`.**
+- **Migration (v1 → v2), checked against v1’s own writer at `d3abd8e`.**
   - Every v1 edit path (drag, keyboard nudge, VoiceOver) went through `commitCustomBandEdits`, which
     sets `selectedPreset = nil`. So `presetRaw != nil` ⇒ unedited, and rule 1 is sound.
   - v1’s `EQPreset.gains` and today’s `EQBuiltInPreset.points` use identical formulas at identical ISO

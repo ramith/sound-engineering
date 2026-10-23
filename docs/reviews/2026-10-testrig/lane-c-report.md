@@ -1,6 +1,6 @@
 # Lane C report: the Swift test rig and the view-model seams
 
-Branch `testrig/swift-rig` (worktree `.claude/worktrees/testrig-c`), rebased onto `testrig/integration` @ cf8ebb9. 19 commits, no push.
+Branch `testrig/swift-rig` (worktree `.claude/worktrees/testrig-c`), rebased onto `testrig/integration` @ 3b6d83d. 19 commits, no push.
 My ea0c119 (LiveReadouts waits) was dropped on the rebase as already in #93; the LiveReadouts suite is rewritten onto the ticker seam.
 
 ## Commits

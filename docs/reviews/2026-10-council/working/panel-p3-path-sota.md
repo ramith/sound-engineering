@@ -1,7 +1,7 @@
 # Panel P3: state of the art and correctness by reference (signal path, gapless, Pure)
 
 **Role:** state-of-the-art / correctness-by-reference panelist. Independent of the P3 breaker; I did not read that file.
-**Code:** `main` @ a206107, read-only. Experiments were built in my worktree `.claude/worktrees/panel-p3-sota` and in
+**Code:** `main` @ 7d7c2cd, read-only. Experiments were built in my worktree `.claude/worktrees/panel-p3-sota` and in
 `scratchpad/council/exp-p3-sota/`. Machine: Apple M4 Pro, macOS 26 SDK, Swift 6.3.2. I never launched the app and never
 played audio to a device. Device facts come from read-only HAL property queries.
 

@@ -1,6 +1,6 @@
 # Area review: the LIBRARY (store, scan, browse kit, models, queue mirror)
 
-Reviewer: library area. Repo @ a206107 (main). Read-only. Scope read in full or in the relevant parts:
+Reviewer: library area. Repo @ 7d7c2cd (main). Read-only. Scope read in full or in the relevant parts:
 `Sources/LibraryStore/*` (28 files, 5.5k LOC, not the 18 the brief says), `Sources/LibraryScan/*`,
 `Sources/LibraryBrowseKit/*` (selected), app-side `LibraryModel*`, `LibraryBrowseModel*`, `PlaylistsModel*`,
 `AudioViewModel+QueueMirror/+QueueHydration/+PlayTracking`, the library views' reload wiring.

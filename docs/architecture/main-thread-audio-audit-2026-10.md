@@ -1,8 +1,8 @@
-> **Status (2026-10-13):** findings S1-A…S3 fixed (rules: [architecture.md, "Threading rules (app ↔ engine)"](architecture.md#threading-rules-app--engine); regression test `make main-thread-stall` reproduces Experiments 1–2) and the Pure-seek side finding fixed — both **merged in PR #86** (`f115cca`; the Pure-seek fix is `ffaea17` + `f115cca`); `accruePlayThrough` is deferred past R1. The `scratchpad/audit-mt/` artifacts named below were not kept. **The file:line references below are as of `5b348fe`, before the fix** (e.g. the bridge's `currentPlaybackPosition` is gone; the tick now reads `snapshot()`).
+> **Status (2026-10-13):** findings S1-A…S3 fixed (rules: [architecture.md, "Threading rules (app ↔ engine)"](architecture.md#threading-rules-app--engine); regression test `make main-thread-stall` reproduces Experiments 1–2) and the Pure-seek side finding fixed — both **merged in PR #86** (`dd5e02d`; the Pure-seek fix is `8db09c8` + `dd5e02d`); `accruePlayThrough` is deferred past R1. The `scratchpad/audit-mt/` artifacts named below were not kept. **The file:line references below are as of `457f895`, before the fix** (e.g. the bridge's `currentPlaybackPosition` is gone; the tick now reads `snapshot()`).
 
 # Audit: every path where the main thread can wait on audio
 
-**Scope.** `origin/main` @ 5b348fe. Local `main` @ 5a51057 differs only in docs, so `Sources/` is identical. Branches `*main-thread-stall*` and the worktree `g-fix-stall` were not looked at.
+**Scope.** `origin/main` @ 457f895. Local `main` @ 32adbb1 differs only in docs, so `Sources/` is identical. Branches `*main-thread-stall*` and the worktree `g-fix-stall` were not looked at.
 
 **Method.**
 - Read the code end to end: the bridge, the view models, the UI, the C-ABI and the C++ HAL/decoder code.

@@ -1,8 +1,8 @@
 # Lane A: review fixes (branch `testrig/gate-review-fixes`)
 
-Worktree `.claude/worktrees/testrig-a`, on top of `testrig/integration` 99f046f. Not pushed. Nothing here has run on GitHub yet: every CI claim below is a local proof, and the first real CI run is still the open item B4.
+Worktree `.claude/worktrees/testrig-a`, on top of `testrig/integration` 2831847. Not pushed. Nothing here has run on GitHub yet: every CI claim below is a local proof, and the first real CI run is still the open item B4.
 
-## Commits (on 99f046f)
+## Commits (on 2831847)
 
 | commit | finding(s) | what |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Lane A: ShellCheck (L8)
 
-Branch `testrig/shellcheck` (worktree `.claude/worktrees/testrig-a`), on `testrig/integration` 0690ebd. Not pushed. Tests/ not touched.
+Branch `testrig/shellcheck` (worktree `.claude/worktrees/testrig-a`), on `testrig/integration` 0acfdb3. Not pushed. Tests/ not touched.
 
 ## Commits
 

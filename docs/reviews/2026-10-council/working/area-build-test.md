@@ -1,6 +1,6 @@
 # Area review: test architecture, build and CI (as engineering artifacts)
 
-Reviewer: area / build-test. Repo @ a206107. Read-only on the repo. Experiments live in `scratchpad/council/exp-build-test/`. The worktree I built in was removed.
+Reviewer: area / build-test. Repo @ 7d7c2cd. Read-only on the repo. Experiments live in `scratchpad/council/exp-build-test/`. The worktree I built in was removed.
 
 **Experiments run (so the claims below are measured, not assumed):**
 - **E1: `@testable import` of the executable app target works.** A scratch package, then the real repo in a worktree, with a test target depending on `AdaptiveSound` and `@testable import AdaptiveSound`. `swift test --filter` ran a `@MainActor` test that names `AudioViewModel`. It passed (cold build 151 s). I only proved reachability. I did not instantiate the view model.

@@ -1574,7 +1574,7 @@ static auto testPureModeBridgeRateArrayCopiedFaithfully() -> void
 
 // Pure decodes to float32 (24 significant bits) and writes the device's own format. A source deeper
 // than what reaches the device is NOT bit-perfect — a 24-bit file on a 16-bit-only DAC used to be
-// labelled BitPerfectInteger and truncated (C-33). Red on cf861d4: there was no depth check, so every
+// labelled BitPerfectInteger and truncated (C-33). Red on d2b689a: there was no depth check, so every
 // row came back as the engaged reason.
 static auto testPureModeBitExactnessDepthRule() -> void
 {

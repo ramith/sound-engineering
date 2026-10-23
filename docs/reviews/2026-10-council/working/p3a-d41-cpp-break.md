@@ -1,4 +1,4 @@
-# P3a breaker: the C++ half of the D41 wrong-song fix (`fix/r1-blockers` @ f93b08e; commit 9daaa15)
+# P3a breaker: the C++ half of the D41 wrong-song fix (`fix/r1-blockers` @ 1ebf323; commit 04738cf)
 
 **Verdict: SHIP.**
 - Every race the fix targets gives only allowed outcomes, at -O2, under TSan and under ASan+UBSan.
@@ -7,7 +7,7 @@
 - I found **one latent defect** in `GaplessSource`'s arm contract (§3), with a deterministic repro. The shipped bridge cannot reach it in practice, because its clear and its arm are at least about 50 µs apart while the race window is a few instructions. It is a small, control-plane-only fix to make before anything arms right after a clear.
 
 **Setup.**
-- My worktree is `.claude/worktrees/panel-p3-breaker`, detached at f93b08e.
+- My worktree is `.claude/worktrees/panel-p3-breaker`, detached at 1ebf323.
 - `cpp/h8_d41.cpp` drives the REAL `GaplessSource` + `FileDecodeSource`: one paced render thread against one control thread, with constant-code fixtures (A 1000 × 2048 frames, B 2000 × 1024, C 3000 × 1024).
 - `py/d41_model.py` is an exhaustive interleaving model.
 - `d41inst/` is the real `GaplessSource.cpp` plus ONE test hook (a pause point), for the deterministic repro.

@@ -60,7 +60,7 @@ macOS behavior here, and we'll wire it differently.
 
 ## PR 5 — review-fix verification riders (check during the founder round)
 
-The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard cells:
+The swiftui-pro round (fixes in `4b493e7`) added targeted riders to the standard cells:
 
 1. **Jump-vs-filter (was BLOCKER):** with the now-playing track filtered OUT, and again from
    the No-Matches state, press Jump-to-Now-Playing — the filter must clear AND the row must
@@ -80,7 +80,7 @@ The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard
 
 ## Ledger
 
-### Break-it round — run 2026-07-18 (qa-expert + the-fool; fixes in `8b7f8ed` + `0c4ddae`)
+### Break-it round — run 2026-07-18 (qa-expert + the-fool; fixes in `851e910` + `f679a29`)
 
 FIXED this round: end-of-queue never stopped (BLOCKER — hooks cleared at the final seam
 swallowed the last EOF; nil-hook-under-live-epoch now surfaces the ended state; empirically
@@ -135,7 +135,7 @@ FILED, not fixed (dispositions):
 
 ### PR 7 — accepted 2026-07-18 (final milestone)
 
-Art-sampled glows, D8 (`6ccd5a1` + review round `53e431b`). swiftui-pro verdict was
+Art-sampled glows, D8 (`e0280cb` + review round `9895d25`). swiftui-pro verdict was
 request-changes; all findings applied — including the cache-key BLOCKER (relativePath is ""
 for every queue track → the first palette would have served the whole session; keyed by the
 file URL now) and a strengthened audit: R4-GLOW-D8 folds the FULL 2³ per-slot {clamp-corner,
@@ -156,7 +156,7 @@ flip with a sampled palette active, missing-art brand fallback, crossfade-vs-fli
 
 ### PR 6 — accepted 2026-07-18
 
-Chrome + footer restyle (`b78b3ad..11bf514`): Enhanced sample-rate fix (the founder's
+Chrome + footer restyle (`8e829a7..551d901`): Enhanced sample-rate fix (the founder's
 `-- kHz` finding), status text/fill split (founder decision; retired ALL 4 contrast pins —
 `swift test` = 0 known issues since), glass device pill + D5 rate readout w/ numericText,
 footer scrubber on the shared carved groove (shadow-literal TEMP retired by adoption),
@@ -164,9 +164,9 @@ ChromeBar Dynamic-Type clamp + gate guard, footer signal slot widened (SLOT-03).
 
 Founder rounds (3): caught the stale-binary trap, the footer "48 k…" truncation (fixed,
 SLOT-03), the pill readout never rendering (macOS Menu labels don't re-render on data
-change — readout moved beside the Menu, `030b6ad`), and the WRONG-SONG bug (device switch /
+change — readout moved beside the Menu, `f8f0934`), and the WRONG-SONG bug (device switch /
 48 kHz seek fired stale .dataPlayedBack completions into the armed gapless seam → epoch
-guard `92aef6b` + review hardening `11bf514`; swift-expert verdict APPROVE with the
+guard `d02a916` + review hardening `551d901`; swift-expert verdict APPROVE with the
 stale-session hole closed). Founder verified: pill rate rolls on device switch; scrubber
 "looks ok"; H clean — the light-mode teal play button is BY DESIGN (brand-gradient primary
 action, matches the logo + the 8a mock; prev/next correctly flip neutral); device switching
@@ -202,7 +202,7 @@ Break-it-round items filed from this PR's rounds:
 ### PR 5 — accepted 2026-07-18
 
 The 8a restructure (hero-right lens, queue-flex + 260pt inspector, queue filter) + the
-swiftui-pro review round (`bbf36cb`) + the crossfeed one-row fix (`67a25ee`).
+swiftui-pro review round (`4b493e7`) + the crossfeed one-row fix (`26871c7`).
 
 Cells captured (dark unless noted): A (playing — hero-left short badge set + lens at 560max
 with 0 dB/axis/gridlines/caps; queue rows directly on the glow; both carved sliders), B
@@ -223,7 +223,7 @@ Keyboard/VO walk (keyboard-nav ON) — all green:
 
 Review-fix riders all verified: no bits/decoder capsules in the hero; grip behaviour and
 inspector corners hold. Founder change during the round: crossfeed toggle + strength picker
-now share one inspector row (`67a25ee`).
+now share one inspector row (`26871c7`).
 
 Findings routed to PR 6 (that PR owns the surface, not a PR-5 defect):
 - The signal badge + footer show `-- kHz` under Enhanced — `achievedSampleRate` is populated

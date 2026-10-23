@@ -1,6 +1,6 @@
 # Area review: C / C++ / Objective-C++ in `Sources/AudioDSP/` (council Stage 2)
 
-Reviewer: area-dsp-cpp. Snapshot: `main` @ `a206107`. Read-only on Sources/Tests. Sources opened for state of the art are
+Reviewer: area-dsp-cpp. Snapshot: `main` @ `7d7c2cd`. Read-only on Sources/Tests. Sources opened for state of the art are
 saved under `scratchpad/council/exp-dsp-cpp/src/` (VLC `auhal.c`, SFBAudioEngine `AudioPlayer.{h,mm}`, JUCE
 `juce_FloatVectorOperations.{h,cpp}` and `juce_ProcessorChain.h`, Apple TN2091, Apple `AVAudioEngine.stop()` doc JSON). The
 macOS 26 SDK headers (`CoreAudio.framework/Headers/AudioHardware.h`, `AudioHardwareBase.h`) were read locally. One experiment

@@ -1,6 +1,6 @@
 # Sprint EQ — break-it pass on the IMPLEMENTED EQ engine
 
-*2026-10-10. Base `feat/s10-8-eq` @ 9fc7d66; break-it branch `test/s10-8-eq-engine-break-it` @ 31dea8e.
+*2026-10-10. Base `feat/s10-8-eq` @ 12ea184; break-it branch `test/s10-8-eq-engine-break-it` @ 31dea8e.
 Machine: Apple Silicon (this worktree's Mac), optimised measurements at `-O2`.*
 
 **Method.** I attacked the merged code, not the plan, in two ways:

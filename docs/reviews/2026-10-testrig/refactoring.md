@@ -3,8 +3,8 @@
 Panel member: refactoring specialist. Scope: the concrete code design of a rig in which the 13 problems in
 `BRIEF.md` cannot recur. Review and design only: nothing in `Sources/` or `Tests/` was edited.
 
-Code read at `.claude/worktrees/testrig-review` (= `r1.1a/integration` @ 22287da). The coordinator reports that
-`Loudness_WorkersSleepWhileIdle` has since been fixed in f5d1329 (read below). Probes and opened upstream sources
+Code read at `.claude/worktrees/testrig-review` (= `r1.1a/integration` @ b080a29). The coordinator reports that
+`Loudness_WorkersSleepWhileIdle` has since been fixed in 0fb9ddb (read below). Probes and opened upstream sources
 are in `scratchpad/testrig/probe-repeat/` and `scratchpad/testrig/upstream/`.
 
 ---
@@ -66,7 +66,7 @@ home-grown code, about 250 lines in all, each with a self-test that proves it fa
 | `SeamPause` + `seamPauseHook` | `GaplessArmContractTests.inc:630-700` | Deterministic handshake through the product's test points. Its waits are **unbounded** `while (!flag) yield()` loops (`:617-628`, `:676-680`, `:692-697`), so a regression hangs the binary. |
 | Product test points | `Sources/AudioDSP/include/GaplessSource.h:172-190, 235-240`; `GaplessSource.cpp:312-325, 212, 372, 374`; enabled by `-DADAPTIVESOUND_GAPLESS_TEST_HOOKS=1` (`scripts/build-null-test.sh:142`) | Compiles to nothing in the app. **The right pattern**, but specific to one class. |
 | Poll budgets | `PureGaplessTests.inc:46-49` (4000 × 1 ms; `pollGaplessEnded` 200 × 1 ms `:103-115`); `FileDecodeTests.inc:231-233` (100 attempts × 2 ms; `pollFinished` 60 × 2 ms ≈ 120 ms `:460-470`); `GaplessArmContractTests.inc:46, 91-99` (`openArmTrack`: 20 000 × 100 µs, then **returns the source anyway**) | Short attempt-times-nap budgets for a background decode thread, which is slow under TSan or load. Some carry on silently. |
-| Telemetry that exists | `DSPKernel::causalLoudnessFedFrames()`; `GaplessSource::reapCount()/hasPendingReap()`; `Realizer::barrier()`, `loudnessGain().needsRefresh()/causalSeconds()`; since f5d1329 `WorkerParking::isParked()/wakeCount()` | These are the seams tests should wait on. |
+| Telemetry that exists | `DSPKernel::causalLoudnessFedFrames()`; `GaplessSource::reapCount()/hasPendingReap()`; `Realizer::barrier()`, `loudnessGain().needsRefresh()/causalSeconds()`; since 0fb9ddb `WorkerParking::isParked()/wakeCount()` | These are the seams tests should wait on. |
 
 ### 1.3 The cooperative-pool hypothesis (item 3; flagged as a hypothesis)
 
@@ -217,7 +217,7 @@ template <typename Fn> double bestOfThreadCpu(int repeats, Fn fn); // the minimu
    everything that could cause X, then check. A sleep "window" is acceptable only as an extra, never as the
    proof (e.g. ANALYZER-04's 500 ms idle, `TrackLoudnessAnalyzerTests.swift:76`).
 
-**Done example: f5d1329** (`Loudness_WorkersSleepWhileIdle`). `WorkerParking` now exposes `isParked()` (waiting,
+**Done example: 0fb9ddb** (`Loudness_WorkersSleepWhileIdle`). `WorkerParking` now exposes `isParked()` (waiting,
 and no wake handed since it began to wait) and `wakeCount()`. Only the worker writes them; the render thread never
 touches them. The test waits until each worker is parked, reads its count and requires it to stand still. Other
 threads' context switches cannot affect it, so the tolerance can be zero. This replaced process-wide
@@ -248,7 +248,7 @@ main-actor bookkeeping, and the render thread gets nothing new (at most a read o
 | 3.1 | **A ticker for the 20 Hz transport tick** | `AudioViewModel+TransportTick.swift:37-48` (`runTransportTickIfLive` builds a `Timer`) | Inject `makeTicker: @MainActor (@escaping @MainActor () -> Void) -> any Ticker`. The default is the same `RunLoop.main` `.common` Timer. The test's `ManualTicker` has `fire()` and `isRunning`. `tickTransport()` and `disarmTransportTick()` already exist "for tests that tick by hand" (`:26-31`). | Main actor only. No AVFAudio. |
 | 3.2 | **An injected `Clock` for debounces and lifetimes** | `AudioViewModel+QueueMirror.swift:21-29` (250 ms); `LibraryModel+Reconcile.swift:128` (1000 ms); `UI/Shell/ShellToast.swift:40`; `UI/EQ/EQBringBackMessage.swift:80-83`; `UI/Library/SongsView.swift:37` | Init parameter `clock: any Clock<Duration> = ContinuousClock()`. That is the **stdlib protocol**: the product takes on no dependency. Tests pass swift-clocks' `ImmediateClock` (the debounce becomes a no-op; then await the task handle), or `TestClock` when the coalescing itself is under test. | No thread change. |
 | 3.3 | **In-flight work tracker** (kills the five `settle()` copies) | VM fire-and-forget `Task {}` at `AudioViewModel+Devices.swift:39, 63`, `+Lifecycle.swift:24`, `+PlayTracking.swift:67`, `+Playback.swift:60, 96, 154`, `+Queue.swift:197`; `SettingsStore.swift:74` | A `@MainActor final class WorkTracker { func spawn(...) -> Task; var isIdle: Bool; func idle() async }`: a counter incremented at spawn and decremented on completion. `SettingsStore` exposes `pendingWrite: Task<Void, Never>?`. | Main-actor counter. Detached tasks keep their QoS. |
-| 3.4 | **Worker telemetry, as f5d1329 did** | `LoudnessModule` (the meter worker) | `meterFedFrames()` like `DSPKernel::causalLoudnessFedFrames()`: a read of the ring's consumer index or a worker-side counter. It replaces "paced" sleeps (`EqEngineBreakItTests.inc:171`, `EqEngineTests.inc:466`, `EqEngineFixTests.inc:584`) and "sleep then read" (`LoudnessTests.inc` 100 ms reads, `EqEngineBreakItTests.inc:182, 186`) with "wait until fed == pushed". | Worker writes it, any thread reads it. The render thread is unchanged. |
+| 3.4 | **Worker telemetry, as 0fb9ddb did** | `LoudnessModule` (the meter worker) | `meterFedFrames()` like `DSPKernel::causalLoudnessFedFrames()`: a read of the ring's consumer index or a worker-side counter. It replaces "paced" sleeps (`EqEngineBreakItTests.inc:171`, `EqEngineTests.inc:466`, `EqEngineFixTests.inc:584`) and "sleep then read" (`LoudnessTests.inc` 100 ms reads, `EqEngineBreakItTests.inc:182, 186`) with "wait until fed == pushed". | Worker writes it, any thread reads it. The render thread is unchanged. |
 | 3.5 | **Test points, generalised** | `GaplessSource.h:172-190, 235-240` (`ADAPTIVESOUND_GAPLESS_TEST_HOOKS`) | Move the hook type and `atTestPoint` into `include/TestPoints.h`: `template <typename Point> struct TestPointHook`, compiled to an empty inline unless `ADAPTIVESOUND_TEST_POINTS` is defined (the null test's build only). GaplessSource keeps its three points. New points are added **only when a test needs one**: no speculative hooks. | In the app it compiles to nothing. In the test build: one acquire load. |
 | 3.6 | **The analyzer's hold point** | `TrackLoudnessAnalyzer.swift:166-170` (the decode on `Task.detached`) | No product change needed: the sink is the seam. `RecordingSink` uses `Hold`. Optional: an `init(…, taskPriority:)` so tests can avoid utility-QoS starvation. Weigh this: it changes nothing in the app. | n/a |
 
@@ -287,7 +287,7 @@ Effort: S ≤ ½ day, M ≤ 2 days, L > 2 days. "Order" is the phase in §4.1.
 
 | # | Site (file:line) | Today | Target | Effort | Order |
 |---|---|---|---|---|---|
-| C1 | `LoudnessTests.inc:270-390` `Loudness_WorkersSleepWhileIdle` | Process `getrusage` | **Done, f5d1329** (`isParked`/`wakeCount`). Also check the commit's 100 ms "sleep then read" lines; if still present, wait on fed frames (seam 3.4) | — | done |
+| C1 | `LoudnessTests.inc:270-390` `Loudness_WorkersSleepWhileIdle` | Process `getrusage` | **Done, 0fb9ddb** (`isParked`/`wakeCount`). Also check the commit's 100 ms "sleep then read" lines; if still present, wait on fed frames (seam 3.4) | — | done |
 | C2 | `RenderGateTests.inc:22-37` | Local `spinUntil` | Move it to `TestSupport.h` as `waitUntil`. RenderGate keeps its yield-count semantics through the same helper | S | 0 |
 | C3 | `GaplessArmContractTests.inc:91-99` `openArmTrack` | 2 s budget, then **returns an undecoded source** | `waitUntil("decoder finished", src->decoderFinished())`; on false, `nullptr` (the callers already handle that) | S | 1 |
 | C4 | `GaplessArmContractTests.inc:617-628, 676-680, 692-697` (`SeamPause`) | Unbounded yields | `Rendezvous<TestPoint>` (bounded, names the point) | M | 1 |

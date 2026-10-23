@@ -3,7 +3,7 @@
 **Question (founder):** "Do a research on anything we can use that is mainstream and reputed" for the default
 Enhanced engine, instead of building our own. The founder decides afterwards.
 
-**Date:** 2026-10-14. **Repo state read:** `main` @ a206107 (read-only; nothing in `Sources/` or `Tests/` touched).
+**Date:** 2026-10-14. **Repo state read:** `main` @ 7d7c2cd (read-only; nothing in `Sources/` or `Tests/` touched).
 **Evidence location:** everything is under `scratchpad/engine-research/`:
 - `ref-sfb/` SFBAudioEngine @ 9ed712d4 (0.14.0 + 4 commits); `ref-cog/` Cog @ fb2ed48d; `ref-mpv/` mpv @ 270367e8;
   `ref-miniaudio/` @ 9634bedb (0.11.25); `ref-audiokit/` @ c358c15f (5.7.2 + fixes); `ref-vlc/` (sparse) @ ce4af2f7;

@@ -1,6 +1,6 @@
 # Breaker review: S10.8 G main-thread-stall fix
 
-**Branch reviewed:** `sprint/s10-8-g-fix-main-thread-stall` @ 90a62e8 (8 commits on 5b348fe).
+**Branch reviewed:** `sprint/s10-8-g-fix-main-thread-stall` @ 90a62e8 (8 commits on 457f895).
 
 **Worktree:** `.claude/worktrees/review-breaker`, detached. The only local edits are an uncommitted harness plus a one-line hook, and nothing was committed.
 

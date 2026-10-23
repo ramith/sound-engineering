@@ -1,4 +1,4 @@
-// R1.1-A close-out break-it (P3a, audio side), kept as a regression test (red on c9efbe6). #included
+// R1.1-A close-out break-it (P3a, audio side), kept as a regression test (red on b1cc33c). #included
 // after PureModeTests.inc (makeFile, the policy).
 //
 // A 24-bit ALAC (and FLAC) file read by the Apple decoder — the default decoder since FFmpeg became

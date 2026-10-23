@@ -1,6 +1,6 @@
 # Test rig and gate: architecture review (architect lens)
 
-Reviewer: architect (one of three on the panel). Code read: `.claude/worktrees/testrig-review` (= `r1.1a/integration` @ 22287da), the seven PR #91 CI logs, the council's `area-build-test.md` (BT-1…BT-12) and `process.md`, and the memory notes on the gate. Read-only on the repo. My probes and downloaded sources are under `scratchpad/testrig/` (`probe-pkg/`, `probe-cpu/`, `src-*/`). Downloaded sources were read, never built or run.
+Reviewer: architect (one of three on the panel). Code read: `.claude/worktrees/testrig-review` (= `r1.1a/integration` @ b080a29), the seven PR #91 CI logs, the council's `area-build-test.md` (BT-1…BT-12) and `process.md`, and the memory notes on the gate. Read-only on the repo. My probes and downloaded sources are under `scratchpad/testrig/` (`probe-pkg/`, `probe-cpu/`, `src-*/`). Downloaded sources were read, never built or run.
 
 This builds on the council's findings and does not repeat them. Where I agree with BT-n, I cite it and add what is new.
 
@@ -53,10 +53,10 @@ This builds on the council's findings and does not repeat them. Where I agree wi
 
 | Run | Failed at | Class | Would a parallel collect-all gate have shown it earlier? |
 |---|---|---|---|
-| 1 (10-16) | clang-tidy, ~4 min in | tool behaviour (c9efbe6: `readability-trailing-comma` flagged a layout "either way"); CI LLVM 23.1.3 vs local 23.1.2 | same run as 3–4 (static job) |
+| 1 (10-16) | clang-tidy, ~4 min in | tool behaviour (b1cc33c: `readability-trailing-comma` flagged a layout "either way"); CI LLVM 23.1.3 vs local 23.1.2 | same run as 3–4 (static job) |
 | 2 (10-18 05:04) | tool check, 1 min in: Periphery tap "depends_on macos: :catalina is disabled", hidden by `brew install … \|\| true` (`strict-ci.yml:57`, old Periphery line) | infra drift; nothing tested | the parity check fails *loudly at install*, not at the tool check |
-| 3 (18:48) | cppcheck 2.22 `shadowFunction` (1263e04) | unpinned tool drift | pinned in the manifest → never happens; a canary finds it first |
-| 4 (19:14) | Periphery: 2 imports left by lanes + one dead key struct (05a9b3c) | combination-only | `make combine-check` before push |
+| 3 (18:48) | cppcheck 2.22 `shadowFunction` (00ca098) | unpinned tool drift | pinned in the manifest → never happens; a canary finds it first |
+| 4 (19:14) | Periphery: 2 imports left by lanes + one dead key struct (ea0e48f) | combination-only | `make combine-check` before push |
 | 5 (21:23) | `swift test`: ANALYZER-05 (2 == 1) | timing (wait with a deadline) | same run as 3–4; the cpp job would also have run |
 | 6 (10-19 06:24) | ANALYZER-05 again: the hold's 30 s deadline | timing (hold with a deadline) | — |
 | 7 (06:58) | null test `Loudness_WorkersSleepWhileIdle`: 11 context switches > 10 | measures the environment (process-wide `getrusage`, `LoudnessTests.inc:278-299`) | would have shown in run 5's cpp job, *if* it flaked that run |

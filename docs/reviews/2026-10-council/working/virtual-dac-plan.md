@@ -1,7 +1,7 @@
 # Virtual DAC plan: verifying Pure Mode without a USB DAC
 
 - **Date:** 2026-10-14.
-- **Base:** `docs/council-reconcile` @ c9d6618. Pure code read at that commit.
+- **Base:** `docs/council-reconcile` @ c95e2c6. Pure code read at that commit.
 - **Status:** research and plan only.
   - Nothing was installed, no `sudo` was run, `coreaudiod` was not restarted and no audio was played.
   - The only thing run on this Mac was a read-only device lister: `scratchpad/virtual-dac/probe/listfmt.c`. Its output is in `probe/listfmt-2026-10-14.txt`.
@@ -477,7 +477,7 @@ Real-music rows use the founder's files with an **independent** oracle (`ffmpeg 
 
 ## 12. Sources
 
-**Code read (repo @ c9d6618):**
+**Code read (repo @ c95e2c6):**
 - `Sources/AudioDSP/AudioEngine/HALOutputEngine.mm`
 - `Sources/AudioDSP/{PureModeFormat,PureModePolicy,PureModeBridge,PureModeBridgePolicy,CoreAudioDevice,GaplessSource}.cpp` and their headers
 - `Sources/AdaptiveSound/AudioEngineBridge+{PureMode,Playback,OutputDeviceMonitor}.swift`

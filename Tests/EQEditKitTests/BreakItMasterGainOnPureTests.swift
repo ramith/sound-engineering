@@ -1,7 +1,7 @@
 // R1.1-A close-out break-it (P3a, audio side), kept as regression tests for Master Gain on Pure. The
 // founder's rule: on Pure the music is never louder than Master Gain says (what Enhanced played: the
 // device's level + Master Gain; Silent = silence), the device's own level is given back, and a crash
-// puts it back. Each test failed on c9efbe6.
+// puts it back. Each test failed on b1cc33c.
 
 import EQEditKit
 import Foundation

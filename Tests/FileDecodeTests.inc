@@ -2312,7 +2312,7 @@ namespace
 } // namespace
 
 // A seek to a frame lands on that frame: FFmpeg's timestamps count from the stream's start time
-// (1.5 s here), the app's frames from 0. Red on cf861d4: the target ignored the start, so the seek
+// (1.5 s here), the app's frames from 0. Red on d2b689a: the target ignored the start, so the seek
 // landed at the file's top and the head was never trimmed.
 static auto testFileDecodeSeekFFmpegHonoursStreamStart() -> void
 {
@@ -2351,7 +2351,7 @@ static auto testFileDecodeSeekFFmpegHonoursStreamStart() -> void
 
 // A seek the decoder refuses moves nothing: the audio already buffered still plays next, from exactly
 // where it was. A pipe can't seek, so FFmpeg reading the fixture through a FIFO refuses every seek.
-// Red on cf861d4: the refused seek threw the buffered audio away, and playback jumped ahead.
+// Red on d2b689a: the refused seek threw the buffered audio away, and playback jumped ahead.
 static auto testFileDecodeSeekRefusedKeepsBufferedAudio() -> void
 {
     static const char* const kName = "FileDecode_Seek_RefusedKeepsBufferedAudio";

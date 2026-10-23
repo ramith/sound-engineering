@@ -8,14 +8,14 @@ session (Screen Recording TCC absent); every ☐ below is the founder's dark+lig
 
 | PR | Commit | Scope | Founder cells |
 |---|---|---|---|
-| A | `1601310` (pre-package) + `31fcf94` (package landed) | zero-risk batch + package/docs | ☐ |
-| B | `7ecc170` + `838da19` | capsule tab strip, pill chevron, onAccent flip | ☐ dark ☐ light ☐ hover ☐ VO |
-| C | `e1d3eb7` + `a5799c9` | one-row queue header, chips, hover grips | ☐ dark ☐ light ☐ drag-reorder ☐ filter |
-| D | `a590b50` | playing-row card + mini equalizer | ☐ playing ☐ paused ☐ RM |
-| E1 | `4918ae3` | floating card + glow + slim carved recipe | ☐ hug ☐ min-window scroll ☐ light |
-| E2 | `2378f30` | TRUE-peak meter (kernel extraction) + meter rows | ☐ meters ☐ amber >−1 dBTP |
-| F | `c52deab` | two hero chips, pulsing dot | ☐ states: pure/enhanced/XF/fallback/interrupted |
-| G | `6968a1b` | styled-glass bands, play gloss, pulsing footer dot | ☐ both bars both appearances ☐ RT |
+| A | `25dde05` (pre-package) + `0b10446` (package landed) | zero-risk batch + package/docs | ☐ |
+| B | `8f57a50` + `1e58641` | capsule tab strip, pill chevron, onAccent flip | ☐ dark ☐ light ☐ hover ☐ VO |
+| C | `b10aaf6` + `f880d31` | one-row queue header, chips, hover grips | ☐ dark ☐ light ☐ drag-reorder ☐ filter |
+| D | `ce4aa62` | playing-row card + mini equalizer | ☐ playing ☐ paused ☐ RM |
+| E1 | `8508cca` | floating card + glow + slim carved recipe | ☐ hug ☐ min-window scroll ☐ light |
+| E2 | `1af3a2a` | TRUE-peak meter (kernel extraction) + meter rows | ☐ meters ☐ amber >−1 dBTP |
+| F | `2ccedb8` | two hero chips, pulsing dot | ☐ states: pure/enhanced/XF/fallback/interrupted |
+| G | `cc4e934` | styled-glass bands, play gloss, pulsing footer dot | ☐ both bars both appearances ☐ RT |
 
 ## Deliberate deviations from the package (each needs founder OK or a follow-up)
 

@@ -1,7 +1,7 @@
 # Sprint EQ: DSP engine plan, v2 (replaces `dsp-plan-check.md`)
 
 *2026-10-10. This is the revision after the three reviews (breaker, SOTA, architect), the literature and players
-surveys, and founder decisions 25–28 (`feat/s10-8-eq` @ d6ab539).
+surveys, and founder decisions 25–28 (`feat/s10-8-eq` @ c15f183).
 - **Ground rules.** The repo was only read; nothing in it was built or compiled. Every new measurement is
   in `dsp/v2/` and re-runs with `sh run_all.sh` (about 6 min). The C++ simulators and benchmarks were
   compiled in the scratchpad. The machine is an Apple M4 Pro.
