@@ -24,10 +24,13 @@ analysed=0
 
 # analyse <file> <extra-flags...> — one translation unit; accumulates failures instead of stopping.
 analyse() {
-    local f="$1"; shift
-    local out
+    local f="$1" extra="${2:-}"
+    local out lang=() core=() xtra=()
+    read -r -a lang <<< "$(cxx_lang_flags "$f")"
+    read -r -a core <<< "$(cxx_analysis_core_flags)"
+    read -r -a xtra <<< "$extra"
     analysed=$((analysed + 1))
-    if ! out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- $(cxx_lang_flags "$f") $(cxx_analysis_core_flags) "$@" 2>&1)"; then
+    if ! out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- ${lang[@]+"${lang[@]}"} ${core[@]+"${core[@]}"} ${xtra[@]+"${xtra[@]}"} 2>&1)"; then
         echo "clang-tidy findings in $f:"
         printf '%s\n' "$out"
         fail_count=$((fail_count + 1))
@@ -37,14 +40,14 @@ analyse() {
 # Production pass: AudioDSP and the Obj-C++ test bridge (the bridge's public header needs its own -I).
 while IFS= read -r f; do
     case "$f" in
-        Sources/AudioDSPTestBridge/*) analyse "$f" $(cxx_bridge_extra_flags) ;;
+        Sources/AudioDSPTestBridge/*) analyse "$f" "$(cxx_bridge_extra_flags)" ;;
         *) analyse "$f" ;;
     esac
 done < <(tracked Sources/AudioDSP Sources/AudioDSPTestBridge | grep -E '\.(cpp|mm|cc)$')
 
 # Test pass: Tests/*.{cpp,mm,cc} with the test-only extras (libebur128, fixtures dir, test-data dir).
 while IFS= read -r f; do
-    analyse "$f" $(cxx_test_extra_flags)
+    analyse "$f" "$(cxx_test_extra_flags)"
 done < <(tracked Tests | grep -E '\.(cpp|mm|cc)$')
 
 ((analysed > 0)) || fail "clang-tidy analysed 0 files: the source scope is broken (Sources/AudioDSP renamed or emptied?)"

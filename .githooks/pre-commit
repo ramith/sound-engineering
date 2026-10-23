@@ -24,7 +24,6 @@ cd "$repo_root" || exit 1
 
 # ANSI helpers
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }
-yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 
 # H2: format and analyse with the PINNED toolchain when it is installed (toolchain/toolchain.env); when it is
@@ -130,14 +129,14 @@ if ((${#cpp_files[@]})) && ((submodules_ok)); then
         # compiler builds (incl. the -isystem/-D flags that make FileDecodeSource.cpp's
         # __has_include(<libavformat/...>) FFmpeg branch parse). See the library header.
         # Constant across files: resolve once (xcrun etc.) rather than per file.
-        core_flags=($(cxx_analysis_core_flags))
-        test_extra_flags=($(cxx_test_extra_flags))
-        bridge_extra_flags=($(cxx_bridge_extra_flags))
+        read -r -a core_flags <<< "$(cxx_analysis_core_flags)"
+        read -r -a test_extra_flags <<< "$(cxx_test_extra_flags)"
+        read -r -a bridge_extra_flags <<< "$(cxx_bridge_extra_flags)"
 
         for f in "${cpp_files[@]}"; do
             # Per-file language mode (.h/.hpp analysed as Obj-C++, a C++ superset).
             # cxx_lang_flags always emits >=1 flag (bash 3.2 + set -u safe).
-            lang_flags=($(cxx_lang_flags "$f"))
+            read -r -a lang_flags <<< "$(cxx_lang_flags "$f")"
             # Layer extras by repo-relative staged path: test TUs get the libebur128
             # oracle include + test-data-dir macro; the test-support bridge gets its own
             # include/ dir (so #include "EQTestBridge.h" resolves, as it did before).
@@ -149,8 +148,7 @@ if ((${#cpp_files[@]})) && ((submodules_ok)); then
             # --quiet hides the "N warnings generated" summary. Capture output and
             # only surface it when the file actually fails (WarningsAsErrors), so
             # non-blocking style warnings don't spam every commit.
-            ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- "${lang_flags[@]}" "${file_flags[@]}" 2>&1)"
-            if [[ $? -ne 0 ]]; then
+            if ! ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- "${lang_flags[@]}" "${file_flags[@]}" 2>&1)"; then
                 red "❌ clang-tidy reported issues in $f"
                 printf '%s\n' "$ct_out"
                 fail=1
