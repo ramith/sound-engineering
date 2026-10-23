@@ -188,8 +188,11 @@ struct RigKitTests {
     func holdExpired() async {
         await withKnownIssue("a producer that gave up at the cap proved nothing") {
             try? await withHold("a short-capped point", cap: .milliseconds(50)) { hold in
-                try await blocking("expires") { hold.wait() } // the cap frees it
-                // the test is late: the producer is already past the hold
+                let producer = Task { try await blocking("expires") { hold.wait() } }
+                // The cap frees the producer. Waiting on the hold's own flag (not on the blocked thread) makes a
+                // cap that never fires fail HERE, naming it, and the scope's release frees the thread.
+                try await until("the producer to give up at its cap", cap: .seconds(20)) { hold.hasExpired }
+                try await producer.value
             }
         }
     }
