@@ -9,6 +9,11 @@
 set -uo pipefail
 repo_root="$(git rev-parse --show-toplevel)" || exit 1
 cd "$repo_root" || exit 1
+# Git exports GIT_DIR (and friends) to every hook. In a worktree GIT_DIR is absolute, and a step that runs
+# git in another repository — parity reading the GoogleTest submodule's commit — would read THIS one
+# instead (it reported the superproject's HEAD and failed every push from a worktree). The gate finds the
+# repository itself, from the working directory, as it does outside a hook.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
 "$repo_root/scripts/gate/run.sh" --tier push
 rc=$?
 if ((rc != 0)); then
