@@ -15,9 +15,10 @@ set -uo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
 
-base="${GATE_RUN_DIR:-$repo_root/.build/gate}/report-selftest"
-rm -rf "$base"
-mkdir -p "$base"
+# The fixtures live OUTSIDE the gate's run directory: CI uploads that directory as the job's artifact, and
+# fixture trees inside it once read as real runs to the summary (PR #95: red on every run).
+base="$(mktemp -d "${TMPDIR:-/tmp}/gate-report-selftest.XXXXXX")" || { echo "cannot make a temp dir" >&2; exit 1; }
+trap 'rm -rf "$base"' EXIT
 failures=0
 
 # build <case> <dir>: writes the fixture tree for one case.
@@ -66,6 +67,15 @@ for job in jobs:
             rec = {"id": sid}
         with open(os.path.join(art, "gate-run", "results", sid + ".json"), "w") as fh:
             json.dump(rec, fh)
+    if case == "nested" and job == target_job:
+        # a whole failing layout nested deep inside a job's artifact (the shape PR #95 broke on): not this
+        # job's records, so the summary must ignore it and stay green
+        deep = os.path.join(art, "report-selftest", "failure", "gate-" + job, "gate-run")
+        os.makedirs(os.path.join(deep, "results"), exist_ok=True)
+        with open(os.path.join(deep, "run.json"), "w") as fh:
+            json.dump(run, fh)
+        with open(os.path.join(deep, "results", target_step + ".json"), "w") as fh:
+            json.dump({"id": target_step}, fh)
     if job == target_job:
         # decoys that are NOT step records (the shape B1 broke on): semgrep and GoogleTest output
         with open(os.path.join(art, "gate-run", "semgrep-scan.json"), "w") as fh:
@@ -99,10 +109,11 @@ expect missing 1 "expected exactly one run.json"
 expect stale 1 "from another run"
 expect duplicate 1 "expected exactly one run.json"
 expect malformed 1 "malformed record"
+expect nested 0 "VERDICT: PASS"
 
 if ((failures)); then
     echo "report self-test: $failures case(s) failed"
     exit 1
 fi
-echo "report self-test: 7 of 7 cases behave"
-echo "GATE_COVERED 7 cases"
+echo "report self-test: 8 of 8 cases behave"
+echo "GATE_COVERED 8 cases"
