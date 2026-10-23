@@ -20,8 +20,10 @@ set -uo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 manifest="${TOOLCHAIN_ENV:-$repo_root/toolchain/toolchain.env}"
 [[ -f "$manifest" ]] || { echo "ERROR: manifest not found: $manifest" >&2; exit 1; }
+set -a
 # shellcheck source=toolchain/toolchain.env
-set -a; source "$manifest"; set +a
+source "$manifest"
+set +a
 
 # Put the installed toolchain first, exactly as the gate does (the install script's bin dir).
 # The REAL install dir (the real manifest): TOOLCHAIN_ENV only changes the expectations below,
@@ -55,18 +57,6 @@ exact() {
     fi
 }
 
-# patch <label> <expected> <actual> <fix> — environment: WARN locally, FAIL in CI.
-patch() {
-    local label="$1" want="$2" got="$3" fix="$4"
-    if [[ "$got" == *"$want"* ]]; then
-        row "$label" "$want" "$got" "OK"
-    elif [[ -n "$in_ci" ]]; then
-        row "$label" "$want" "$got" "FAIL"
-    else
-        row "$label" "$want" "$got" "WARN"
-        WARN_NOTES+=("$label: $fix")
-    fi
-}
 WARN_NOTES=()
 
 # ---------------------------------------------------------------- verdict tools (exact)
@@ -80,6 +70,7 @@ exact "semgrep"      "$SEMGREP_VERSION"     "$(semgrep --version 2>/dev/null)"
 # semgrep-core is the engine the verdicts come from: a stale core under a pinned CLI would change results.
 exact "semgrep-core" "$SEMGREP_VERSION"    "$(semgrep-core -version 2>/dev/null | sed -nE 's/.*version: ([0-9.]+).*/\1/p')"
 exact "actionlint"   "$ACTIONLINT_VERSION"  "$(actionlint -version 2>/dev/null | head -1)"
+exact "shellcheck"   "$SHELLCHECK_VERSION"  "$(shellcheck --version 2>/dev/null | sed -nE 's/^version: //p')"
 
 # The C++ analysis library pins a clang-tidy MAJOR of its own (scripts/lib/cxx-analysis-flags.sh).
 # It must agree with the manifest's LLVM major, or the two halves of the gate analyse differently.
