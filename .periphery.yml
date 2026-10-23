@@ -1,5 +1,5 @@
 # Periphery — Swift dead-code detection, run on a HOSTILE config.
-#   local:  make periphery      CI: .github/workflows/periphery.yml
+#   local:  make periphery      CI: the static job of Strict CI (scripts/gate/periphery.sh)
 #
 # HOSTILE = maximally aggressive. Public declarations are NOT retained (they're analyzed like
 # everything else — this is an app plus its OWN SwiftPM libraries with no external consumers, so a
