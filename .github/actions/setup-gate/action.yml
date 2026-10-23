@@ -7,6 +7,14 @@ description: Select the pinned Xcode and install the pinned gate toolchain from 
 runs:
   using: composite
   steps:
+    # The semgrep venv is built for the manifest's Python (M2). The image default is newer (3.15), so the pinned
+    # minor is installed explicitly (actions/setup-python, pinned by SHA). It must equal PYTHON_VERSION in the
+    # manifest: scripts/toolchain/check.sh asserts the interpreter's version on every run, CI included.
+    - name: Python for the semgrep venv (pinned minor)
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: "3.12"
+
     - name: Select the pinned Xcode (from toolchain/toolchain.env)
       shell: bash
       run: |
@@ -32,6 +40,12 @@ runs:
 
     # The FFmpeg headers (libavformat under /opt/homebrew/include) are how FileDecodeSource's FFmpeg
     # branch is analysed at all. Installed here, checked by the parity step; a failed install is red.
-    - name: Install the FFmpeg headers (checked by the parity step)
+    # FFmpeg is INFO only: an install failure, or any FFmpeg version, can never fail the gate or a release.
+    # The C++ analysis of the FFmpeg branch runs when the headers are present, and parity says which it is.
+    # HOMEBREW_NO_AUTO_UPDATE stops Homebrew updating itself mid-run.
+    - name: Install the FFmpeg headers (INFO only, cannot fail the gate)
       shell: bash
+      continue-on-error: true
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
       run: brew install ffmpeg
