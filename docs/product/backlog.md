@@ -1830,6 +1830,26 @@ As a **Ramith** I want FFmpeg used only when I turn it on, and every format my M
 - The FFmpeg seek honours the stream's start time.
 **Scheduled:** R1.1-A. **Priority:** Must | **Estimate:** 3 sp | **Traceability:** FR-PLAY-01, FR-PLAY-06, CON-12, US-PLAY-07
 
+#### US-R1F-17 — FFmpeg that works with any installed version
+
+As a **Ramith** I want the FFmpeg fallback to work with whatever FFmpeg I have installed, today's or next year's, so that turning it on never fails because Homebrew moved to a new major version.
+
+**Covers:** the known limitation "the FFmpeg fallback works only with the FFmpeg major it was built against"; the gate's former FFmpeg pin (test-rig review B3, which already made FFmpeg info-only in the gate).
+**Research:** [ffmpeg-research.md](../reviews/2026-10-testrig/ffmpeg-research.md) (2026-10-22). No reputable in-process loader supports an unseen FFmpeg major: Firefox and Audacity ship headers per major; Qt, mpv and gst-libav pin one. Media servers (Plex's transcoder, Jellyfin) run FFmpeg as a separate program.
+**Design (to decide when scheduled):** recommended, run the installed `ffmpeg` / `ffprobe` as separate programs: decode through a pipe into the existing decode thread, metadata from `ffprobe -of json`, cover art through `image2pipe`, the tools only at vetted fixed paths. It works with any version, takes FFmpeg's parsers out of the player's process (KI-SEC-01), and has no licence question. A one-day spike first proves sample-accurate seek, gapless joins and Opus pre-skip, channel order, bit depth and 8 ch / 192 kHz throughput. Plan B: Firefox's design, vendored headers and a backend per major (FFmpeg 5.1–9.x), refusing unknown majors.
+**Acceptance:**
+- The fallback plays and tags the fixtures with every tested FFmpeg (5.1, 6.1, 7.1, 8.x, 9.x); CI builds each from a checksum-pinned source tarball and never uses Homebrew's.
+- No FFmpeg headers or libraries are needed to build the app; the build has no `/opt/homebrew/include` path.
+- A test-only override points the tests at a given FFmpeg, so the gate never depends on what a runner has installed.
+**Priority:** Could | **Estimate:** ~1 sprint (separate-program design) | **Scheduled (2026-10-22, founder):** later (backlog).
+
+#### US-R1F-18 — Test-rig follow-ups
+
+As a **developer** I want the gaps the test-rig redesign left closed, so that every product behaviour has a test on the real code and the gate stays honest.
+
+**Covers:** KI-ENG-05 (the scan and metadata pass on the cooperative pool), KI-ENG-06 (test seams: the device-menu sort, two view countdowns, `FFmpegOptIn.isOn`), KI-ENG-07 (`build-measure.sh`), KI-ENG-08 (the dead toast, the `playTrack(at:)` guard); the review's M8 (expected test-count floors from the first CI run's counts) and L15 (per-variant test-data folders, so plain, ASan and TSan can run in parallel locally).
+**Priority:** Should / Could | **Estimate:** 3 sp | **Scheduled (2026-10-23):** pool (KI-ENG-05 recommended for R1.1-B) · [the redesign record](../sprints/testrig-redesign.md#follow-ups-each-in-known-issues-or-the-backlog).
+
 #### US-QA-07 — THD+N oracle
 
 As a **developer** I want the bypass THD+N measured against the −90 dB budget in the C++ gate, so that the last S7 oracle exists.
