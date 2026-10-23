@@ -132,7 +132,11 @@ def summary(root, reg_path, expect_stamp):
     for job in jobs:
         art = os.path.join(root, "gate-" + job)
         expected = {sid: blocking for sid, j, blocking in rows if j == job}
-        runs = sorted(glob.glob(os.path.join(art, "**", "run.json"), recursive=True))
+        # A job's own records sit at the top of its artifact: run.json and results/ at the root, or one
+        # level down (a run directory uploaded from its parent). Anything deeper is NOT this job's —
+        # e.g. the summary self-test's fixture trees, which once sat inside the static job's run directory
+        # and made every CI summary red ("expected exactly one run.json … found 36", PR #95).
+        runs = sorted(glob.glob(os.path.join(art, "run.json")) + glob.glob(os.path.join(art, "*", "run.json")))
         if len(runs) != 1:
             red.append((job, "-", "job %s: expected exactly one run.json in its artifact, found %d "
                                   "(missing: cancelled, timed out or crashed; duplicate: a re-upload)" % (job, len(runs))))
@@ -148,7 +152,8 @@ def summary(root, reg_path, expect_stamp):
             except (OSError, ValueError, AttributeError) as exc:
                 red.append((job, "-", "job %s: unreadable run.json (%s)" % (job, exc)))
         seen = set()
-        for p in sorted(glob.glob(os.path.join(art, "**", "results", "*.json"), recursive=True)):
+        for p in sorted(glob.glob(os.path.join(art, "results", "*.json"))
+                        + glob.glob(os.path.join(art, "*", "results", "*.json"))):
             try:
                 rec = json.load(open(p, encoding="utf-8"))
             except (OSError, ValueError) as exc:
