@@ -34,13 +34,16 @@ public final class Hold: @unchecked Sendable {
         defer { condition.unlock() }
         reached = true
         condition.broadcast() // a test polling for the arrival need not wait for its next look
-        let (seconds, attoseconds) = cap.components
-        let deadline = Date(timeIntervalSinceNow: Double(seconds) + Double(attoseconds) / 1e18)
+        // The cap runs on `SuspendingClock`, as `until`'s does: a Mac asleep mid-run must not expire a hold.
+        // `NSCondition` only waits to a wall-clock `Date`, so wait in one-second slices and judge the cap
+        // by the suspending clock between them.
+        let deadline = SuspendingClock.now + cap
         while !released {
-            if !condition.wait(until: deadline) {
+            if SuspendingClock.now >= deadline {
                 expired = true
                 return
             }
+            condition.wait(until: Date(timeIntervalSinceNow: 1))
         }
     }
 

@@ -13,21 +13,37 @@ public final class LogTail: Sendable {
     public static let shared = LogTail()
 
     private static let capacity = 2000
-    private let lines = Mutex<[String]>([])
 
-    /// Keep `line`, dropping the oldest past the capacity.
+    /// A fixed ring: `next` is where the next line goes, `total` how many were ever appended.
+    private struct Ring {
+        var slots = [String](repeating: "", count: LogTail.capacity)
+        var next = 0
+        var total = 0
+    }
+
+    private let ring = Mutex(Ring())
+
+    /// Keep `line`, overwriting the oldest once the ring is full: O(1), however many lines came before.
     public func append(_ line: String) {
-        lines.withLock {
-            $0.append(line)
-            if $0.count > Self.capacity {
-                $0.removeFirst($0.count - Self.capacity)
-            }
+        ring.withLock {
+            $0.slots[$0.next] = line
+            $0.next = ($0.next + 1) % Self.capacity
+            $0.total += 1
         }
+    }
+
+    /// How many lines were ever appended, kept or not.
+    public var totalAppended: Int {
+        ring.withLock { $0.total }
     }
 
     /// The last `count` lines, oldest first, one per line.
     public func tail(_ count: Int = 200) -> String {
-        lines.withLock { $0.suffix(count).joined(separator: "\n") }
+        ring.withLock { state in
+            let kept = min(count, state.total, Self.capacity)
+            let start = (state.next - kept + Self.capacity) % Self.capacity
+            return (0 ..< kept).map { state.slots[(start + $0) % Self.capacity] }.joined(separator: "\n")
+        }
     }
 }
 

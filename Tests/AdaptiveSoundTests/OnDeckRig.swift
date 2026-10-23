@@ -177,6 +177,14 @@ struct Rig {
     /// finished or suspended in a call the engine owes it (a held op, a request not yet delivered, an
     /// open). The main actor runs a yielded-to job before the yielder resumes, so a round of yields in
     /// which nothing the view model or the engine shows has changed means nothing is runnable.
+    ///
+    /// Why this is sound, and what it is NOT: nothing here decides whether a test PASSES. The three stable
+    /// rounds only decide how soon the rig stops yielding so the scenario's next step (running a held op,
+    /// delivering a request) can go ahead; every verdict is read from a positive end state (`quiesce`'s
+    /// `until`: work idle, engine idle, everything received), and the heuristic's threshold was mutated to
+    /// zero rounds without any test failing, so it is not load-bearing. What it buys is replay: a seeded
+    /// explorer schedule runs the view model out the same way each time. An exact witness needs the
+    /// tracker's in-flight count (`WorkTracker` exposes only `isIdle`): requested as a product change.
     func runViewModelOut(sourceLocation: SourceLocation = #_sourceLocation) async throws {
         var stableRounds = 0
         var last: [String] = []

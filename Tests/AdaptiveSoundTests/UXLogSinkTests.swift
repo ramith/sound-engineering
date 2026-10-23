@@ -3,28 +3,39 @@
 
 @testable import AdaptiveSound
 import Foundation
+import RigKit
 import Synchronization
 import Testing
 
 @Suite("The [UX] log sink", .timeLimit(.minutes(3)))
 struct UXLogSinkTests {
-    @Test("UXLOG-01: a line reaches the installed sink, and 200,000 lines grow nothing — the stack stays flat")
+    @Test("UXLOG-01: 200,000 lines through the installed sink grow nothing — the stack stays flat")
     func linesReachTheSinkWithoutGrowth() {
         // A closure kept in a generic Mutex is reabstracted on every access and wraps itself in two more
         // thunks per line: this many lines overflowed the stack (OnDeckExplorer, SIGBUS) before the sink
-        // became a struct.
-        QuietLog.install() // so what is swapped back is the quiet sink, whichever test installs it first
-        let seen = Atomic<Int>(0)
-        let previous = UXLog.sink.withLock { sink in
-            defer { sink = UXLog.Sink { _ in seen.add(1, ordering: .relaxed) } }
-            return sink
-        }
+        // became a struct. The process-wide sink is NOT swapped (other tests log into it meanwhile, and
+        // their failure tails would go missing): the quiet sink is the one under test, and the ring counts
+        // what reached it.
+        QuietLog.install()
+        let before = LogTail.shared.totalAppended
         for index in 0 ..< 200_000 {
-            logUX("line \(index)")
+            logUX("uxlog-01 line \(index)")
         }
-        UXLog.sink.withLock { $0 = previous }
-        let count = seen.load(ordering: .relaxed)
-        // Other tests log into the same sink while it is swapped, so at least ours arrived.
-        #expect(count >= 200_000, "only \(count) of 200000 lines reached the sink")
+        let arrived = LogTail.shared.totalAppended - before
+        // Other tests log into the same ring meanwhile, so at least ours arrived.
+        #expect(arrived >= 200_000, "only \(arrived) of 200000 lines reached the sink")
+    }
+
+    @Test("UXLOG-02: a sink read through a Mutex 100,000 times is called each time, unwrapped")
+    func sinkReadThroughAMutexIsCalledEachTime() {
+        // The shape the app relies on: a value read out of a Mutex and called, with no re-wrapping.
+        let sentinel = Atomic<Int>(0)
+        let probe = Mutex(UXLog.Sink { _ in sentinel.add(1, ordering: .relaxed) })
+        for _ in 0 ..< 100_000 {
+            let sink = probe.withLock { $0 }
+            sink.write("x")
+        }
+        let calls = sentinel.load(ordering: .relaxed)
+        #expect(calls == 100_000, "a sink read through a Mutex was called \(calls) times, not 100000")
     }
 }

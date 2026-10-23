@@ -65,10 +65,12 @@ public func until(
 /// A main-actor test that only `await`s runs those too; this is for the case it cannot, where the state
 /// is made by a run-loop source. It spins the loop in short slices and yields between them: the main
 /// actor's own jobs do NOT run during a nested `RunLoop.run` while the test's job is executing, so the
-/// yield is what lets them run (LiveReadoutsTests, PR #93).
+/// yield is what lets them run (LiveReadoutsTests, PR #93). `mode` is the run-loop mode that is spun: a
+/// `.common`-mode timer must also fire in `.eventTracking` (a slider drag, a scroll).
 @MainActor
 public func untilOnMainRunLoop(
     _ what: String,
+    mode: RunLoop.Mode = .default,
     cap: Duration = .seconds(120),
     sourceLocation: SourceLocation = #_sourceLocation,
     _ condition: () -> Bool
@@ -78,13 +80,13 @@ public func untilOnMainRunLoop(
         guard SuspendingClock.now < deadline else {
             throw RigTimeout(what: what, cap: cap, location: sourceLocation)
         }
-        spinMainRunLoop()
+        spinMainRunLoop(in: mode)
         await Task.yield()
     }
 }
 
 /// One slice of the main run loop. A plain synchronous function: `RunLoop.run(until:)` is unavailable in
 /// an async context.
-private func spinMainRunLoop() {
-    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.005))
+private func spinMainRunLoop(in mode: RunLoop.Mode) {
+    RunLoop.main.run(mode: mode, before: Date(timeIntervalSinceNow: 0.005))
 }
