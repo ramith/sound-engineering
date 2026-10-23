@@ -22,10 +22,18 @@ def check(root):
         text = open(p, encoding="utf-8").read()
         if not WAIT.search(text):
             continue
-        for n, line in enumerate(text.split("\n"), 1):
+        lines = text.split("\n")
+        for n, line in enumerate(lines, 1):
             if SUITE.match(line):
+                # The attribute may span lines (wrapped at 120 columns): read it up to its closing ")" line.
+                attr = [line]
+                if line.rstrip().endswith("("):
+                    for follow in lines[n:]:
+                        attr.append(follow)
+                        if follow.strip() == ")":
+                            break
                 count += 1
-                if "timeLimit" not in line:
+                if "timeLimit" not in "\n".join(attr):
                     bad.append("%s:%d: a @Suite in a file that waits has no .timeLimit" % (p, n))
     return count, bad
 
