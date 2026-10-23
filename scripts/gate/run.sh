@@ -230,11 +230,12 @@ run_step() {
     if [[ -f "$flag" ]]; then
         STEP_STATUS=timeout
         STEP_REASON="timed out after $limit (watchdog killed the step)"
-    elif grep -q '^\[HANG\]' "$log"; then
+    elif grep -qE '^(\[[A-Za-z0-9]+\] )?\[HANG\]' "$log"; then
         # The null test's watchdog named the test that ran past its ceiling. Classified by that line,
-        # never by the exit code: 134 also means a plain abort, such as an ASan report.
+        # never by the exit code: 134 also means a plain abort, such as an ASan report. A sharded run
+        # prefixes every line with its process ("[shard0] [HANG] …"); PR #95 read that as a plain failure.
         STEP_STATUS=timeout
-        STEP_REASON="named hang: $(grep -m1 '^\[HANG\]' "$log" | cut -c1-160)"
+        STEP_REASON="named hang: $(grep -m1 -E '^(\[[A-Za-z0-9]+\] )?\[HANG\]' "$log" | cut -c1-160)"
     elif ((rc != 0)); then
         STEP_STATUS=fail
         STEP_REASON="exit $rc"
