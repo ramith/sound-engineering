@@ -352,3 +352,16 @@ static auto testMultiChunkStatePreservation() -> void
     }
     logPass(kName);
 }
+
+// PLANTED — the CI proof of the test-rig redesign (draft PR, never merged): one failing test and one
+// hanging test, which the gate's summary must name (a failure, and a hang killed by the watchdog).
+static auto testPlantedFailure() -> void
+{
+    logFail("PLANTED_Failure", "planted: the gate's summary must name this failing test");
+}
+
+static auto testPlantedHang() -> void
+{
+    std::this_thread::sleep_for(std::chrono::hours(1));
+    logPass("PLANTED_Hang");
+}

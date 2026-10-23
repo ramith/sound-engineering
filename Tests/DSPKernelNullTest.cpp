@@ -119,6 +119,8 @@ namespace
         {"ChirpSignalBypasses", testChirpBypasses, Tier::Correctness},
         {"EQModuleIdentityByDefault", testEQModuleIdentityByDefault, Tier::Correctness},
         {"ZeroInputProducesZeroOutput", testZeroInputProducesZeroOutput, Tier::Correctness},
+        {"PLANTED_Failure", testPlantedFailure, Tier::Correctness},
+        {"PLANTED_Hang", testPlantedHang, Tier::Correctness},
         {"MultiChunkStatePreservation", testMultiChunkStatePreservation, Tier::Correctness},
         // Limiter tests (Sprint 4)
         {"Limiter_BypassIsIdentity", testLimiterBypassIsIdentity, Tier::Correctness},
