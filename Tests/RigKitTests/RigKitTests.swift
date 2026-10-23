@@ -205,6 +205,7 @@ struct RigKitTests {
         let last = tail.tail(3).split(separator: "\n").map(String.init)
         #expect(last == ["line 4997", "line 4998", "line 4999"])
         #expect(tail.tail(100_000).split(separator: "\n").count == 2000)
+        #expect(tail.totalAppended == 5000, "the count includes the lines the ring let go")
     }
 }
 

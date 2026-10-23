@@ -170,6 +170,30 @@ struct LiveReadoutsTests {
         #expect(!ticker.timer.isValid, "a stopped ticker's timer is still scheduled")
     }
 
+    @Test("the app's default ticker is a 20 Hz run-loop timer that fires in tracking mode too (.common)")
+    func defaultTickerIsACommonModeTimer() async throws {
+        let engine = FakeEngine()
+        let viewModel = AudioViewModel(defaults: world.defaults, engine: engine) // the product's default maker
+        viewModel.initializeEngine()
+        try await until("the engine to come up") { viewModel.isEngineReady || viewModel.errorMessage != nil }
+        let url = URL(fileURLWithPath: "/nonexistent/live-readouts-default.flac") // never opened
+        let song = AudioFile(name: "Song", relativePath: "", absoluteURL: url, format: "FLAC", durationSeconds: 240)
+        viewModel.queue = [QueueItem(file: song)]
+        viewModel.selectedTrackIndex = 0
+        viewModel.playTrack(at: 0)
+        try await until("the song to start, and the default tick to be going") {
+            landed(viewModel, playing: true) && viewModel.transportTicker != nil
+        }
+        let ticker = try #require(viewModel.transportTicker as? RunLoopTicker, "the default ticker is not the run loop's")
+        #expect(abs(ticker.timer.timeInterval - 1.0 / 20.0) < 1e-9, "the tick is not 20 Hz")
+        let readsBefore = engine.state.withLock { $0.snapshotReads }
+        // Only the TRACKING mode is spun (a slider drag, a scroll): a timer added in `.common` still fires.
+        try await untilOnMainRunLoop("a tick to read the engine in event-tracking mode", mode: .eventTracking) {
+            engine.state.withLock { $0.snapshotReads } > readsBefore
+        }
+        viewModel.disarmTransportTick()
+    }
+
     @Test("paused, the scrubber follows the paused song at once: a scrub moves it, another song zeroes it")
     func pausedScrubberNeedsNoTick() async throws {
         let engine = FakeEngine()
