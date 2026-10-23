@@ -33,8 +33,10 @@ die()    { red "ERROR: $*"; exit 1; }
 
 [[ -f "$manifest" ]] || die "manifest not found: $manifest"
 [[ -f "$reqs" ]]     || die "semgrep requirements not found: $reqs"
+set -a
 # shellcheck source=toolchain/toolchain.env
-set -a; source "$manifest"; set +a
+source "$manifest"
+set +a
 
 # The manifest hash covers the manifest and the hash-locked semgrep requirements.
 manifest_hash="$(cat "$manifest" "$reqs" | shasum -a 256 | cut -c1-16)"
@@ -188,7 +190,8 @@ PYTHON_BIN="$(command -v "python$PYTHON_VERSION" || true)"
 [[ -n "$PYTHON_BIN" ]] || die "python$PYTHON_VERSION is not on PATH. The hash-locked wheels are built for $PYTHON_VERSION. Install Python $PYTHON_VERSION (python.org or the runner's toolcache) and re-run."
 venv="$shared/semgrep-$reqs_hash"
 if [[ ! -x "$venv/bin/semgrep" ]]; then
-    rm -rf "$venv" && "$PYTHON_BIN" -m venv "$venv" || die "python venv creation failed with $PYTHON_BIN"
+    rm -rf "$venv"
+    "$PYTHON_BIN" -m venv "$venv" || die "python venv creation failed with $PYTHON_BIN"
     "$venv/bin/pip" install --quiet --require-hashes --disable-pip-version-check -r "$reqs" \
         || die "semgrep install failed: pip refused the hashes or a wheel. The lock is $reqs"
 fi
@@ -208,6 +211,14 @@ download "$ACTIONLINT_URL" "$ACTIONLINT_SHA256" "$dl/actionlint.tar.gz"
 tar -xzf "$dl/actionlint.tar.gz" -C "$bin_dir" actionlint || die "could not extract actionlint"
 chmod +x "$bin_dir/actionlint"
 assert_version "actionlint" "$ACTIONLINT_VERSION" "$("$bin_dir/actionlint" -version | head -1)"
+
+# ---------------------------------------------------------------- shellcheck (pinned release archive)
+step "shellcheck $SHELLCHECK_VERSION"
+download "$SHELLCHECK_URL" "$SHELLCHECK_SHA256" "$dl/shellcheck.tar.gz"
+tar -xzf "$dl/shellcheck.tar.gz" -C "$bin_dir" --strip-components=1 "shellcheck-v$SHELLCHECK_VERSION/shellcheck" \
+    || die "could not extract shellcheck from its archive"
+chmod +x "$bin_dir/shellcheck"
+assert_version "shellcheck" "$SHELLCHECK_VERSION" "$("$bin_dir/shellcheck" --version | sed -nE 's/^version: //p')"
 
 # ---------------------------------------------------------------- done: record what every tool file must hash to
 rm -rf "$dl"
