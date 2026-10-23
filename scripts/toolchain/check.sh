@@ -8,7 +8,7 @@
 #        cppcheck or a 23.1.2 -> 23.1.3 clang-tidy was enough to turn a green PR red (PR #91).
 #   Xcode and Swift: EXACT (the Xcode build, 27.1 27A9275), everywhere. A Mac on another Xcode fails with
 #        the fix. macOS: INFO only, never fails (the founder accepted 26.6 locally vs the 27.0.1 CI image).
-#   WARN locally, FAIL in CI: the FFmpeg headers.
+#   FFmpeg: INFO only (the version found, and whether the FFmpeg analysis branch is on). Never a verdict.
 #   CI only: the runner image date must be at least RUNNER_IMAGE_MIN.
 #
 # Run it with the same PATH the gate uses (the runner does this for you):
@@ -45,8 +45,10 @@ row() {
 
 # exact <tool> <expected> <actual> — a verdict tool: exact match or FAIL, everywhere.
 exact() {
-    local tool="$1" want="$2" got="$3"
-    if [[ "$got" == *"$want"* ]]; then
+    local tool="$1" want="$2" got="$3" want_re
+    # A WHOLE version token: 2.21.2 must not match 2.21.20 (review L10). The dots are escaped.
+    want_re="${want//./\\.}"
+    if [[ "$got" =~ (^|[^0-9.])${want_re}($|[^0-9.]) ]]; then
         row "$tool" "$want" "$got" "OK"
     else
         row "$tool" "$want" "${got:-<missing>}" "FAIL"
@@ -95,9 +97,17 @@ else
     row "semgrep lock" "semgrep==$SEMGREP_VERSION" "semgrep-requirements.txt disagrees" "FAIL"
 fi
 
+# Python for the semgrep venv (M2): the hash-locked wheels are built for this minor version.
+py_actual="$(python"$PYTHON_VERSION" --version 2>&1 | sed -nE 's/^Python ([0-9]+\.[0-9]+).*/\1/p' | head -1)"  # major.minor: 3.12.2 is 3.12
+exact "python$PYTHON_VERSION" "$PYTHON_VERSION" "${py_actual:-}"
+
 # GoogleTest (the C++ runner's framework): the submodule must be the commit the manifest pins.
 if [[ -n "${GOOGLETEST_COMMIT:-}" ]]; then
-    gt_actual="$(git -C "$repo_root/third_party/googletest" rev-parse HEAD 2>/dev/null || true)"
+    # Only a real checkout counts: an empty directory would make git report the SUPERPROJECT's HEAD.
+    gt_dir="$repo_root/third_party/googletest"
+    gt_top="$(git -C "$gt_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+    gt_actual=""
+    [[ "$gt_top" == "$gt_dir" ]] && gt_actual="$(git -C "$gt_dir" rev-parse HEAD 2>/dev/null || true)"
     exact "googletest" "$GOOGLETEST_COMMIT" "${gt_actual:-<submodule missing: git submodule update --init third_party/googletest>}"
 else
     row "googletest" "GOOGLETEST_COMMIT" "not in toolchain/toolchain.env" "FAIL"
@@ -135,11 +145,17 @@ if [[ -n "$in_ci" ]]; then
     fi
 fi
 
-# ---------------------------------------------------------------- FFmpeg headers (asserted from the header)
-ff_header="/opt/homebrew/include/libavutil/ffversion.h"
-ff_actual="$(sed -nE 's/^#define FFMPEG_VERSION "([^"]+)".*/\1/p' "$ff_header" 2>/dev/null | head -1)"
-patch "ffmpeg headers" "$FFMPEG_HEADERS_VERSION" "${ff_actual:-<not installed>}" \
-    "install FFmpeg headers with 'brew install ffmpeg' (or 'brew upgrade ffmpeg' to move to $FFMPEG_HEADERS_VERSION); the FileDecodeSource FFmpeg branch is only analysed when they are present"
+# ---------------------------------------------------------------- FFmpeg: INFO only, never a verdict
+# The gate does not depend on one FFmpeg version (founder, review B3). The version found is printed, and
+# whether the FFmpeg branch of the C++ analysis is ON (headers present) or OFF is printed as its own row,
+# so an absent branch is visible rather than silent. Nothing here can fail the gate or a release.
+ff_actual="$(sed -nE 's/^#define FFMPEG_VERSION "([^"]+)".*/\1/p' /opt/homebrew/include/libavutil/ffversion.h 2>/dev/null | head -1)"
+row "ffmpeg (info)" "any version" "${ff_actual:-<no headers found>}" "INFO"
+if [[ -f /opt/homebrew/include/libavformat/avformat.h ]]; then
+    row "ffmpeg analysis" "ON" "headers present: the FFmpeg branch is analysed" "INFO"
+else
+    row "ffmpeg analysis" "ON" "OFF: no libavformat headers, so the FFmpeg branch is NOT analysed" "INFO"
+fi
 
 # ---------------------------------------------------------------- the table
 printf '\n%-16s %-22s %-40s %s\n' "TOOL" "EXPECTED" "ACTUAL" "VERDICT"

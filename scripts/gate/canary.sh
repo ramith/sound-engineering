@@ -62,6 +62,11 @@ row "actionlint" "$ACTIONLINT_VERSION" "${al_latest:-?}" "$( [[ "${al_latest:-}"
 row "Periphery" "$PERIPHERY_VERSION" "$(latest_tag peripheryapp/periphery | sed 's/^v//')" "not run (index build; version only)"
 row "LLVM (clang-tidy, clang-format)" "$LLVM_VERSION" "$(latest_tag llvm/llvm-project | sed 's/^llvmorg-//')" "not run (heavy; version only)"
 row "cppcheck" "$CPPCHECK_VERSION" "$(latest_tag danmar/cppcheck)" "not run (source build; version only)"
+# FFmpeg is INFO, never a verdict (review B3): the version Homebrew would install next, and the version of
+# the headers this runner actually has. A bump is visible here a week before any job would see it.
+ff_formula="$(HOMEBREW_NO_AUTO_UPDATE=1 brew info --json=v2 ffmpeg 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])' 2>/dev/null)"
+ff_headers="$(sed -nE 's/^#define FFMPEG_VERSION "([^"]+)".*/\1/p' /opt/homebrew/include/libavutil/ffversion.h 2>/dev/null | head -1)"
+row "FFmpeg (INFO)" "any" "Homebrew formula ${ff_formula:-?}; headers here ${ff_headers:-none}" "INFO"
 
 # ---- the latest-binary static steps (they never read the manifest; PATH decides the tools)
 {
@@ -70,6 +75,8 @@ row "cppcheck" "$CPPCHECK_VERSION" "$(latest_tag danmar/cppcheck)" "not run (sou
     echo
 } >> "$report"
 export PATH="$out_dir/bin:$PATH"
+# The token is for the release API calls above. The tool binaries below are unverified: they must not see it (L9).
+unset GH_TOKEN GITHUB_TOKEN
 for step in swiftformat swiftlint semgrep actionlint; do
     log="$out_dir/$step.log"
     case "$step" in
