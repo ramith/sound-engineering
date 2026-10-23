@@ -37,6 +37,8 @@ FAIL_PAT = re.compile(
 )
 HEAD = 50
 RECORD_KEYS = ("id", "job", "blocking", "status", "run")
+# The step every run performs first, in every job (scripts/gate/run.sh: "PARITY FIRST").
+PREREQ = "toolchain-parity"
 
 
 def stamp():
@@ -132,6 +134,10 @@ def summary(root, reg_path, expect_stamp):
     for job in jobs:
         art = os.path.join(root, "gate-" + job)
         expected = {sid: blocking for sid, j, blocking in rows if j == job}
+        # Parity is the prerequisite of EVERY run (run.sh runs it first, whatever the job), so each job's
+        # artifact holds its own toolchain-parity record, labelled with the row's home job (static). It is
+        # expected in every job — a job that did not check its tools is red — and accepted wherever it ran.
+        expected.setdefault(PREREQ, True)
         # A job's own records sit at the top of its artifact: run.json and results/ at the root, or one
         # level down (a run directory uploaded from its parent). Anything deeper is NOT this job's —
         # e.g. the summary self-test's fixture trees, which once sat inside the static job's run directory
@@ -167,7 +173,7 @@ def summary(root, reg_path, expect_stamp):
                 red.append((job, sid, "record from another run (stamp %s, this run %s): ignored, and red"
                             % (rec["run"], expect_stamp)))
                 continue
-            if rec["job"] != job:
+            if rec["job"] != job and sid != PREREQ:
                 red.append((job, sid, "record says job %s but sits in %s" % (rec["job"], job)))
                 continue
             if sid not in expected:
