@@ -32,7 +32,7 @@ green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 source "$repo_root/scripts/toolchain/use-pinned.sh"
 
 # clang-tidy: resolved + MAJOR-pinned through the shared C++ analysis library — the SAME
-# resolver and CXX_CLANG_TIDY_MAJOR_PIN scripts/strict-gate.sh asserts, so the hook can never
+# resolver and CXX_CLANG_TIDY_MAJOR_PIN the gate asserts (toolchain parity), so the hook can never
 # analyse with a different clang-tidy than the merge gate (a major bump adds checks). Empty
 # when absent → the hook hard-fails below for staged C++; a major skew blocks the commit with
 # the same instructions the gate prints.

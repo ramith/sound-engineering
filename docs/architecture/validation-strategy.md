@@ -74,7 +74,7 @@ make leak-check             # leaks(1) — Apple-Silicon ASan ships no LeakSanit
 # Sources/AudioDSPTestBridge and Tests/ (.cpp/.mm/.cc), with the flags in scripts/lib/cxx-analysis-flags.sh
 ```
 
-*Also per merge (strict-gate, `scripts/strict-gate.sh`): SwiftFormat / SwiftLint / clang-format drift, semgrep (`.semgrep.yml`), the suppression policy, the migrator never-erase and playlist reference-add guards, Kit-purity / Dynamic-Type guards, cppcheck (if installed), Periphery, `swift build`, `swift test`, `make gate`, `make main-thread-stall`, the null-test source-coverage guard and a `--release-strict` (-O2, -Werror) compile.*
+*Also per merge (the gate: `scripts/gate/steps.tsv` run by `scripts/gate/run.sh`; `make strict-gate`): SwiftFormat / SwiftLint / clang-format drift, semgrep (`.semgrep.yml`), the suppression policy, the migrator never-erase and playlist reference-add guards, Kit-purity / Dynamic-Type guards, cppcheck (pinned, required), Periphery, `swift build`, `swift test`, `make gate`, `make main-thread-stall`, the null-test source-coverage guard and a `--release-strict` (-O2, -Werror) compile.*
 
 **Acceptance:** zero sanitizer errors, zero clang-tidy violations.
 

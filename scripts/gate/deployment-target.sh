@@ -3,10 +3,12 @@
 # Deployment-target guard (cheap, no symbol scan): every built executable and test bundle must declare
 # a minimum macOS (LC_BUILD_VERSION minos) no newer than the package's .macOS(.v26) target.
 #
-# Why: CI runs macOS 27 (the xcode-27 image), and the product targets macOS 26. A binary built against
-# Xcode 27's SDK can reference a symbol that exists only on macOS 27, and then it fails to load on
-# macOS 26 while passing on the 27 runner. Measured: _LIBCPP_DISABLE_AVAILABILITY-free builds now report
-# minos 26.0; a regression shows up here as minos 27.x.
+# What it catches: a product built for a newer macOS than the target (minos 27.x — e.g. a raised
+# deployment target or a dependency built for 27). What it does NOT catch: a symbol that exists only on
+# macOS 27 referenced from a binary whose minos is still 26 — the linker does not raise minos for that.
+# That is how the _LIBCPP_DISABLE_AVAILABILITY bug looked (minos 26.0, "Symbol not found" on 26). Those
+# are caught by the availability-flag ban (scripts/gate/availability-ban.sh) and by running the built
+# binaries on a macOS 26 runner (scripts/gate/macos26-run.sh, nightly and before every release).
 set -uo pipefail
 # shellcheck source=scripts/gate/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -40,5 +42,5 @@ for f in "${macho[@]}"; do
         fi
     done < <(vtool -show-build "$f" 2>/dev/null | awk '/minos/ {print $2}')
 done
-((bad == 0)) || fail "a built product needs a newer macOS than the target ($target): a symbol from the newer SDK leaked in"
+((bad == 0)) || fail "a built product declares a newer minimum macOS than the target ($target)"
 covered "${#macho[@]}" products-within-macOS-$target
