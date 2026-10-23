@@ -53,14 +53,16 @@ for job in jobs:
         with open(os.path.join(art, "gate-run-2", "run.json"), "w") as fh:
             json.dump(run, fh)
     for sid, j, blocking in rows:
-        if j != job:
+        # every job also carries its own parity record, labelled with parity's home job (run.sh runs
+        # parity first in every run) — the shape that turned the summary red on PR #96's first run
+        if j != job and sid != "toolchain-parity":
             continue
         status, code = "pass", 0
         if case == "failure" and sid == target_step:
             status, code = "fail", 1
         if case == "timeout" and sid == target_step:
             status, code = "timeout", 124
-        rec = {"id": sid, "job": job, "run": stamp, "blocking": blocking, "status": status,
+        rec = {"id": sid, "job": j, "run": stamp, "blocking": blocking, "status": status,
                "exit_code": code, "duration_s": 1, "timeout": "1m", "reason": "fixture " + status,
                "coverage_rule": "-", "covered": None, "log": "-", "failing_lines": []}
         if case == "malformed" and sid == target_step:
