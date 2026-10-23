@@ -96,9 +96,11 @@ exact "python$PYTHON_VERSION" "$PYTHON_VERSION" "${py_actual:-}"
 if [[ -n "${GOOGLETEST_COMMIT:-}" ]]; then
     # Only a real checkout counts: an empty directory would make git report the SUPERPROJECT's HEAD.
     gt_dir="$repo_root/third_party/googletest"
-    gt_top="$(git -C "$gt_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+    # And never with an inherited GIT_DIR (a git hook exports one; in a worktree it is absolute, so the
+    # probe would read the superproject wherever it is run from).
+    gt_top="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$gt_dir" rev-parse --show-toplevel 2>/dev/null || true)"
     gt_actual=""
-    [[ "$gt_top" == "$gt_dir" ]] && gt_actual="$(git -C "$gt_dir" rev-parse HEAD 2>/dev/null || true)"
+    [[ "$gt_top" == "$gt_dir" ]] && gt_actual="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$gt_dir" rev-parse HEAD 2>/dev/null || true)"
     exact "googletest" "$GOOGLETEST_COMMIT" "${gt_actual:-<submodule missing: git submodule update --init third_party/googletest>}"
 else
     row "googletest" "GOOGLETEST_COMMIT" "not in toolchain/toolchain.env" "FAIL"
