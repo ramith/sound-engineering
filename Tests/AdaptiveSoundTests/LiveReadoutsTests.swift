@@ -184,7 +184,7 @@ struct LiveReadoutsTests {
         try await until("the song to start, and the default tick to be going") {
             landed(viewModel, playing: true) && viewModel.transportTicker != nil
         }
-        let ticker = try #require(viewModel.transportTicker as? RunLoopTicker, "the default ticker is not the run loop's")
+        let ticker = try #require(viewModel.transportTicker as? RunLoopTicker, "not a run-loop ticker")
         #expect(abs(ticker.timer.timeInterval - 1.0 / 20.0) < 1e-9, "the tick is not 20 Hz")
         // In the COMMON modes, so the tick also fires during tracking (a slider drag, a scroll): the common-mode
         // set holds the timer. (Spinning only .eventTracking proves nothing here: the test's own yields run the
