@@ -1,6 +1,6 @@
 # Panel P3 (BREAKER): signal path, gapless seams, Pure output, real-time infrastructure
 
-Repo `main` @ a206107, built and run in my own worktree (`.claude/worktrees/panel-p3-breaker`). Every harness is offline: C++ links the REAL `Sources/AudioDSP` files; Swift uses AVAudioEngine in manual-rendering mode or a bare `AVAudioConverter`. No device was opened and nothing was played. Harnesses and outputs are in `scratchpad/council/exp-p3/` (`cpp/h1..h6`, `swift/enhanced.swift`, `swift/srcband*.swift`, `py/*.py`).
+Repo `main` @ 7d7c2cd, built and run in my own worktree (`.claude/worktrees/panel-p3-breaker`). Every harness is offline: C++ links the REAL `Sources/AudioDSP` files; Swift uses AVAudioEngine in manual-rendering mode or a bare `AVAudioConverter`. No device was opened and nothing was played. Harnesses and outputs are in `scratchpad/council/exp-p3/` (`cpp/h1..h6`, `swift/enhanced.swift`, `swift/srcband*.swift`, `py/*.py`).
 
 I formed my view first and read the earlier evidence afterwards (`docs/architecture/evidence/main-thread-stall-2026-10/rev-sota.md` M2/M5). Where I agree or disagree with it is in §3.
 

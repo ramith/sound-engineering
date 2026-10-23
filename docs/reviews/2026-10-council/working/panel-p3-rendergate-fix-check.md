@@ -14,12 +14,12 @@ There is one follow-up (DSP-06's teardown window), which is **not a regression**
   - Optional 28 CPU-hog threads on a 14-core machine.
   - Each trial is `close(100 ms)`, the production `kHoldRenderTimeout`.
   - Every run was built twice: at `-O2`, and with `-fsanitize=thread`.
-  - `run_tests.cpp`: runs the branch's `Tests/RenderGateTests.inc` **verbatim**, against (a) the new header and (b) the a206107 algorithm re-expressed in the new API (`gatefix/oldapi/RenderGate.h`).
+  - `run_tests.cpp`: runs the branch's `Tests/RenderGateTests.inc` **verbatim**, against (a) the new header and (b) the 7d7c2cd algorithm re-expressed in the new API (`gatefix/oldapi/RenderGate.h`).
   - `py/gate_model.py`: an exhaustive interleaving model, including the timeout and teardown paths.
 
 ## 1. Liveness: close() now completes within one in-flight pass
 
-| Build | Load | Render mode | NEW gate (p50 / p99 / max, timeouts) | OLD gate (a206107), same run |
+| Build | Load | Render mode | NEW gate (p50 / p99 / max, timeouts) | OLD gate (7d7c2cd), same run |
 |---|---|---|---|---|
 | -O2 | no hogs | hot | **1 µs / 7 µs / 33 µs, 0 / 400** | 100 ms / 100 ms / 100 ms, **246 / 400** |
 | -O2 | no hogs | hal | 0 / 142 µs / 388 µs, 0 | 0 / 139 µs / 174 µs, 0 |
@@ -65,7 +65,7 @@ There is one follow-up (DSP-06's teardown window), which is **not a regression**
 ## 4. Do the new tests prove the guarantee without a deadline?
 **Yes.** Running the branch's test file verbatim:
 
-| Test | NEW gate (-O2 and TSan) | OLD algorithm (a206107, same API) |
+| Test | NEW gate (-O2 and TSan) | OLD algorithm (7d7c2cd, same API) |
 |---|---|---|
 | `ClosedGateTurnsRenderAway` | PASS | PASS |
 | `CloseWaitsForRenderInside` | PASS | **HANGS** (killed by a 20 s alarm) |

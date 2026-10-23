@@ -1,6 +1,6 @@
 # Panel P5b: browse UI logic, device / output policy, design tokens (N72–N99, N115–N123)
 
-Adversarial panelist, repo @ main `a206107`. Worktree `.claude/worktrees/panel-p5b` (detached). The panel's tests
+Adversarial panelist, repo @ main `7d7c2cd`. Worktree `.claude/worktrees/panel-p5b` (detached). The panel's tests
 there are uncommitted and are archived in `exp-p5b/tests/`:
 - `P5bBrowseBreakTests.swift` (LibraryBrowseKitTests)
 - `P5bOutputPolicyBreakTests.swift` (OutputDeviceKitTests)

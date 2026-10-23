@@ -256,7 +256,7 @@ func checkDamagedPageQuarantined(number: Int, url: URL) async -> Bool {
 
 // MARK: - OPEN-06 — a store an unfinished test build migrated to v7 is refused, untouched
 
-/// The v7 the FIRST C2 build ran (858db30), on top of a v6 store: the year still in the album key, no
+/// The v7 the FIRST C2 build ran (f76a78a), on top of a v6 store: the year still in the album key, no
 /// `regroup_owed`, no `edition_year`. (Its data backfill is left out — only the shape matters here.)
 private let firstBuildV7Statements = [
     "ALTER TABLE tracks ADD COLUMN album_title TEXT;",

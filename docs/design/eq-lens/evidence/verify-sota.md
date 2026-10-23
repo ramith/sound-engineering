@@ -1,6 +1,6 @@
 # Verify pass: SOTA review vs `dsp-plan-v2.md` (Reviewer 2)
 
-*2026-10-10. A single, bounded re-check. I read v2, `dsp/v2/results/` and decisions 25–28 (`feat/s10-8-eq` @ d6ab539).
+*2026-10-10. A single, bounded re-check. I read v2, `dsp/v2/results/` and decisions 25–28 (`feat/s10-8-eq` @ c15f183).
 New measurements are in this folder and re-run with `sh run_verify.sh` (about 4 min).*
 
 **Labels.** **[M]** measured here · **[A]** the author's v2 measurement · **[O]** my opinion.

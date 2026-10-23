@@ -1,10 +1,10 @@
 # Lane A report: the gate and the toolchain
 
-Branch `testrig/gate-toolchain` (worktree `.claude/worktrees/testrig-a`), rebased onto `testrig/integration` @ 94fc3c4 (Xcode 27.1). Not pushed.
+Branch `testrig/gate-toolchain` (worktree `.claude/worktrees/testrig-a`), rebased onto `testrig/integration` @ 96d057f (Xcode 27.1). Not pushed.
 
 **Headline:** the registry, runner, toolchain manifest, parity check, CI workflows and planted-failure proof are done and proven on this Mac. Three things stop a clean end-to-end `--tier ci` from being a valid verdict on this branch, and the coordinator's combine resolves them: (1) the GoogleTest rows from `testrig/cpp-rig` are not here, so parity fails by design; (2) the new `build-null-test.sh` flags (`--shards`, `--tier`, `--opt-run`, `--gtest_*`) are not here, so the null-test steps cannot run; (3) my one full `--tier ci` run was corrupted by my own edit to `run.sh` mid-run (details below), so its exit code 2 is an artifact, not a verdict.
 
-## Commits (on top of 94fc3c4)
+## Commits (on top of 96d057f)
 
 | commit | what |
 |---|---|
@@ -101,7 +101,7 @@ My hypothesis, not verified: under width 1 the held prefetch occupies the only p
 4. **`check` tier (T2)** no longer includes the C++ null test (it is `combine,ci,gate` now, to keep T2 fast). Say if T2 should run the correctness tier.
 5. **Wall times** are not measurable locally for CI. Estimates (labelled estimates): static ~15 min (clang-tidy 1.5 min, Periphery 3 min, plus its own build); swift ~10 min; cpp ~25 min (null-debug on 3 shards ~8–10, perf ~5, the rest small); asan ~30 min; tsan ~55 min (the local TSan run took 53 min serial; 3 shards should bring it down, unmeasured). Periphery builds its own index in the static job, so the static job duplicates the swift job's build. Estimated cost ~5 min per run.
 6. **`make stress KIND=cpp`** is wired to `null-run.sh --shards 3 --gtest_filter --gtest_repeat --gtest_shuffle --gtest_random_seed` with a printed seed. It refuses until `--gtest_repeat` exists in the script (Lane B). Not run.
-7. **`research/eq-engine-break-it/build-measure.sh`**: not mine (Lane B flagged it, broken at 94fc3c4).
+7. **`research/eq-engine-break-it/build-measure.sh`**: not mine (Lane B flagged it, broken at 96d057f).
 
 ## Xcode 27 and macOS 27 notes
 

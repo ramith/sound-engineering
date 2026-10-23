@@ -1,7 +1,7 @@
 # Product docs reconciled to the code — council report (docs-product)
 
 **Scope:** `docs/product/PRD.md`, `requirements.md`, `user-journeys.md`, `backlog.md`, `known-issues.md`.
-**Ground truth:** `main` at a206107 (R1 = v1.0.0-alpha; release PR #87 merged, tag pending a green CI — wording aligned with
+**Ground truth:** `main` at 7d7c2cd (R1 = v1.0.0-alpha; release PR #87 merged, tag pending a green CI — wording aligned with
 the sprint plan on `docs/council-recon-arch`).
 **Branch / worktree:** `docs/council-recon-product` in `.claude/worktrees/docs-recon-product` (not pushed).
 **Method:** every requirement, journey, story and known issue checked against the source with grep and reads (file:line in
@@ -36,15 +36,15 @@ the five files resolve (checked after every commit).
 ### known-issues.md — MATCHES 2 · STALE 1 · WRONG 2 (+ ~42 open issues that were missing)
 
 - MATCHES: DUR-1 (closed), ENH-002 (still L/R-only, `AudioEngineBridge+Graph.swift:170-173`).
-- STALE: SEQ-1 Gate 1 — the filter now counts **user** playlists only (PR #85, ff0e0da; `LibraryStore+DAO.swift:365-366`). Annotated.
+- STALE: SEQ-1 Gate 1 — the filter now counts **user** playlists only (PR #85, 6d0dfef; `LibraryStore+DAO.swift:365-366`). Annotated.
 - WRONG: the header's promise that each entry is guarded by `withKnownIssue` (zero uses in `Tests/`); ENH-001's "guarded by
-  `VM-AA-RTR-1` withKnownIssue" (dropped in c63ba7f). Both corrected with strike-through.
+  `VM-AA-RTR-1` withKnownIssue" (dropped in af34a53). Both corrected with strike-through.
 - **Notable change:** the page is now the open list the R1 release notes link to. **44 open entries** (2 HIGH-by-council +
   1 HIGH logged + 18 MEDIUM + 19 LOW + 4 internal), an at-a-glance table, each with file:line, source and forward link;
   a **Known limitations** table (not notarized, Pure on Bluetooth, no single-file open, copy-then-delete moves, FFmpeg-fallback
   gapless trim, DSD); a **Closed** section (the 13 Sprint G blockers, the freeze, and 6 logged items found already fixed:
-  G-LIB-03 ad2ee3c, the Pure alive-listener leak a4c5bc1, audit S1-E cc976dc, `withExtendedLifetime` 69b94aa/cc976dc, the R10
-  stall test a861cc6, Pure resume intro 92c1801).
+  G-LIB-03 96e98aa, the Pure alive-listener leak 0533d69, audit S1-E 8f09320, `withExtendedLifetime` 0584ffe/8f09320, the R10
+  stall test 3f1dfa5, Pure resume intro edc9b4e).
 - Of the logged post-R1 items: library 13/14 still open, playback / shell 9 open + 1 partly fixed / 11, ledger + freeze +
   evidence 15 open + 1 partly fixed + 4 fixed + 2 not judgeable from code / 22.
 
@@ -120,7 +120,7 @@ New in this reconciliation (not in any earlier list):
    `addLooseFileToPlaylist`) but nothing in the app calls them: no Finder drop target, no Open…, no `CFBundleDocumentTypes` /
    `application(_:open:)`; the only `.fileImporter` on a playlist is Locate… (`PlaylistDetailView.swift:55`); the queue mirror
    comments that "there is no loose-file queue entry point in the UI today" (`AudioViewModel+QueueMirror.swift:40-44`). The old
-   folder-chooser entry was removed in PR #23 (7058667) without a replacement. US-LIB-02 / US-PLIST-02 are Must stories, and
+   folder-chooser entry was removed in PR #23 (67e4a50) without a replacement. US-LIB-02 / US-PLIST-02 are Must stories, and
    `sprint-plan.md`'s S10.3 row says "add a single non-library file" shipped. → backlog statuses + known limitation.
 5. **F5 — LOW (spec ↔ code, no recorded decision): the analyzer updates at 20 Hz**, the shared main-thread tick
    (`AudioViewModel+SpectrumTimer.swift:35`), where FR-UI-01 / architecture §14 say ≥ 30 fps. Either record it as a decision or
@@ -128,7 +128,7 @@ New in this reconciliation (not in any earlier list):
 6. **F6 — process / legal (not code): the public repository has no licence.** `gh repo view` → `visibility: PUBLIC`,
    `licenseInfo: null`, no LICENSE file; PRD §6 required one before going public; R1 is being released from it. → US-REL-02.
 7. **F7 — doc fact: ENH-001's guard test is not a guard.** `VM-AA-RTR-1` (`Tests/AudioViewModelTests/AutoAdvanceReconfigureGapTests.swift:88`)
-   lost `withKnownIssue` in c63ba7f; nothing fails when the seamless fix lands. Corrected in known-issues.
+   lost `withKnownIssue` in af34a53; nothing fails when the seamless fix lands. Corrected in known-issues.
 
 Already logged (Sprint G break-it / freeze lists), re-verified still present, and requirement-relevant — the most serious:
 KI-LIB-01 (HIGH, "Remove Missing…" deletes entries of an unplugged drive, `PlaylistsModel+DeadFiles.swift:33-34`), KI-SET-02

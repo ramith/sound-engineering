@@ -1,6 +1,6 @@
 # 00 — Shared codebase map (AdaptiveSound)
 
-**Snapshot:** `main` @ `a206107` (release: 1.0.0-alpha), 2026-10-13. Repo `/Users/ramith/code/sound-engineering`.
+**Snapshot:** `main` @ `7d7c2cd` (release: 1.0.0-alpha), 2026-10-13. Repo `/Users/ramith/code/sound-engineering`.
 **Purpose:** the common, factual picture for the council's reviewers. It describes the code; it does not judge it.
 LOC = `wc -l` (comments + blanks included). Paths are repo-relative. "app" = the `AdaptiveSound` executable target.
 

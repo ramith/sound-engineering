@@ -142,7 +142,7 @@ namespace
         },
         {"Loudness_MeterBridge_TruePeak", testLoudnessMeterBridgeTruePeak, Tier::Correctness},
         // R1.1-A (council C-46, KI-UI-03): the analysis workers sleep while no audio reaches them.
-        // It reads the workers' own parked state and wake counts (f5d1329), so any process.
+        // It reads the workers' own parked state and wake counts (0fb9ddb), so any process.
         {"Loudness_WorkersSleepWhileIdle", testLoudnessWorkersSleepWhileIdle, Tier::Concurrent},
         // EQ audibility tests (Sprint 5 — Milestone 2)
         {"EQ_FrequencyResponseAccuracy", testEQFrequencyResponseAccuracy, Tier::Correctness},

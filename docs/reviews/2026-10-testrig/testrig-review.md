@@ -1,6 +1,6 @@
 # Test-rig redesign: architecture review
 
-- **Tree:** read-only worktree `.claude/worktrees/testrig-review2`, detached at 99f046f (origin/main + 34 redesign commits). Lane D is not in the tree and is not reviewed.
+- **Tree:** read-only worktree `.claude/worktrees/testrig-review2`, detached at 2831847 (origin/main + 34 redesign commits). Lane D is not in the tree and is not reviewed.
 - **Method:**
   - Read the gate, the toolchain, both rigs, the product seams and the docs, and compared them with `git show origin/main:scripts/strict-gate.sh` and the old Makefile.
   - Ran read-only probes: `result.py render` and `report.sh` against the last real gate run, a semgrep path-scope probe, action SHA checks against upstream with `git ls-remote`, and the Homebrew ffmpeg formula API.
@@ -51,7 +51,7 @@ Five high items are cheap and belong in this sprint:
 - **Why it matters:**
   - Main's CI is the real gate, and this check would be red after every merge.
   - The founder would learn to ignore the one check they are told to read.
-  - Nothing local runs `report.sh`, so no gate run could have caught this. It is the same kind of bug as the `report.sh` exec-bit bug fixed in cf8ebb9.
+  - Nothing local runs `report.sh`, so no gate run could have caught this. It is the same kind of bug as the `report.sh` exec-bit bug fixed in 3b6d83d.
 - **Fix:**
   - `render` reads only `**/results/*.json`, the glob `report.sh`'s own missing-check already uses at line 40.
   - Add a registry row `report-selftest` (static job, push and check tiers). It runs `report.sh` on a small checked-in fixture tree:

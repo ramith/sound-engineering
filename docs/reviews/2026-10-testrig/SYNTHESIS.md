@@ -2,7 +2,7 @@
 
 Sources: `qa-expert.md` (57-hazard inventory, taxonomy, framework probes), `refactoring.md` (primitives, seams,
 migration with file:line), `architect.md` (gate, toolchain, lanes, determinism, phased plan). All three read
-`r1.1a/integration` @ 22287da; f5d1329 (Loudness_WorkersSleepWhileIdle) is the worked example of the target pattern.
+`r1.1a/integration` @ b080a29; 0fb9ddb (Loudness_WorkersSleepWhileIdle) is the worked example of the target pattern.
 
 ## Diagnosis (all three agree)
 PR #91's seven red CI runs had three causes — not one bad test:
@@ -21,7 +21,7 @@ sleep; a misspelt `--filter` runs 0 tests and exits 0; SwiftFormat lints nothing
 ## The four rules (consensus)
 1. **Time only ever breaks hangs.** Every wait waits for a STATE; its generous cap fails loudly, naming the state;
    nothing ever carries on past a deadline. Holds are released only by the test.
-2. **Measure the component, never the machine.** Per-component counters / "done" hooks (f5d1329), thread-CPU time,
+2. **Measure the component, never the machine.** Per-component counters / "done" hooks (0fb9ddb), thread-CPU time,
    min-of-N, ≥10× tripwires in the gate; real performance budgets live in an optimised perf lane.
 3. **Each test owns its world.** Unique storage per test; blocking work off the shared test pool; heavy
    real-engine suites in their own non-parallel step.

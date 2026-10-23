@@ -1,6 +1,6 @@
 # Council: docs ↔ code reconciliation — roadmap, planning, architecture
 
-**Worktree:** `.claude/worktrees/docs-recon-arch`, branch `docs/council-recon-arch` (base `origin/main` @ `a206107`). Docs only; nothing pushed. 12 commits:
+**Worktree:** `.claude/worktrees/docs-recon-arch`, branch `docs/council-recon-arch` (base `origin/main` @ `7d7c2cd`). Docs only; nothing pushed. 12 commits:
 
 | Commit | Scope |
 |---|---|
@@ -182,8 +182,8 @@ Method: I verified architecture.md, sprint-plan and roadmap myself against the c
 
 ### architecture/main-thread-audio-audit-2026-10.md
 
-- Fixes merged in PR #86 (`f115cca`).
-- The file:line references are pinned to `5b348fe`.
+- Fixes merged in PR #86 (`dd5e02d`).
+- The file:line references are pinned to `457f895`.
 
 ### architecture/dsp-apple-silicon-survey.md
 

@@ -1,4 +1,4 @@
-// H8: the REAL GaplessSource @ f93b08e under the D41 races (one RT thread pulling, one control thread).
+// H8: the REAL GaplessSource @ 1ebf323 under the D41 races (one RT thread pulling, one control thread).
 //  E1 clear vs seam      : B armed; the control clears at a random offset around A's end.
 //  E2 arm vs end         : nothing armed; the control arms B at a random offset around A's end.
 //  E3 clear+arm vs seam  : B armed; the control does clearNext(); armNext(C) back to back (the

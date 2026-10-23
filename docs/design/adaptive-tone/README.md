@@ -1,6 +1,6 @@
 # Adaptive Tone: an AI that reads ahead, sets the tone for each song, and learns from "better / not" (proposal)
 
-*2026-10-10. A proposal only: nothing is built, and no product code was changed. Branch read: `feat/s10-8-eq` @ `8faff1a` (pre-merge; Sprint EQ then merged as PR #73). File:line references below are as of that commit unless marked "now".*
+*2026-10-10. A proposal only: nothing is built, and no product code was changed. Branch read: `feat/s10-8-eq` @ `07b35c7` (pre-merge; Sprint EQ then merged as PR #73). File:line references below are as of that commit unless marked "now".*
 
 > **Status (reconciled 2026-10-13):** still a **proposal awaiting a founder decision** — no adaptive-tone code and no `research/adaptive-tone-poc/` exist. It is not on the schedule; the [roadmap](../../product/roadmap.md) lists it under "Proposals awaiting a founder decision" (it overlaps the S15–S17 adaptive thesis). Since it was written, EQ2 shipped (PR #73), so AT1's dependency is met.
 
@@ -108,7 +108,7 @@
 6. **Add your taste.**
    - Add the learned personal offset `p` (§3.3) for this output.
    - `played Tone = applied + p`, then `points = clamp(base + Σ tone·weights, ±12)` as today (`EQCurve.swift:43-52`).
-   - The loudness-neutral gain (decision 26, live since `811a59d`) makes any shape level-fair.
+   - The loudness-neutral gain (decision 26, live since `ffd8425`) makes any shape level-fair.
 7. **Cache.**
    - A derived row per track: band balance, `e`, the decision, `analyzer_version`.
    - It goes in a new LibraryStore table, via an additive migration on the `derived_version` pattern [D:§RO8-3]. Being a derived cache, it can be dropped and rebuilt.
@@ -176,7 +176,7 @@
 
 ### 3.7 What exists, and what's missing (repo)
 
-| Need | Status @ `8faff1a` *(now @ `a206107`)* |
+| Need | Status @ `07b35c7` *(now @ `7d7c2cd`)* |
 |---|---|
 | Read-ahead analysis of current + next, cached by file identity, never in Pure Mode | **Built** (`TrackLoudnessKit/TrackLoudnessAnalyzer.swift`) |
 | Loudness-neutral gain for any curve | **Built** (now `Realizer.mm:430` `loudness_.onDesign`, and `applyGainChange`) |

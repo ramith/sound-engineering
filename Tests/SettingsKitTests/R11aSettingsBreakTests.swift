@@ -1,6 +1,6 @@
 // R1.1-A close-out break-it (P5a), kept as regression tests: SettingsKit `listeningSettingsV1` under corrupt
 // and wrong-typed values (SET-1, SET-2), and the crash-safe Pure volume loans (SET-3, SET-4). Each asserts the
-// safe property; all four were red on c9efbe6. Over a defaults suite of its own (never the app's), removed
+// safe property; all four were red on b1cc33c. Over a defaults suite of its own (never the app's), removed
 // after each test.
 
 import EQEditKit

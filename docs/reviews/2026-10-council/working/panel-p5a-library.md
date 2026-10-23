@@ -1,6 +1,6 @@
 # Panel P5a: library scan / identity / store / search / sort / migration (N30–N71)
 
-Panelist: P5a (adversarial, independent). Repo @ `a206107` (main). Worktree `.claude/worktrees/panel-p5a`.
+Panelist: P5a (adversarial, independent). Repo @ `7d7c2cd` (main). Worktree `.claude/worktrees/panel-p5a`.
 Every claim below comes from the real `LibraryScanner` / `LibraryStore` / `LibraryBrowseKit` code, driven by new swift-testing
 tests on temp dirs and APFS disk images (`hdiutil`), never the founder's library. The tests are UNCOMMITTED and live in
 `Tests/LibraryBrowseKitTests/P5a*.swift` in that worktree; copies are in `scratchpad/council/exp-p5a/`, and the full run

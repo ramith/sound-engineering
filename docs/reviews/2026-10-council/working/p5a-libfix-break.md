@@ -18,7 +18,7 @@ two-same-named-drives users the fix targets are the ones exposed in the window a
 
 ## 1. The original cases (all PASS now)
 
-| Case | Before the fix (a206107) | At 46c1276 |
+| Case | Before the fix (7d7c2cd) | At 46c1276 |
 |---|---|---|
 | LIB-02a `chmod 000` subfolder | swept 5; entry and plays gone | `refused(incompleteWalk)`, 10/10 rows, entries, plays; after restoring perms + 1 genuine delete: `ok(swept=1)` |
 | LIB-02a `chmod 444` (r, no x) | swept 5 | the same as 000: refused, all kept; then swept exactly 1 |

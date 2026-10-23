@@ -1,7 +1,7 @@
 # Product council: PM + BA assessment of R1 (v1.0.0-alpha)
 
 *2026-10-13 · product-manager, with the business-analyst lens (requirements traceability, journey fit).
-Ground truth is the code at `main` @ a206107; every important claim below cites `file:line`. Docs are
+Ground truth is the code at `main` @ 7d7c2cd; every important claim below cites `file:line`. Docs are
 cited only for decisions and rationale. Read-only. Two other agents are rewriting the docs, so doc drift
 is noted only where it changes a product decision.*
 

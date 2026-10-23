@@ -16,7 +16,7 @@ AdaptiveSound has two surfaces with two jobs, and this change makes the split cl
 1. **Folder pick = scan-only**, everywhere. Never touches the queue.
 2. **Now Playing list = the queue only.**
 3. **Album-less songs** (`album_id NULL`) surface in **Songs** (S9.5), never a junk-drawer "Unknown Album".
-4. **Sidebar order: Songs, Albums, Artists, Genres, Years** (done — commit 19a7fe8). Default *selection* stays `.albums` until the real Songs list ships (S9.5), then flips to `.songs` (don't launch onto a placeholder).
+4. **Sidebar order: Songs, Albums, Artists, Genres, Years** (done — commit 4f1760b). Default *selection* stays `.albums` until the real Songs list ships (S9.5), then flips to `.songs` (don't launch onto a placeholder).
 
 ## 3. Folder management in Library (ui-designer lens)
 

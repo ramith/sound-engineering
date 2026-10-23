@@ -1,6 +1,6 @@
 # Lane B report: the C++ test rig (GoogleTest, watchdog, deterministic C++ tests)
 
-Branch `testrig/cpp-rig` (worktree `.claude/worktrees/testrig-b`), rebased onto `testrig/integration` @ 94fc3c4
+Branch `testrig/cpp-rig` (worktree `.claude/worktrees/testrig-b`), rebased onto `testrig/integration` @ 96d057f
 (Xcode 27.1, macOS 26.6). Not pushed. All verification was on Xcode 27.1 (Apple clang 21, clang-2100.3.34.2).
 
 ## Summary
@@ -93,7 +93,7 @@ and the `-O2` timing run are all green. The golden master is unchanged.
 
 | Check | Command | Result |
 |---|---|---|
-| Plain, before (home runner, 94fc3c4) | `bin-plain` | exit 0. 244 passed + 1 pending (`Reconfiguration_Stereo_5p1_Stereo`). 247.4 s wall, 232.3 s CPU. |
+| Plain, before (home runner, 96d057f) | `bin-plain` | exit 0. 244 passed + 1 pending (`Reconfiguration_Stereo_5p1_Stereo`). 247.4 s wall, 232.3 s CPU. |
 | Plain, after (GoogleTest, before migration) | `build-null-test.sh` | exit 0. 245 run: 244 passed, 1 skipped (the same pending test). |
 | Plain, after (migrated) | `DSPKernelNullTest` | exit 0. 245 run: 244 passed, 1 skipped. 372.0 s wall, 290.8 s CPU, under load (see the timing caveat). |
 | Plain, sharded (HEAD) | `build-null-test.sh --shards 3` | exit 0. Serial process 58 + shards 62/62/63 = 245; 244 passed + 1 skipped. 220.5 s wall including the build. |
@@ -171,11 +171,11 @@ Every test runs in the plain step, so each test runs somewhere. The Correctness 
 - **`TestPoints.h`.** Not created; no migration needed a new test point. GaplessSource's hooks remain as they are.
 - **Unique fixture paths (N21).** Kept serial-only instead (see the table).
   - **Constraint for Lane A:** two null-test processes from the same checkout must not run at the same time, except through `--shards`. That includes two variants: plain and ASan would collide on `test-data/`. Separate CI jobs on separate machines are fine.
-- **Full TSan on the new runner.** Not run: about 40 minutes under the current load. Only the concurrent tier was run under TSan. The old runner's full TSan passed on 94fc3c4.
+- **Full TSan on the new runner.** Not run: about 40 minutes under the current load. Only the concurrent tier was run under TSan. The old runner's full TSan passed on 96d057f.
 - **Clean before/after wall times.** Not obtained, because the machine was loaded by other lanes (see the timing caveat).
 - **JSON on a hang.** When the watchdog aborts, GoogleTest writes no JSON. The record is the `[HANG]` line plus exit 134. Lane A's runner can treat a missing JSON file plus that exit code as "hang". GoogleTest's `TEST_PREMATURE_EXIT_FILE` is also available.
 - **Small run-to-run spread in BreakIt_NonFiniteInput.** The NaN case read −5.40 or −5.50 dB across runs. The cause is in the product: LoudnessModule discards its ring at its first configure, so up to one catch-up window at the very start is discarded. The assertion's margin is about 3 dB against a 1 dB bound, so this does not threaten the test.
-- **`research/eq-engine-break-it/build-measure.sh`** (not mine, not gated). It now also needs GoogleTest, because TestSupport.h includes it. It was **already broken at 94fc3c4**: its link list lacks FFmpegLoader.cpp, and `ffmpeg::openLibrary` is undefined. Request below.
+- **`research/eq-engine-break-it/build-measure.sh`** (not mine, not gated). It now also needs GoogleTest, because TestSupport.h includes it. It was **already broken at 96d057f**: its link list lacks FFmpegLoader.cpp, and `ffmpeg::openLibrary` is undefined. Request below.
 
 ## Requests for other lanes
 
@@ -216,7 +216,7 @@ Every old name `X` is now the GoogleTest test `<Tier>.X`. The names are byte-ide
 - **needsFfmpeg (20):** FileDecode_BitExact_24bit/Float32, NativeRates, Mono_BitExact, Multichannel_4ch, BackendEquivalence, the 8 FileDecode_Seek_* tests, and the 6 FFmpeg_* tests.
 
 Several old in-process "serial" reasons no longer apply across processes, so those tests are not flagged serial:
-- the context-switch count (fixed in f5d1329);
+- the context-switch count (fixed in 0fb9ddb);
 - the timing clock (now thread CPU);
 - the thread-local RT-allocation guard;
 - the per-thread FPCR;

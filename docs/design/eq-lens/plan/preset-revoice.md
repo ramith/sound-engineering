@@ -1,6 +1,6 @@
 # Re-voicing the built-in EQ presets for the honest engine (proposal)
 
-*2026-10-10. A proposal only: the repo was only read (`feat/s10-8-eq` @ 87292b6). Everything here re-runs with
+*2026-10-10. A proposal only: the repo was only read (`feat/s10-8-eq` @ deb94e3). Everything here re-runs with
 `sh run.sh` in this folder, in about 1 minute.*
 
 **Labels.** **[M]** measured here · **[C]** a source I opened · **[O]** my opinion.

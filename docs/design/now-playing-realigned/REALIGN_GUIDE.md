@@ -1,6 +1,6 @@
 # REALIGN GUIDE — Now Playing, PR by PR
 
-Every PR below has: **(1)** what you will see change, **(2)** which file to edit, **(3)** the exact target values, **(4)** a SwiftUI code sample you can adapt, **(5)** a done-checklist. File paths were correct at commit `82bc287` — if a view moved, search for the type name, don't guess.
+Every PR below has: **(1)** what you will see change, **(2)** which file to edit, **(3)** the exact target values, **(4)** a SwiftUI code sample you can adapt, **(5)** a done-checklist. File paths were correct at commit `ec8bedc` — if a view moved, search for the type name, don't guess.
 
 Shared tokens — add these to `DesignSystem` first if missing (PR-A):
 

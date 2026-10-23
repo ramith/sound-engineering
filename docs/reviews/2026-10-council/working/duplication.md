@@ -1,6 +1,6 @@
 # Council stage 3: the duplication pass (charter criterion 3)
 
-Repo `/Users/ramith/code/sound-engineering` @ `main` `a206107`, read-only. Scratch work in `scratchpad/council/exp-dup/`.
+Repo `/Users/ramith/code/sound-engineering` @ `main` `7d7c2cd`, read-only. Scratch work in `scratchpad/council/exp-dup/`.
 Criterion 3: "No duplicated code or functionality": copy-paste logic AND two ways of doing the same job.
 
 This pass folds in, and re-checks against the code, the duplication notes of `area-bridge.md` (BR-2, BR-8, BR-10, BR-12),

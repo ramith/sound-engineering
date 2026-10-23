@@ -1,7 +1,7 @@
 # Sprint EQ: UI plan v2 (V1b). Replaces `ui-plan-check.md`
 
 *ui-designer, 2026-10-10. This was a read-only check. Sources:*
-- *Branch `feat/s10-8-eq` @ `d6ab539`, read through git objects with no checkout.*
+- *Branch `feat/s10-8-eq` @ `c15f183`, read through git objects with no checkout.*
 - *The founder decisions: 21–24 (V1b) and 25–28.*
 - *The architect's review (APPROVED WITH AMENDMENTS), whose reconciled contract (§2) is **the
   contract** here.*

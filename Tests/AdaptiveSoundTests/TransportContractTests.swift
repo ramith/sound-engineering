@@ -7,7 +7,7 @@ import Testing
 
 //
 // The shipped `AudioViewModel` against `OnDeckEngineModel` (the bridge's semantics, steps in the
-// order each scenario sets). Under the design every scenario holds. On b5c4cd3 they were the
+// order each scenario sets). Under the design every scenario holds. On 532ab79 they were the
 // council's P4 repros: Playing shown over a silent engine, a click lost, a second Space starting the
 // song again. The ablation shows the engine's half is necessary: with the view model fixed, an engine
 // that still runs an overtaken stop plays nothing while the app shows Playing.

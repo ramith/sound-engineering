@@ -8,7 +8,7 @@ transport steps never overlapped (overlaps=0); an off-queue `assumeIsolated` TRA
 type now carries today's `dispatchPrecondition`. Output: "epoch=119 ops=22 overlaps=0 clockTicks=2 /
 wrong-queue access: TRAP / E1 OK".
 
-E2 (`e2/`, in worktree `.claude/worktrees/rev-arch` @ a206107): a LIBRARY target `ArchProbeCore`
+E2 (`e2/`, in worktree `.claude/worktrees/rev-arch` @ 7d7c2cd): a LIBRARY target `ArchProbeCore`
 depending only on `AudioDSP` reaches one symbol from every C sub-header (DeviceBridge, PureModeBridge,
 AudioUnitRegistrationBridge, EQDesignBridge) through `import AudioDSP` — no `-import-objc-header` — and
 hosts a `@MainActor @Observable` model plus a queue-backed actor; a swift-testing target

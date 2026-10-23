@@ -1,8 +1,8 @@
-# Breaker verify pass: S10.8 G main-thread-stall fix @ bc08b7d
+# Breaker verify pass: S10.8 G main-thread-stall fix @ 8957d87
 
 **Verdict: SHIP.** No BLOCKER and no MAJOR. Both of last round's MAJORs are fixed and proven. What remains is MINOR, and most of it is pre-existing.
 
-**How this was run.** I checked out bc08b7d detached in `.claude/worktrees/review-breaker` and re-applied my harness and hook there, uncommitted. All artifacts are in `scratchpad/rev-breaker/verify/`.
+**How this was run.** I checked out 8957d87 detached in `.claude/worktrees/review-breaker` and re-applied my harness and hook there, uncommitted. All artifacts are in `scratchpad/rev-breaker/verify/`.
 
 ## Pass/fail
 
@@ -64,16 +64,16 @@
 
 ## Addendum: the MINOR-1 and MINOR-2 fixes
 
-Branch `sprint/s10-8-g-fix-stall-minors`, cut from bc08b7d. Not pushed. The harness and its hook stay uncommitted in the review worktree.
+Branch `sprint/s10-8-g-fix-stall-minors`, cut from 8957d87. Not pushed. The harness and its hook stay uncommitted in the review worktree.
 
 ### Commits
 
-- **795a994: semgrep rule `main-thread-no-concrete-bridge`.** It bans the `AudioEngineBridge` type name outside the bridge's files, except the view model's init default and `Debug/MainThreadStall*.swift`. Comment lines are skipped.
+- **24c26e6: semgrep rule `main-thread-no-concrete-bridge`.** It bans the `AudioEngineBridge` type name outside the bridge's files, except the view model's init default and `Debug/MainThreadStall*.swift`. Comment lines are skipped.
   - All 5 downcast plants are caught.
   - The original plants all still flag (40 results).
   - The real tree passes `semgrep --error` (exit 0).
   - I excluded the whole `Debug/MainThreadStall*.swift` glob rather than only the SelfTest file, because the self-test's Probe and Rig files also name the bridge.
-- **4643b9b: `transportStopEpoch` / `nextStopEpoch()`.** Pause and stop number their request as a stop. `startPlayback`'s Task now skips both the queue prime and `isPlaying = true` when a stop was numbered after its start.
+- **97139c5: `transportStopEpoch` / `nextStopEpoch()`.** Pause and stop number their request as a stop. `startPlayback`'s Task now skips both the queue prime and `isPlaying = true` when a stop was numbered after its start.
   - Only a stop ends a start: a seek or a newer start leaves it alone, so the queue is still primed after a scrub during a slow start.
 
 ### Harness results after the fix

@@ -1,6 +1,6 @@
 # Area review: SwiftUI views and the design system
 
-Reviewer: SwiftUI Pro (council Stage 2). Repo @ main (a206107), read-only.
+Reviewer: SwiftUI Pro (council Stage 2). Repo @ main (7d7c2cd), read-only.
 
 **Scope read:**
 - In full:

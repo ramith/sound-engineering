@@ -11,7 +11,7 @@ There are four notes; none blocks the release (§3).
 - Offline only: no device was opened and no audio played.
 
 ## 1. The earlier reproductions, re-run
-| Earlier finding | Before (a206107) | Now (672fc0a) |
+| Earlier finding | Before (7d7c2cd) | Now (672fc0a) |
 |---|---|---|
 | D71: mono file, 2-channel device | silent forever, never ends (H3b) | The policy gives `ChannelCountMismatch`, so the track plays Enhanced. The engine start re-checks the policy (`PureModeBridge.cpp`), and the HAL re-checks the stream it really pulls (`HALOutputEngine.mm` gate 4b). |
 | D74: packed 3-byte 24-bit | heap-buffer-overflow (ASan) | Exact-size buffers at 1/2/6/8 channels, LE and BE: no ASan report. All 2²⁴ codes are exact. |

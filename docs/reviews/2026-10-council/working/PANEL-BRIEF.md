@@ -3,7 +3,7 @@
 Charter criterion 4: **"Algorithmic correctness: every algorithm checked against a reference (literature / spec / an
 oracle) and PROVEN by tests."** Criterion 5: **state of the art.** Read `CHARTER.md` and §8 of `00-map.md` (the
 algorithm inventory: D-rows = DSP, N-rows = non-DSP; each row has file:line, what it computes, its cited reference and
-its test coverage) in this directory. The repo is `/Users/ramith/code/sound-engineering` @ main (a206107).
+its test coverage) in this directory. The repo is `/Users/ramith/code/sound-engineering` @ main (7d7c2cd).
 
 ## Method: adversarial and independent
 - You are one of several independent panelists. Don't assume the code, its comments, its tests or earlier reviews are

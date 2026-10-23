@@ -5,19 +5,19 @@ the founder decisions, and the response to the pre-mortem.
 
 **Reviewer and base.**
 - Reviewer: architect-reviewer, cross-examined by the-fool. Read-only.
-- Code base: `main` @ `7761693`, which is v1.0.0-alpha plus the R1 fix commits `5be24a4`…`7761693`.
-- Every Stage 1–4 report read `a206107`, so this register was **re-baselined at `7761693`**.
+- Code base: `main` @ `9df49e3`, which is v1.0.0-alpha plus the R1 fix commits `ee8e3dd`…`9df49e3`.
+- Every Stage 1–4 report read `7d7c2cd`, so this register was **re-baselined at `9df49e3`**.
 
 **Inputs.**
 - All 35 council files in this folder.
 - `stage5-fool.md`, the pre-mortem. It is answered point by point in §6, and the points I accepted are folded into §1–§5.
 
 **How claims were checked.**
-- Every STRUCTURAL rating and every FIXED-R1 claim was checked against `7761693` with `git grep` / `git show`.
+- Every STRUCTURAL rating and every FIXED-R1 claim was checked against `9df49e3` with `git grep` / `git show`.
 - I re-ran the fool's Ogg/Opus probe (`scratchpad/fool-ogg/probe`). No app was launched, and nothing was built in the
   checkout.
-- In the Evidence column, ✓ means I checked it at `7761693`. Every other file:line comes from the source report, at
-  `a206107`.
+- In the Evidence column, ✓ means I checked it at `9df49e3`. Every other file:line comes from the source report, at
+  `7d7c2cd`.
 
 **Severity, recalibrated across the reports:**
 - **STRUCTURAL:** a design choice whose consequences show up in two or more areas, or that blocks a roadmap epic.
@@ -181,19 +181,19 @@ Column key:
 | C-102 | fool §3.4 (new) | **Master Gain resets to unity, the loudest setting, at every launch** (it is a turn-down-only law). This is hearing safety, not just convenience. | 4,6 | OPEN | G | A 20 dB turn-down for sensitive in-ear monitors comes back 20 dB louder after relaunch | ✓ `AudioViewModel.swift:195` (`= MasterGainLaw.unity`, not persisted) | S / low (R1.1): never restore above the stored value |
 | C-89 | docs-product known-issues (44), ledger | The logged post-R1 items are **referenced, not re-registered** here. They go to R1.1 triage. | — | OPEN | n/a | e.g. `--:--` after relaunch; the wrong queue restored | `known-issues.md` (`docs/council-recon-product`) | — |
 
-### K. Fixed in R1 (v1.0.0-alpha, PRs #88 and #89, checked at `7761693`)
+### K. Fixed in R1 (v1.0.0-alpha, PRs #88 and #89, checked at `9df49e3`)
 
 | ID | Merged sources | Finding | Orig. sev | Fixed by (✓) | Follow-ups (→ open row) |
 |---|---|---|---|---|---|
-| C-90 | D71, DSP-03, D76 (width) | A Pure track whose channel count differed from the device's played silence forever | G | `d540c5c`: ✓ `PureModePolicy.cpp:132-134` | Reason only logged → C-34; hog split → C-32; format left changed → C-31; depth → C-33 |
-| C-91 | D74, D76, DSP-04 | A packed-24 heap overrun, NaN undefined behaviour, +Inf rendered at full scale, a ⌈bits/8⌉ write bound | G | `d540c5c`: ✓ `NativePcmFormat::fromAsbd` (`HALOutputEngine.mm:705`) | Check that HDMI isn't now declined → FD-5 |
-| C-92 | DSP-06 (liveness, teardown), D63 / N100, BT-6 (gate test) | The RenderGate's close() could starve; a teardown use-after-free window; the gate tests could hang | G | `5be24a4` `7e69c16` `2f23dd1` `5f78223` `74db104`: ✓ `requestClose` / `awaitQuiet` (`HALOutputEngine.mm:846`); ✓ `parkIfRenderOutlivedStop` | Parked threads; seek still needs the gate → C-36 |
-| C-93 | D41, P4 §1, docs-product F1 | Pure played the old next track after an edit; REARM-ORDER; NEXT-NEXT; START-OVERTAKE | G | `35b3519` `6492f73` `1060665`: ✓ `OnDeckGate` (`OnDeckTicket.swift:38`) | A2/A2′ and `ended` across a seek → C-14; glue untested → C-80 |
-| C-94 | p3a-d41-cpp-break §3 | A re-arm inside the seam claim could destroy the track being adopted | L | `a130b7c`: ✓ `lastArmed_` | — |
-| C-95 | F-P4-1 | A Play Next during a prime played the old pick | L | `a840fe5`: ✓ `+Queue.swift:125` | Its append twin → C-17 |
-| C-96 | N92, P5B-03, H1, H2, round-3 §6 | The device pin fought the reconnected headphones; the launch device counted as a pick; H1/H2; the OFF copy | G | `5e6644f` `7478d84` `f098821`: ✓ `chosenUID` | The choice lasts one session → C-12; C-28 unchanged |
-| C-97 | LIB-02, P5A-01/02, N32/33/44, ATK-4/6 | Songs were swept after an incomplete walk, after a walk of another same-named drive, and from unbound roots | S (data loss) | `adeff5e` `6ed2169` `dbb52a2`: ✓ `SweepRefusal`, ✓ `volume_uuid` | **Narrowed, not closed:** rebind → C-54; root-wide refusal → C-55; tombstone → C-56; export/backup → C-101 |
-| C-98 | D41 H3e | A Pure arm couldn't happen until the previous track was reaped | L | `35b3519`: `armNext` reaps first | — |
+| C-90 | D71, DSP-03, D76 (width) | A Pure track whose channel count differed from the device's played silence forever | G | `231a927`: ✓ `PureModePolicy.cpp:132-134` | Reason only logged → C-34; hog split → C-32; format left changed → C-31; depth → C-33 |
+| C-91 | D74, D76, DSP-04 | A packed-24 heap overrun, NaN undefined behaviour, +Inf rendered at full scale, a ⌈bits/8⌉ write bound | G | `231a927`: ✓ `NativePcmFormat::fromAsbd` (`HALOutputEngine.mm:705`) | Check that HDMI isn't now declined → FD-5 |
+| C-92 | DSP-06 (liveness, teardown), D63 / N100, BT-6 (gate test) | The RenderGate's close() could starve; a teardown use-after-free window; the gate tests could hang | G | `ee8e3dd` `7643826` `e5f9e72` `f9986a6` `8686aea`: ✓ `requestClose` / `awaitQuiet` (`HALOutputEngine.mm:846`); ✓ `parkIfRenderOutlivedStop` | Parked threads; seek still needs the gate → C-36 |
+| C-93 | D41, P4 §1, docs-product F1 | Pure played the old next track after an edit; REARM-ORDER; NEXT-NEXT; START-OVERTAKE | G | `cffba63` `da8e5cc` `f8da838`: ✓ `OnDeckGate` (`OnDeckTicket.swift:38`) | A2/A2′ and `ended` across a seek → C-14; glue untested → C-80 |
+| C-94 | p3a-d41-cpp-break §3 | A re-arm inside the seam claim could destroy the track being adopted | L | `73ebb44`: ✓ `lastArmed_` | — |
+| C-95 | F-P4-1 | A Play Next during a prime played the old pick | L | `27e3176`: ✓ `+Queue.swift:125` | Its append twin → C-17 |
+| C-96 | N92, P5B-03, H1, H2, round-3 §6 | The device pin fought the reconnected headphones; the launch device counted as a pick; H1/H2; the OFF copy | G | `cdf8dcb` `b2781c2` `e2d6037`: ✓ `chosenUID` | The choice lasts one session → C-12; C-28 unchanged |
+| C-97 | LIB-02, P5A-01/02, N32/33/44, ATK-4/6 | Songs were swept after an incomplete walk, after a walk of another same-named drive, and from unbound roots | S (data loss) | `e362e81` `46ec9ba` `340de12`: ✓ `SweepRefusal`, ✓ `volume_uuid` | **Narrowed, not closed:** rebind → C-54; root-wide refusal → C-55; tombstone → C-56; export/backup → C-101 |
+| C-98 | D41 H3e | A Pure arm couldn't happen until the previous track was reaped | L | `cffba63`: `armNext` reaps first | — |
 
 ### Refuted or corrected claims
 
@@ -495,7 +495,7 @@ Recommendation first. Each line also says what the decision blocks.
 
 | # | The fool's point | Verdict | Evidence / what changed here |
 |---|---|---|---|
-| 1 | Re-baseline at `7761693`; W0 partly landed; 3 fakes | **ACCEPT (already done)** | Every row was checked at `7761693` (✓ marks); 9 FIXED-R1 rows. There are **4** engine doubles, not 3 (✓ `SheetEngine`, `DeviceTestEngine`, `OnDeckEngineModel`, `MockAudioEngine`); C-80 is now M |
+| 1 | Re-baseline at `9df49e3`; W0 partly landed; 3 fakes | **ACCEPT (already done)** | Every row was checked at `9df49e3` (✓ marks); 9 FIXED-R1 rows. There are **4** engine doubles, not 3 (✓ `SheetEngine`, `DeviceTestEngine`, `OnDeckEngineModel`, `MockAudioEngine`); C-80 is now M |
 | 2 | W0–W5 is a feature-blocking rewrite; use feature-funded slices with a cap and finish-or-revert | **ACCEPT** | §4 rewritten: no standalone waves; 2-week cap; finish-or-revert; W2 funded or triggered. The wave contents are kept as the slice catalogue, so the structural findings still have a home |
 | 3 | SFBAudioEngine adoption was never evaluated; spike first | **ACCEPT, with additions** | §4.5: pass criteria. Added: SFB brings ~21 packages / ~10 binary C decoders (supply chain; still in-process parsers); it has no Pure path, so two engines persist and the spike must test SFB decoders as Pure's `DecodeBackend`; SRC moves into the mixer, which makes C-48 live |
 | 4 | `AVAudioFile` opens Ogg/Opus; FFmpeg is redundant and an attack surface; delete it | **ACCEPT** (after a corpus check) | Re-ran the probe ✓. R-19 / R-20; C-08 → LOCAL; new C-99 (✓ `MetadataExtractor.swift:55-62`, ✓ `FileDecodeSource.cpp:386-399` with the bare-name `""` prefix); FD-3 |

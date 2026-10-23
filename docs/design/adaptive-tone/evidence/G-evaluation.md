@@ -1,6 +1,6 @@
 # Brief G: evaluation (RO12): how we would prove the adaptive EQ is better
 
-*Track G · 2026-10-10 · follows `00-research-protocol.md`. Owns **RO12**. The repo was only read (`feat/s10-8-eq` @ 6b52c44).
+*Track G · 2026-10-10 · follows `00-research-protocol.md`. Owns **RO12**. The repo was only read (`feat/s10-8-eq` @ fc80b46).
 Source IDs `G#` refer to the evidence table in §3. `R#` are repo files, and `A-S#` are Track A's sources (Track A graded them; I did not re-open them).*
 
 **Labels.** **[M]** = computed or measured by me in this session (the arithmetic is shown) · **[C]** = a source I opened ·

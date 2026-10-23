@@ -1,5 +1,5 @@
 #pragma once
-// The a206107 RenderGate ALGORITHM (one state word; close = CAS Open->Closed, polled) re-expressed
+// The 7d7c2cd RenderGate ALGORITHM (one state word; close = CAS Open->Closed, polled) re-expressed
 // in the fix branch's API so the fix's NEW tests can run against the OLD algorithm.
 // requestClose() can only try once (the old gate had no pending-close state); awaitQuiet() keeps
 // trying the CAS; kWaitForever = no deadline (avoids now()+max overflow).

@@ -1,7 +1,7 @@
 # The 2026-10 product council: report
 
-**Dates:** 2026-10-13 to 2026-10-14. **Code reviewed:** `main` at `a206107` (the R1 release PR), re-baselined at
-`7761693` (R1 plus its blocker fixes, PRs #88 and #89). **Decided by:** the founder, on 2026-10-14.
+**Dates:** 2026-10-13 to 2026-10-14. **Code reviewed:** `main` at `7d7c2cd` (the R1 release PR), re-baselined at
+`9df49e3` (R1 plus its blocker fixes, PRs #88 and #89). **Decided by:** the founder, on 2026-10-14.
 **Audience:** the founder and future contributors. The forward plan it produced lives in the
 [roadmap](../../product/roadmap.md#the-post-r1-plan-council-2026-10-14), the
 [sprint plan](../../sprints/sprint-plan.md#after-r1-the-council-re-plan-2026-10-14) and the
@@ -81,8 +81,8 @@ designed and then broken again by an independent breaker ([R1 fix papers](#r1-fi
 - **Algorithm verdicts come from real-code experiments.** Panelists built and ran harnesses in their own worktrees
   against the real `Sources/`, with their own oracles (Python / numpy, small C++ and Swift harnesses). No reviewer
   launched the app or played audio. Each verdict is one of PROVEN-CORRECT, CORRECT-UNPROVEN, DEFECT or QUESTIONABLE.
-- **Re-baselined at the current commit.** Stages 1–4 read `a206107`. Stage 5 re-checked every STRUCTURAL rating and every
-  "fixed in R1" claim at `7761693` (marked ✓ in the register), because R1's own fixes had moved the code.
+- **Re-baselined at the current commit.** Stages 1–4 read `7d7c2cd`. Stage 5 re-checked every STRUCTURAL rating and every
+  "fixed in R1" claim at `9df49e3` (marked ✓ in the register), because R1's own fixes had moved the code.
 - **Platform claims were re-probed.** One premise many reports shared ("Ogg / Opus need FFmpeg") was false on macOS 26:
   `AVAudioFile` opens them natively (R-19). The probe was re-run before the finding changed.
 
@@ -166,7 +166,7 @@ tests deterministic. Each fix was designed, implemented, then broken again by an
 | C-96 | Playback did not return to the headphones the user chose when they reconnected (N92) |
 
 R1 shipped as **v1.0.0-alpha** on 2026-10-14: [GitHub release](https://github.com/ramith/sound-engineering/releases/tag/v1.0.0-alpha),
-[release notes](../../releases/v1.0.0-alpha.md) (corrected in c9d6618 to list surround-on-stereo and Remove Missing,
+[release notes](../../releases/v1.0.0-alpha.md) (corrected in c95e2c6 to list surround-on-stereo and Remove Missing,
 and to stop claiming Apple's Liquid Glass).
 
 ---

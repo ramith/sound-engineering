@@ -26,7 +26,7 @@ reports, the coordinator's memory (`feedback-*`, `reference-subagent-monitoring`
 3. **No rule enforces "CI is the gate".** `main` has no branch protection and auto-merge is off. Through Sprint F
    the agreed gate was the local strict gate, so merging a few minutes after opening a PR was fine. Sprint G switched
    to "CI is the gate" but merge habits stayed the same: #85, #86 and #87 merged mid-CI. `cancel-in-progress` also
-   cancels **main** runs, so the freeze-fix commit (f115cca) never got its own main verdict (its run was cancelled at
+   cancels **main** runs, so the freeze-fix commit (dd5e02d) never got its own main verdict (its run was cancelled at
    66 min). The next main run failed.
 4. **Timing-sensitive tests are now a pattern, not an incident.** There were five or more timing flakes in seven
    days, and the latest one blocks the R1 tag. A required check alone would not have stopped it: the same test
@@ -216,9 +216,9 @@ What the record shows:
 - **Sprint G changed the model to "CI is the gate" but enforced nothing.** #85 merged ~8 min before its PR CI
   finished; #86 ~66 min before; #87 ~8 min into an ~80-min run.
 - **`concurrency: cancel-in-progress: true` applies to main too.** 7 main runs were cancelled by a later push in
-  the window, including **f115cca, the freeze fix, cancelled at 66 min.** The freeze-fix code never had a main
+  the window, including **dd5e02d, the freeze fix, cancelled at 66 min.** The freeze-fix code never had a main
   verdict of its own.
-- **Main run 38399071177 on a206107 then failed:** `RenderGate_ConcurrentNeverOverlaps` — "close() timed out at
+- **Main run 38399071177 on 7d7c2cd then failed:** `RenderGate_ConcurrentNeverOverlaps` — "close() timed out at
   seek 1304" in the debug null test, 18 min in. #87 changed no C++ code. **The same test passed on #86's PR run in
   both debug and ASan (201/201).** So it is a timing flake: a 1 s wall-clock `close()` deadline
   (`Tests/RenderGateTests.inc:197`) on a spin-race test, on a small shared hosted runner. It now blocks the R1 tag.

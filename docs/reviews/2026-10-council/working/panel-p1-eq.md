@@ -1,6 +1,6 @@
 # Panel P1: EQ, track loudness, spectrum and EQ session logic (algorithm correctness)
 
-Panelist: P1 (adversarial breaker with its own oracles). Repo `main` @ a206107. My own worktree is
+Panelist: P1 (adversarial breaker with its own oracles). Repo `main` @ 7d7c2cd. My own worktree is
 `.claude/worktrees/panel-p1`. Experiments are in `scratchpad/council/exp-p1/` (`h/` holds the C++ and Python harnesses,
 `spec/` and `tap/` the Swift probes). Nothing in the repo was edited. A scratch Swift fuzz test ran in my worktree and
 was then removed; a copy is at `exp-p1/h/ZZPanelP1FuzzTests.swift`.
@@ -89,7 +89,7 @@ D54, D56, D57).
 ## Does today's code still match the proven design? (the re-baselined golden master)
 
 - The golden master `GoldenMaster_StereoN2_v1` is a **change detector**, not a proof. It is one hash of a +6 dB @ 1 kHz
-  chirp. Its hash `0xE7AF0C67F9340785` was introduced once, in EQ1b (`0d7a492`, the deliberate re-baseline), and has
+  chirp. Its hash `0xE7AF0C67F9340785` was introduced once, in EQ1b (`a303cde`, the deliberate re-baseline), and has
   not changed since (`git log -S`).
 - Independent of the hash, today's EQ still is the proven design:
   - the designer matches the research reference within ≤ 6.3e-8 dB on 600 curves × 4 rates;

@@ -9,7 +9,7 @@ import Foundation
 import PlaybackQueueKit
 import SwiftUI
 
-// OnDeckTicket / OnDeckGate: the SHIPPED PlaybackQueueKit types (f93b08e).
+// OnDeckTicket / OnDeckGate: the SHIPPED PlaybackQueueKit types (1ebf323).
 
 enum ArmMode: Equatable {
     case refuse, clearThenArm, gatedReplaceAfterOpen, gatedRetract(endFinal: Bool)

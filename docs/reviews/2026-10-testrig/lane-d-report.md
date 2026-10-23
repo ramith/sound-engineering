@@ -1,6 +1,6 @@
 # Lane D report: one FakeEngine, no mirrors
 
-Branch `testrig/fake-engine` (worktree `.claude/worktrees/testrig-d`), **rebased onto `testrig/integration` @ 99f046f**
+Branch `testrig/fake-engine` (worktree `.claude/worktrees/testrig-d`), **rebased onto `testrig/integration` @ 2831847**
 (the gate wiring; it touches none of my files, and it gives the periphery step its own index build). 6 commits,
 no push, no Co-Authored-By. **No product source changed**: every planted bug was reverted; `git diff -- Sources/` is
 empty (checked after the founder's pause, when one plant, P14 in `AudioViewModel+AutoAdvance.swift`, was still in
@@ -8,12 +8,12 @@ place — reverted first thing, and the P14…P42 run was redone from the start 
 
 ## Commits
 ```
-0b90c7d test(rig): one engine double — FakeEngine (DeviceTestEngine promoted) …; OnDeckEngineModel composes it; the OnDeck rig ticks through TickerBench
-c248fee test(view-model): the mirror's … cases, rewritten on the real AudioViewModel — 48 tests over the OnDeck Rig and a FakeEngine player
-2473f8a docs(testing): one engine double, no mirrors …
-e06a66a test(view-model): VM-AA-06 checks the stop is asked in the turn the playing song is removed … (found by the mutation run)
-efef4d2 test(rig): the mirrors are gone … the target that held them is PlaybackQueueKitTests
-b19a72a test(rig): the shell toast's lifetime on an injected clock … (optional UI-clock item)
+72a75e9 test(rig): one engine double — FakeEngine (DeviceTestEngine promoted) …; OnDeckEngineModel composes it; the OnDeck rig ticks through TickerBench
+8844521 test(view-model): the mirror's … cases, rewritten on the real AudioViewModel — 48 tests over the OnDeck Rig and a FakeEngine player
+cd6450a docs(testing): one engine double, no mirrors …
+fc19f58 test(view-model): VM-AA-06 checks the stop is asked in the turn the playing song is removed … (found by the mutation run)
+d942859 test(rig): the mirrors are gone … the target that held them is PlaybackQueueKitTests
+5a7ab41 test(rig): the shell toast's lifetime on an injected clock … (optional UI-clock item)
 ```
 46 files, +1488 −2121 (before the report).
 
@@ -60,7 +60,7 @@ b19a72a test(rig): the shell toast's lifetime on an injected clock … (optional
   swiftlint (698), clang-format, semgrep (789 files; `test-no-raw-time` included, zero suppressions),
   semgrep-rule-tests, suppressions, 3 postures, cppcheck, clang-tidy, actionlint, swift-build, deployment-target,
   **swift-test 942 tests** + **swift-test-rig 21 tests** = **963**.
-- `scripts/gate/run.sh --step periphery`: **exit 0, "No unused code detected."** (its own index build, b82bea1).
+- `scripts/gate/run.sh --step periphery`: **exit 0, "No unused code detected."** (its own index build, 92b0957).
 - `make stress … N=10` (CI-like: ncpu−3 hogs in their own process groups, killed by the script's trap; strict
   pool width 1), one `make stress` per suite, each exit 0:
   `AutoAdvanceTests` 10/10, `ManualSkipTests` 10/10, `SeamAdvanceTests` 10/10, `TrackEndTests` 10/10,
@@ -134,7 +134,7 @@ Notes on the run:
   dropped) is the plant `aSeamIsTakenOnce` catches.
 - **P20 first escaped**: with `removeTrack`'s stop deleted, `removingThePlayingSongStops` still passed, because the
   seam's stale on-deck index (2, past the shortened queue) sent the view model down "out of range, stopping". The
-  test now checks the stop is asked in the turn of the removal and that no seam is taken while it waits (e06a66a);
+  test now checks the stop is asked in the turn of the removal and that no seam is taken while it waits (fc19f58);
   rerun: FAILED (exit 1) against P20, passes on the real code.
 - P23 and P26 first did not build (an unused `armed` is an error under warnings-as-errors); replanted with
   `_ = armed`, both caught.
@@ -308,7 +308,7 @@ otherwise and the test was corrected, not the code.
    `ShellToastSlot` already is; then the same three-test pattern applies.
 3. **Product comments now stale** (not mine to edit): `PlaybackQueueKit/QueueAdvance.swift`'s header names the deleted
    `MockAdvanceController`; `AudioPlaybackEngine.swift`'s doc says "tests inject a `MockAudioEngine`" (now `FakeEngine`).
-4. **Coordinator:** the docs commit (2473f8a) is outside my listed files; keep or drop it at combine. Lane D's
+4. **Coordinator:** the docs commit (cd6450a) is outside my listed files; keep or drop it at combine. Lane D's
    commits touch no gate script; the new suites are in the main parallel step (none matches `Enhanced*`).
 
 ## Open questions for the founder (recommendation first)

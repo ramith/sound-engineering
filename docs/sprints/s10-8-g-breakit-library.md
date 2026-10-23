@@ -2,8 +2,8 @@
 
 # Sprint G break-it — Library lane (breaker A)
 
-**Base:** f3a1add (origin/main). **Branch:** breakit/s10-8-g-library (worktree agent-a37541b45a31484c2), not pushed.
-**Red-test commits:** fb15254 (G-LIB-01, 01b + Package.swift), d1d0f08 (G-LIB-02), c66cf6d (G-LIB-07), cc22b9b (G-LIB-03, 04).
+**Base:** bfd0d19 (origin/main). **Branch:** breakit/s10-8-g-library (worktree agent-a37541b45a31484c2), not pushed.
+**Red-test commits:** 7801279 (G-LIB-01, 01b + Package.swift), a9e4916 (G-LIB-02), b42eaa2 (G-LIB-07), cd5a9f2 (G-LIB-03, 04).
 **swift test --filter LibraryBrowseKitTests:** 290 tests in 41 suites; the only failures are the six new break-it tests (16 issues).
 
 **Package.swift (this branch only):** LibraryBrowseKitTests gains a test-only dependency on LibraryScan, so G-LIB-01b (two real LibraryScanner walks) and G-LIB-02 / G-LIB-07 (scanner and extractor rules) can run. No product target changes. A fix PR can keep it (the tests become regression tests) or drop it with those two files.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-15  
 **Status:** ✅ **SHIPPED** (Internal Demo Ready)  
-**Commit:** 05216d8 (Track switching fix)  
+**Commit:** 631ade9 (Track switching fix)  
 **Branch:** `feat/sprint-2-stem-separation`
 
 ---
@@ -262,8 +262,8 @@ Total New/Modified: ~1,600 lines
 ### Commit History
 
 ```
-05216d8 Fix track switching: Enter/Space now immediately play selected track
-3ed5ba4 Merge pull request #1 from ramith/docs/product-definition
+631ade9 Fix track switching: Enter/Space now immediately play selected track
+2393f3f Merge pull request #1 from ramith/docs/product-definition
 f5c46b7 Architecture v0.3: canonical design, expert reviews, aligned docs
 [... prior work ...]
 ```

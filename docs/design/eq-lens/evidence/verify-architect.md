@@ -1,6 +1,6 @@
 # Sprint EQ: architect verify pass (the one re-check)
 
-*2026-10-10. I read `dsp/dsp-plan-v2.md`, `ui/ui-plan-v2.md` and plan §B 25–28 on `feat/s10-8-eq` @ d6ab539.
+*2026-10-10. I read `dsp/dsp-plan-v2.md`, `ui/ui-plan-v2.md` and plan §B 25–28 on `feat/s10-8-eq` @ c15f183.
 Code claims were re-checked read-only in the main checkout; nothing was built or edited.*
 
 ## 1. Findings F1–F19 and §3/§6/§7/§9

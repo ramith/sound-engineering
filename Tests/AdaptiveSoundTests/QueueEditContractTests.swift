@@ -7,7 +7,7 @@ import Testing
 
 //
 // The shipped `AudioViewModel` against `OnDeckEngineModel`: a song plays, the queue is edited, the
-// song ends — the queue's next song plays, and shows. On b5c4cd3 they were council P4's repros: a
+// song ends — the queue's next song plays, and shows. On 532ab79 they were council P4's repros: a
 // song dragged in under the playing one never played, an append under Repeat All waited a whole
 // cycle, a one-song shuffle plus an append stopped, an append during the last song's prime was never
 // armed, and play-now of the playing song moved an earlier copy instead of restarting.

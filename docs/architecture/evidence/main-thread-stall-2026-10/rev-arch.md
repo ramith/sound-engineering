@@ -1,6 +1,6 @@
 # Reviewer 3 (architect + the fool): S10.8 G main-thread stall fix
 
-Branch `sprint/s10-8-g-fix-main-thread-stall` @ 90a62e8 (8 commits on 5b348fe), reviewed read-only in
+Branch `sprint/s10-8-g-fix-main-thread-stall` @ 90a62e8 (8 commits on 457f895), reviewed read-only in
 `.claude/worktrees/review-arch`. I did not build or run anything. Semgrep was run on the branch (clean)
 and on a scratch probe (`scratchpad/arch-sidestep/`) to test the new guard.
 

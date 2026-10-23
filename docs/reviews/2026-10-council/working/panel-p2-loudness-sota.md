@@ -1,6 +1,6 @@
 # Panel P2: state of the art and correctness by reference (loudness, true peak, limiter, crossfeed, spatial, blend)
 
-Panelist: STATE-OF-THE-ART / CORRECTNESS-BY-REFERENCE. Repo `main` @ a206107, read in my own worktree
+Panelist: STATE-OF-THE-ART / CORRECTNESS-BY-REFERENCE. Repo `main` @ 7d7c2cd, read in my own worktree
 `.claude/worktrees/panel-p2-sota`. Experiments live in `scratchpad/council/exp-p2-sota/` (`cpp/`, `py/`, `t3341/`, `layout/`,
 plus downloaded sources in `dl-*`). Every C++ probe `#include`s or links the real production sources (headers and `.cpp`
 files under `Sources/AudioDSP`); only stimuli and oracles are mine. I never launched the app and never played audio.

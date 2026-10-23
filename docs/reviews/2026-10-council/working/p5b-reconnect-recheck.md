@@ -1,9 +1,9 @@
-# P5b round 3: recheck of the device-fix follow-up (`fix/r1-blockers` @ f93b08e, commit 2a79914)
+# P5b round 3: recheck of the device-fix follow-up (`fix/r1-blockers` @ 1ebf323, commit 556beeb)
 
 **Verdict: SHIP.** No code defect found. One optional copy fix: the OFF line of the switch (§6).
 
 ## Setup
-- Worktree: `.claude/worktrees/panel-p5b`, detached at f93b08e. Nothing was built in `r1-blockers`.
+- Worktree: `.claude/worktrees/panel-p5b`, detached at 1ebf323. Nothing was built in `r1-blockers`.
 - Builds and tests ran under `nice`, filtered to the device suites only.
 - No hardware, no app launch, no default-device changes.
 

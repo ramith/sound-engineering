@@ -3,12 +3,12 @@
 Role: attack the council's own conclusions before the founder acts on them. Read-only. Nothing built in the main checkout,
 the app was never launched.
 
-**Baseline warning.** Every Stage 1–4 report was written against `a206107`. `origin/main` is now `7761693`. R1 added 19
-commits that touch 87 files (+7,401 / −1,236 lines: 4,905 in tests, 2,432 in sources). I checked claims at `7761693` with
-`git show 7761693:<path>`. Several findings are now fixed, or partly fixed: LIB-02 / P5A-01/02 (refusal layer), D41,
+**Baseline warning.** Every Stage 1–4 report was written against `7d7c2cd`. `origin/main` is now `9df49e3`. R1 added 19
+commits that touch 87 files (+7,401 / −1,236 lines: 4,905 in tests, 2,432 in sources). I checked claims at `9df49e3` with
+`git show 9df49e3:<path>`. Several findings are now fixed, or partly fixed: LIB-02 / P5A-01/02 (refusal layer), D41,
 D71 / DSP-03, D74 / DSP-04 (packed 24-bit), D76 (NaN), N92 and D63 (RenderGate liveness). BT-1 / VM-8 / W0 are partly done:
-`AdaptiveSoundTests` already `@testable import`s the app (`Package.swift:267-270`, commit 1060665). **The register must be
-re-verified at 7761693.** Otherwise agents will be sent to fix things that are already fixed.
+`AdaptiveSoundTests` already `@testable import`s the app (`Package.swift:267-270`, commit f8da838). **The register must be
+re-verified at 9df49e3.** Otherwise agents will be sent to fix things that are already fixed.
 
 My own experiments are in `scratchpad/fool-ogg/` (outside the repo):
 - **`probe.swift`:** `AVAudioFile` on generated test files.
@@ -69,7 +69,7 @@ My own experiments are in `scratchpad/fool-ogg/` (outside the repo):
   - **Estimation record:** S10.8 was estimated at 3 SP and re-estimated at ~45 (`product.md:247`). The UX re-gate took
     ~3 months. Sprint G was planned at "4–5 hours" and ran ~18 h plus the freeze fix (`process.md:84-85`).
   - **The R1 fixes:** approved as 3 lanes, they grew to 5 lanes, then "add all 3 extras", then a flake-fix PR, for
-    +7.4k lines (memory `project-council-review-2026-10`; `git diff --numstat a206107 7761693`).
+    +7.4k lines (memory `project-council-review-2026-10`; `git diff --numstat 7d7c2cd 9df49e3`).
   - **The founder's appetite:** EP-MCP was added mid-council (10-13 22:20). The memory index holds many side quests
     (generative reimagination, the remaster spike, vocal separation, karaoke, system-wide DSP).
   - **The founder's last call on this exact work was to park it:** "freeze fix only, decide later"
@@ -262,9 +262,9 @@ Ordered by risk to the founder. Each item says what to do about it.
 
 ---
 
-## 4. Severity sanity: 11 spot-checks at `7761693` (unreproduced claims first)
+## 4. Severity sanity: 11 spot-checks at `9df49e3` (unreproduced claims first)
 
-| # | Claim (report) | My verdict | Evidence (read at 7761693) | Corrected severity |
+| # | Claim (report) | My verdict | Evidence (read at 9df49e3) | Corrected severity |
 |---|---|---|---|---|
 | 1 | D37: the Enhanced resampler hangs on a seek to the end (P3 breaker, SIGNIFICANT) | **UNDERSTATED** | The scrubber drag sends `seek(to: dragFraction * duration)` (`NowPlayingBar.swift:332-333`). The VM passes it through with no clamp (`AudioViewModel+Playback.swift:133-143`). The bridge bumps both generations, *then* refuses at `frame < totalFrames` (`+EnhancedResampler.swift:193-202`): silent forever, never advances. The resampler path is every file that is not 48 kHz, so it includes 44.1 kHz CD rips. It is not in product's R1.1 list. | **R1.1 blocker** (the product's own definition: "music stopped") |
 | 2 | Default path: D20 (session-integrated leveller) + D50 (+2 dB hump) + D34 (dead fast release) at Intensity 0.20 (P2; each SIGNIFICANT) | **UNDERSTATED as a product issue** | `var intensity: Float = 0.20` (`AudioViewModel.swift:142`). Every fresh launch is processed, against "faithful > processed". Fixing the *default* is one line. | **R1.1 item #1** (D2/D3) |
@@ -274,7 +274,7 @@ Ordered by risk to the founder. Each item says what to do about it.
 | 6 | VM-10: overlapping `refreshDevices` Tasks let an older device list win (SIGNIFICANT) | **OVERSTATED** | The enumerations serialise on `engineQueue` (FIFO), and `showEngineOutput` reads the live engine device (`+Devices.swift:44-67`), so the newest list lands last. The on-deck half was fixed by R1's ticket gate. | LOCAL |
 | 7 | VM-2: the stop/pause epoch is taken inside the Task, and a "starting" state is missing (STRUCTURAL) | **ACCURATE; split** | Stop and pause take their epoch inside `Task` (`+Lifecycle.swift:152,160,174`). That is latent: there is no stop-then-start caller. The start gap is real: `isPlaying` is set only after start + prime (`+Playback.swift:60-75`), so a second press restarts the song and Pause is dropped (`+Transport.swift:45-63`). | The epoch is LOCAL (latent). The start gap is SIGNIFICANT (UX, known post-R1). |
 | 8 | BR-1: config-change and the gapless fallback drive the engine off-domain (STRUCTURAL) | **ACCURATE, unreproduced** | `reestablishEnhancedAfterConfigChange` runs `engine.start` / `stop` and touches the player on `configChangeQueue`, with a TOCTOU re-check (`+ConfigChange.swift:32-120`, `:86-93`). `openNextFileOrRestart` runs `playFile` on `DispatchQueue.global()` with no intent or epoch check (`+GaplessRoll.swift:151-178`). | Keep STRUCTURAL; **the remedy should be the cheap "enqueue a command" step (M), not the actor conversion (L)** |
-| 9 | W0 / BT-1 / VM-8: "test the real code" is S | **STALE** | R1 already added `AdaptiveSoundTests` with `@testable import AdaptiveSound` and `OnDeckEngineModel` (`Package.swift:267-270`; 1060665). What remains is migrating about 61 mirror tests and deleting the mirrors. That is M, and there are now **three** engine fakes (`MockAudioEngine` mirror, `OnDeckEngineModel`, `DeviceTestEngine`), so DUP-2 grew. | M; re-scope W0 |
+| 9 | W0 / BT-1 / VM-8: "test the real code" is S | **STALE** | R1 already added `AdaptiveSoundTests` with `@testable import AdaptiveSound` and `OnDeckEngineModel` (`Package.swift:267-270`; f8da838). What remains is migrating about 61 mirror tests and deleting the mirrors. That is M, and there are now **three** engine fakes (`MockAudioEngine` mirror, `OnDeckEngineModel`, `DeviceTestEngine`), so DUP-2 grew. | M; re-scope W0 |
 | 10 | ARCH-9: no `os.Logger` (SIGNIFICANT) | **ACCURATE, UNDERSTATED vs cost** | See §3 item 5. | S, do it in R1.1 |
 | 11 | LIB-02: the sweep deletes on absence (STRUCTURAL, fixed in R1) | **NARROWED, NOT CLOSED** | R1 added the refusal layer. The tombstone (layer 2) is in no wave, and remove + re-add still resets annotations (R1 known issue). | Keep STRUCTURAL OPEN (data durability) |
 
@@ -294,7 +294,7 @@ it was under-ranked, because no one walked the product's own default.
    - **The founder's habit change is one button.** They click **"Enable auto-merge"** on the one consolidated PR instead
      of "Merge", and walks away. This keeps one-PR-per-sprint and the founder's speed ("combine then test", "let CI run").
 2. **One YAML line:** `cancel-in-progress: ${{ github.event_name == 'pull_request' }}` (`strict-ci.yml:14`). Every main
-   commit gets a verdict; f115cca's run was cancelled at 66 minutes.
+   commit gets a verdict; dd5e02d's run was cancelled at 66 minutes.
 3. **Same-day flake quarantine.** A test that fails without a code cause goes onto a skip list read by the required job
    (`swift test --skip`, plus a `--skip` flag in the C++ runner, which is BT-3 step 2, S). It gets a ledger line and a
    nightly 50×-under-load job, and it must be fixed at the root or deleted within the sprint.
@@ -389,7 +389,7 @@ structural slice."**
 
 ## 7. What I would change in the plan (for the synthesis)
 
-1. **Re-baseline the register at `7761693`.** Mark what R1 fixed, and re-scope W0, which has partly landed.
+1. **Re-baseline the register at `9df49e3`.** Mark what R1 fixed, and re-scope W0, which has partly landed.
 2. **Replace the W0–W5 sequence** with feature-funded slices, a 2-week cap and finish-or-revert.
 3. **Before any in-house W4:** a 1-week SFBAudioEngine adoption spike. Delete FFmpeg now, since the macOS 26 native
    decode is verified.
@@ -428,4 +428,4 @@ structural slice."**
 - **Limits:** one machine (macOS 26, M-series) and synthetic files. Run it over a real corpus before deleting FFmpeg.
   The corpus should include embedded `PICTURE` blocks, multichannel and 32-bit FLAC, and ID3-prefixed FLAC.
 - **Repo state:** `gh api repos/ramith/sound-engineering` → `allow_auto_merge: false`, `license: null`; branch protection
-  → 404 "Branch not protected"; rulesets → `[]`. The main CI run on `7761693` was still in progress when checked.
+  → 404 "Branch not protected"; rulesets → `[]`. The main CI run on `9df49e3` was still in progress when checked.

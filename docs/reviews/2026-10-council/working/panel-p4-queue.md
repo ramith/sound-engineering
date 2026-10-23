@@ -1,6 +1,6 @@
 # Panel P4: queue, transport and play stats (N1–N29), plus the D41 adjudication
 
-Repo `main` @ a206107, worktree `.claude/worktrees/panel-p4` (detached). Scratch: `scratchpad/council/exp-p4/`.
+Repo `main` @ 7d7c2cd, worktree `.claude/worktrees/panel-p4` (detached). Scratch: `scratchpad/council/exp-p4/`.
 
 ## How I tested
 

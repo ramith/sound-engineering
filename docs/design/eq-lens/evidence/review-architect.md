@@ -1,6 +1,6 @@
 # Sprint EQ: architecture review (Reviewer 3, the Architect)
 
-*2026-10-09. Read-only review of `feat/s10-8-eq` @ 6a51eb1 (via the main checkout, nothing built or
+*2026-10-09. Read-only review of `feat/s10-8-eq` @ f563437 (via the main checkout, nothing built or
 edited), `dsp/dsp-plan-check.md`, `ui/ui-plan-check.md`, `research/players-implementation.md`,
 `research/literature.md`, the eq-lens README and sweep-plan §B/§D. The-fool modes used: pre-mortem and
 evidence audit (chosen by me, since a subagent cannot ask). Severity: **P0** = decide before EQ1b

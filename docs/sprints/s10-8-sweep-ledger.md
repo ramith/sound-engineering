@@ -42,10 +42,10 @@ kept). Combined: `swift build` + 224 tests + format + lint + semgrep green befor
 
 | PR | Commits | Scope | Tests |
 |---|---|---|---|
-| A1 | `d73b40c` | Card shadow cast by the background fill shape only; `SurfaceRole.castsShadow` (panel, lens true; badge, overlay false). No GlassDecor value changed | RES-06 |
-| A3 | `295f693` `a46f1f8` `dffd1a8` | `focusRing` token (= `accentText` values); `keyboardCursorRing` on Songs, queue, playlist detail and the rail; scroll-into-view on Songs, playlist detail and the rail (the queue already had it) | R4-FOCUS-01, R4-FOCUS-02 (queue rows over the dark glow) |
-| A2 | `4ce0d9a` `fd2dd24` `d01ed17` `4b2e4f5` | `accentFill` / `accentForeground` (dark = today's teal); text, glyph and switch-tint sites migrated; `PillButtonStyle` (shipped teal gloss + dark text) replaces the 6 `.borderedProminent` buttons; semgrep `ui-no-bordered-prominent`, `ui-no-accent-as-text` | R4-TINT-01…03 |
-| A4 | `bed2bb4` `e60eae5` `2f1dd91` | Debug picture-sheet renderer (`-ASRenderSheets`, fake audio engine, fixture models, isolated settings suite) + `make sheets`: 5 tabs × 6 appearances × 2 sizes = 60 sheets | renderer smoke run (60/60, live app untouched — checked with `lsof`) |
+| A1 | `6c5c7cf` | Card shadow cast by the background fill shape only; `SurfaceRole.castsShadow` (panel, lens true; badge, overlay false). No GlassDecor value changed | RES-06 |
+| A3 | `48050b4` `ab7aca9` `4f36cd2` | `focusRing` token (= `accentText` values); `keyboardCursorRing` on Songs, queue, playlist detail and the rail; scroll-into-view on Songs, playlist detail and the rail (the queue already had it) | R4-FOCUS-01, R4-FOCUS-02 (queue rows over the dark glow) |
+| A2 | `822b30b` `a0a3957` `79b4641` `21c3fda` | `accentFill` / `accentForeground` (dark = today's teal); text, glyph and switch-tint sites migrated; `PillButtonStyle` (shipped teal gloss + dark text) replaces the 6 `.borderedProminent` buttons; semgrep `ui-no-bordered-prominent`, `ui-no-accent-as-text` | R4-TINT-01…03 |
+| A4 | `9e8f7e0` `c49eb18` `21932c5` | Debug picture-sheet renderer (`-ASRenderSheets`, fake audio engine, fixture models, isolated settings suite) + `make sheets`: 5 tabs × 6 appearances × 2 sizes = 60 sheets | renderer smoke run (60/60, live app untouched — checked with `lsof`) |
 
 ### Deviations from the plan (accepted by the coordinator, with evidence)
 
@@ -77,7 +77,7 @@ kept). Combined: `swift build` + 224 tests + format + lint + semgrep green befor
 
 - **Strict gate, first run:** failed before any code check — swiftlint crashed (SIGILL) walking
   the agents' worktrees under `.claude/worktrees/` (full repo copies with their own `.build/`).
-  Fixed at the root: `.claude/` excluded in `.swiftlint.yml` and `.swiftformat` (`3f30e7e`),
+  Fixed at the root: `.claude/` excluded in `.swiftlint.yml` and `.swiftformat` (`bc10fef`),
   merged worktrees removed. **Second run: exit 0.**
 - **code-reviewer:** no blocker; MAJOR = the Settings switch tint above; MINORs = ring and keys
   could act on different rows, the ring showed on auto-focus and clicks, semgrep gaps (the
@@ -88,7 +88,7 @@ kept). Combined: `swift build` + 224 tests + format + lint + semgrep green befor
   MINORs = capsule focus shape, drop-target outlines and one play disc still on bare `accent`,
   a stale doc, the debug seed's anchor.
 
-### Review fix round (swiftui-pro, 10 commits `816906c`…`1612820`; 236 tests)
+### Review fix round (swiftui-pro, 10 commits `8c23610`…`e663db7`; 236 tests)
 
 | # | Fix |
 |---|---|
@@ -172,7 +172,7 @@ before selecting anything (nothing happens).
 | No Shuffle beside Play on the album page | — | Not a bug: the coordinator's check script was wrong (album pages have Play + More; Shuffle is on artist / genre pages) |
 | "‹ Library" from an album returns to the top of the grid, not where the founder was | — | **New R1 Must → Sprint D** (the Albums grid keeps its scroll position) |
 | Playlist page "looks different" | — | Expected: playlist pages get their glass card in Sprint D and header in Sprint E |
-| Queue: click a song, Backspace → not removed | **R1 blocker** | **Fixed** (`e6310dd`, `ebbdb59`) — confirmed by the founder |
+| Queue: click a song, Backspace → not removed | **R1 blocker** | **Fixed** (`980b945`, `f21cff7`) — confirmed by the founder |
 
 **The Backspace bug — root cause.** `.onKeyPress(.delete)` never fires on macOS: Backspace arrives
 as U+007F while `KeyEquivalent.delete` is U+0008. The handler had been dead in both the queue and
@@ -347,7 +347,7 @@ math (the R4 tests) first, then the rendered sheet pixels.
 The hero's "FLAC · 48 kHz" chip already had an edge: its `.badge` glass hairline measures 1.42 on
 the window (rendered 1.43). R4-CHIP-03 now holds it to the same floor; it is unchanged.
 
-**Proof.** All 70 sheets rendered at `7f01921` and at the tip, compared on all four channels. Dark:
+**Proof.** All 70 sheets rendered at `d8805d8` and at the tip, compared on all four channels. Dark:
 35/35 identical, and also identical paused (a throwaway `isPlaying = false` render of Now Playing
 and Library, not committed). Light: 35/35 differ, and only in the chip columns and the footer
 groove.
@@ -555,7 +555,7 @@ dedicated mp3 `TCMP` frame (the ffmpeg CLI cannot write it). (4) The app-side `s
 `removeLibraryFolder` behaviour have no automated proof (the app is an executable target, which no
 test target can import).
 
-### C2 re-break, round 2 (2026-10-08, qa-expert, at `25ef2c5`)
+### C2 re-break, round 2 (2026-10-08, qa-expert, at `d3bdc13`)
 
 Every round-1 finding re-checked with its original repro and **held**: this build refuses a newer
 store untouched; the backup opens with the user data (WAL writes included); offline at the re-read →
@@ -672,7 +672,7 @@ still read "Unknown Artist" — correct. Scratch copies deleted.
 
 ### Plan check and split (2026-10-08, coordinator)
 
-The lighter routine (decision 18), three agents in parallel worktrees off `18a3430`, split by file
+The lighter routine (decision 18), three agents in parallel worktrees off `c19f753`, split by file
 so they cannot collide:
 
 | Piece | Scope | Owns |
@@ -941,7 +941,7 @@ the session rather than memory.
     graph's AX children were full-width strips; the Tab order.
   - **One UI fix round:** the decisions moved into a gated `EQSession`; the toast after a no-output gap; Esc restores
     Bring back; one pin per model; all keyboard/VO items. **Re-checked live: all pass.**
-- **Final strict gate on main @ ee0ec5b:** EXIT 0 — 192/192 C++ (debug, ASan/UBSan, TSan), 563 Swift tests,
+- **Final strict gate on main @ 267f6ff:** EXIT 0 — 192/192 C++ (debug, ASan/UBSan, TSan), 563 Swift tests,
   VerifyLibraryStore 154/154, VerifyAUGraph, 0 leaks.
 
 ### Founder check (2026-10-11)
@@ -1043,7 +1043,7 @@ agents resumed by raw ID.
   - The song read gains the album's year (a read only, no schema change).
 - **Live re-check:** drag a Songs row ✓, a seam click ✓, ⌘↩ ✓, ⇧⌘↩ ✓, ⌘I ✓, the restore toast ✓.
   - Not live-checkable: Remove Missing. The test library sweeps a renamed file instead of marking it missing.
-- **Final strict gate on the branch @ 709f50b: EXIT 0** (192/192 × 3, 154/154 × 2, all Swift tests, 0 leaks).
+- **Final strict gate on the branch @ fb780e9: EXIT 0** (192/192 × 3, 154/154 × 2, all Swift tests, 0 leaks).
 
 ### Founder check (2026-10-12)
 
@@ -1055,7 +1055,7 @@ file instead.
 
 ### Merge (2026-10-12)
 
-PR #74 merged as f6f73b2. Carried forward to Sprint F: the music-folder confirmation adopts `AppDialog`.
+PR #74 merged as 6c15180. Carried forward to Sprint F: the music-folder confirmation adopts `AppDialog`.
 
 ### Mini-retro — Sprint E
 
@@ -1143,7 +1143,7 @@ playback on this device"; the folder dialog's Cancel; the EQ. "Things are lookin
 
 ### Merge (2026-10-12)
 
-PR #75 merged as 89a7677. At the founder's ask the final strict gate ran in CI (`strict-ci.yml`, the PR run and
+PR #75 merged as 15e8ce4. At the founder's ask the final strict gate ran in CI (`strict-ci.yml`, the PR run and
 the push-to-main run) instead of locally; the combined branch had passed locally before the fix round (EXIT 0, 651
 tests). Carried forward to Sprint G: the three items logged above (pill-menu VoiceOver split, the app's own aggregate
 device in the device menu, the Pure Mode caption wording).
@@ -1270,7 +1270,7 @@ keyboard / VoiceOver / appearance / grayscale walk, and the purple-accent test).
 
 ### Merge (2026-10-13)
 
-PR #85 merged as 5b348fe. It is the one consolidated PR the founder asked for: a linear cherry-pick of the nine lane PRs
+PR #85 merged as 457f895. It is the one consolidated PR the founder asked for: a linear cherry-pick of the nine lane PRs
 #76–#84 plus the device-loss follow-up, byte-identical to the live-tested combination. The lane PRs were closed with a
 pointer. The full gate ran on every lane PR's CI and runs again on main.
 - **Reference branches (pushed, not merged):** `breakit/s10-8-g-playback-shell` (breaker B's VM harness and engine probe)
@@ -1334,7 +1334,7 @@ every tick. It also found that a Pure seek could leave Pure silent.
 
 **Founder re-test:** "Fix is working". `sample`: macOS's teardown still took about 8 s in the background, and the main
 thread showed zero audio frames and no wait ≥20 ms across 6 minutes, covering the disconnect, Pure seeks, a pause /
-resume and a seek storm. **Merged** as f115cca.
+resume and a seek storm. **Merged** as dd5e02d.
 
 **The founder decided** the broader concurrency cleanup is needed but parked: "freeze fix only, decide later". The audit
 is its starting map.
