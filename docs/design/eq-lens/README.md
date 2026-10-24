@@ -33,6 +33,8 @@ audio-dsp verification of today's engine (below). Founder decisions 21–23 in t
   "Studio" → "Bass Boost" (a saved Studio loads as Flat). [plan/preset-revoice.md](plan/preset-revoice.md),
   ![old vs new presets](png/preset-revoice.png)
 
+> **Compare, as decided 2026-10-23** ([roadmap reconciliation](../../product/roadmap-reconciliation-2026-10/README.md), card 6; refines 28): Compare keeps **one meaning — "without *my* EQ"**: a headphone correction (S13) and the loudness compensation (S14-lite) stay in. It is level-matched within **0.2 dB over every broadband offset** the EQ program adds — the loudness-neutral gain, Leveling and the peak-safe turn-down (R1.1-B) included. A separate, latching **"Bypass all processing"** plays the file. On the graph, a boost the headroom ledger holds is worded as having *protected* the sound, never "held" or refused. Proof: Compare's LUFS with vs without, correction and compensation left in, within 0.2 dB ([validation strategy](../../architecture/validation-strategy.md#verifying-the-2026-10-23-sound-decisions)).
+
 **Build plan:** [plan/amendments.md](plan/amendments.md) (wins), [plan/engine-plan.md](plan/engine-plan.md),
 [plan/ui-plan.md](plan/ui-plan.md). Evidence: [evidence/](evidence/). Prototype: `research/eq-geq-poc/`.
 
