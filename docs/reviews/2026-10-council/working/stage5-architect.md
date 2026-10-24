@@ -325,6 +325,8 @@ How the roots relate:
 
 ### 4.3 Slice catalogue (the former waves)
 
+> **A review record, not a to-do list (annotated 2026-10-23).** This catalogue is what the council found and how it proposed to pay for it; it is not maintained as a schedule. The [roadmap reconciliation](../../../product/roadmap-reconciliation-2026-10/README.md) of 2026-10-23 moved or closed several of its rows: C-38 (the static per-track / album gain with its true-peak cap) is scheduled once, in R1.1-B — not again under W5 / S12; C-45's rest and C-47 (the layout owner and the stage concept) go to the Engine sprint with the fold's final home; C-46, C-50, C-12 and C-30 were closed in R1.1-A, though the W5 and R1.1-B rows below still list them. Read the [roadmap](../../../product/roadmap.md) and the [sprint plan](../../../sprints/sprint-plan.md) for what is scheduled; read this table for why.
+
 | Slice | Funded by / trigger | Closes | Effort / risk | Depends on |
 |---|---|---|---|---|
 | **W0-lite** | Now: every later slice needs it | C-80, C-83 (rule), C-85 (commit harnesses), C-81 (idiom), C-88, C-03 (`import AudioDSP`) | M / low | — |

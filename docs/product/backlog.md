@@ -2,10 +2,11 @@
 ## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 2.7 — scheduled from the founder's decisions on the 2026-10 product council (2026-10-14); 2.6.1 re-checked after R1's blocker fixes (PR #88, 2026-10-14); 2.6 reconciled to the code (product council, 2026-10-13, against 7d7c2cd); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
+**Version:** 2.8 — 2026-10-23 reconciliation of the sound roadmap (stories listed in the change note below); 2.7 — scheduled from the founder's decisions on the 2026-10 product council (2026-10-14); 2.6.1 re-checked after R1's blocker fixes (PR #88, 2026-10-14); 2.6 reconciled to the code (product council, 2026-10-13, against 7d7c2cd); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
 **Change note (2026-10-13, council):** every story re-checked against `main` (7d7c2cd). S8–S10.8 deliveries marked with a back-link (PR / sprint ledger / design doc + the main code location); partial and missing work forward-linked to a roadmap sprint (S11–S18) or to the new **Post-R1 fix pool** (US-R1F-01…07) and release items (US-REL-01/02, US-QA-07). Reversed decisions are annotated, not deleted. Proven-by anchors that no longer exist in the code (`NowPlayingWidget`, `EQPresetPickerView`, the `VerifyAUGraph` FR sweep) were corrected.
 **Change note (2026-10-14, after R1):** R1 shipped as v1.0.0-alpha (tag on e2d6037) with the council's blocker fixes (PR #88). Stories they touched re-checked against `9df49e3`: US-ENG-07, US-PLAY-03, US-PLAY-05, US-DEVICE-09, US-LIB-01, US-PLIST-02 and the Post-R1 fix pool (KI-PB-01 closed; KI-PB-16 / -17, LIB-VOL-1 and DEV-1 placed).
 **Change note (2026-10-14, the council re-plan):** the founder decided FD-1…10 on the [council report](../reviews/2026-10-council/README.md). Every Post-R1 pool story now names where it is scheduled — **R1.1-A**, **R1.1-B**, the **Engine sprint** or **pool** (accepted, unscheduled) — and links the council's register rows (**C-xx**, [`stage5-architect.md` §1](../reviews/2026-10-council/working/stage5-architect.md#1-finding-register)). New: US-R1F-09…16 (the R1.1 items no story covered), [EP-PLAYENGINE](#ep-playengine--the-engine-sprint) (the Engine sprint, US-PE-01…03), [EP-RELEASE](#ep-release--release-readiness-deferred--fd-7-2026-10-14) (release readiness, deferred; US-REL-03…05 added beside US-REL-01/02), and US-MCP-00 (W2 + the command layer, which EP-MCP now waits for). Stories whose target a decision changed are annotated: US-ENG-06, US-ENG-07, US-ENG-09, US-PLAY-07, US-DEVICE-07, US-LIB-02, US-PLIST-02, US-RMG-01.
+**Change note (2026-10-23, v2.8 — 2026-10-23 reconciliation: the sound roadmap):** the founder's reconciliation decisions ([`roadmap-reconciliation-2026-10/README.md`](roadmap-reconciliation-2026-10/README.md)) applied so an implementer can build each story without reading it. **New section** "The sound model" (terms, one table of numbers, the chain stage by stage, the four extra lines every sound story states). **New stories:** US-R1F-19 (peak-safe turn-down), US-R1F-20 (shared "Not in bit-perfect mode" row state, Pure card sentence), US-TON-07 (headroom ledger), US-UI-08 (Enhance). **Rewritten:** US-R1F-10 (leveling in both modes, −18 LUFS, old leveller removed, the Pure cut and the "Volume restored" toast), US-R1F-08 (the fold: matrix, trim, folded loudness, LFE rule, badge, Pure reason, crossfeed bypass), US-TON-03 (loudness compensation, whole), US-ADAPT-03 (the device-volume listener, S14-lite), US-ADAPT-05 and US-RMG-02 (Intensity = Clarity depth + room amount, default 0), US-TON-02 (two parts: S12 the one EQ program, S13 the correction layer), US-PROF-02 (Compare and Bypass all), US-DEVICE-02 (recall and offer), US-DEVICE-04 / -05 (profile = correction + taste), US-SPAT-01 / -03 (one Headphones control, opt-in, preference test, room amount a setting), US-PERC-02 (second fitter dropped) and US-PERC-03 (Clarity's own switch, depth, chip; the blind A/B). **Amended:** US-R1F-06 (KI-EQ-01 → S12), US-R1F-12 (crossfeed text), US-DEVICE-03 (the per-output question), US-DEVICE-06 / -07, US-TON-06 (preset display name "Detail"), US-ENG-05 (ceiling scope), US-ENG-07 / -09 (notes), US-PERC-01, US-RMG-01, US-ADAPT-04, US-PE-01 / -02 / -03 (carry list, KI-EQ-04, the deletion), US-MCP-00 / US-MCP-05 / EP-MCP, SPIKE-REIMAGINE-MAP, SPIKE-BRIR, SPIKE-DEVCORRLIB, SPIKE-LOUDNESS-COMP-TUNING and SPIKE-HEARING-SAFETY-VALIDATION (open-items table), OQ-18 / OQ-21; epic and status tables. **Closed** in the open-items table: tags precedence, the leveling target, the loudness volume source and caps, the A/B meaning, W2's funding, correction / spatial auto-apply, the ABX bar. The founder's rulings: blind test at the end of each processing sprint only; no dogfood rule; R1.1-B one sprint.
 **Change note (2026-07-12):** Removed natural-language tuning (EP-NLT/US-NLT-*/SPIKE-NLT-ARCH) and hearing personalization stories from scope — founder decision; git has the prior text.
 **Date:** 2026-06-19
 **Author:** Lead Business Analyst
@@ -111,6 +112,65 @@ A story is done when:
 
 ---
 
+## The sound model — read this before any sound story *(new — 2026-10-23, the roadmap reconciliation)*
+
+> **Authority.** The founder reconciled the sound roadmap on 2026-10-23 (the record and the reasons: [`roadmap-reconciliation-2026-10/README.md`](roadmap-reconciliation-2026-10/README.md), "Decisions taken"). The stories marked *(2026-10-23)* implement it. This section restates everything an implementer (an engineer or an AI agent that has not read the reconciliation) needs, so that no story has to be decoded against another document. A story's own block wins over older text elsewhere; a reversed decision is annotated, not deleted.
+>
+> **Rulings that shape every story below.** (1) R1.1-B proceeds as **one sprint** (no player / sound split). (2) The founder's **blind, level-matched A/B on their own gear is the last acceptance line of each processing sprint only** — S14-lite, S16, S18 — never before a sprint starts. (3) There is **no dogfood rule**: the founder listens however they like. (4) **A fresh launch plays the file as recorded**; every processing stage is opt-in, off on a fresh install. (5) **A stage that does not win its blind A/B ships off and hidden.** (6) Agents never play audio: a check that needs ears or a device is marked *founder* and is the founder's; everything else is testable by an agent.
+
+### Terms (each used with exactly this meaning)
+
+| Term | Meaning |
+|---|---|
+| **Enhanced** | The processed path: the file passes through the sound engine (two audio units: the *effects unit*, N channels in and out; the *spatial unit*, N in, M out). Master Gain and the output's own volume sit outside the engine's knowledge. |
+| **Pure** (bit-perfect mode) | The file goes straight to the device, untouched; Master Gain then moves the device's own volume (the *volume loan*, `MasterGainOnPure`). Nothing in the engine runs. Over Bluetooth the promise ends at the Mac (the link re-encodes), and Pure declines Bluetooth / AirPlay by design. |
+| **Master Gain** | The app's volume slider; turn-down only (0 dB at the top). |
+| **The safety net / the ceiling** | The true-peak limiter, the last stage of the effects unit; it only ever turns down, only in the instant a peak would pass the ceiling. **Ceiling rule (founder, 2026-10-23; scopes Sprint EQ decision 29):** **−0.1 dBTP only where the link is lossless *and* the output runs at the engine's 48 kHz** (the HDMI soundbar, a 48 kHz DAC); **−1 dBTP on Bluetooth / AirPlay and on any other-rate output** until the Engine sprint has measured the output-side conversion. The full chain keeps −1 dBTP. |
+| **True peak (dBTP)** | The real peak between samples (8× oversampled, `TruePeakKernel`); every cap below is measured against it. |
+| **Leveling gain** | One fixed gain per track or album that moves its integrated loudness to −18 LUFS (US-R1F-10). |
+| **Peak-safe pre-gain** | One broadband turn-down, applied once, so the track's peaks with every boost applied stay under the ceiling (US-R1F-19); the ledger (US-TON-07) generalises it. |
+| **The fold** | Mixing a 5.1 / 7.1 file down to stereo (US-R1F-08). **LFE** = the low-frequency-effects channel. |
+| **Compare** | The hold-to-hear button on the EQ graph: the song **without my EQ** (the taste layer only), at matched loudness (US-PROF-02). |
+| **Bypass all processing** | A separate latching switch that plays the file as recorded (US-PROF-02). |
+| **Enhance** | One switch per output that turns on the stages that won their blind A/B on that output (US-UI-08). |
+| **The blind A/B (the "ladder")** | The founder's own blind, level-matched test on the XM4 and the soundbar: about 23 trials, capped at 60, the two conditions matched within 0.2 dB over every level offset the engine adds (leveling, turn-down, the stage's own change). Bar: **"can't tell"** for anything that plays by default; **"prefer"** for anything Enhance turns on. Procedure: `docs/design/adaptive-tone/README.md` §6, Stage 1. *Founder.* |
+
+### The numbers (one set; a story may only cite these)
+
+| Quantity | Value |
+|---|---|
+| Leveling target | **−18 LUFS** integrated (BS.1770), shown on screen |
+| Unknown-loudness leveling gain | a fixed **−5 dB**, constant for the whole track |
+| Loudness tags (ReplayGain / R128) | read **only** for a track our own analysis has not reached, ahead of the −5 dB |
+| Per-band boost cap | the sum over EQ layers at any band **≤ +12 dB**, scaled proportionally (US-TON-07) |
+| The working ceiling **C_work** | the output's ceiling (by scope — the glossary row above) **− 0.27 dB**: the limiter's working margin (`kIspSafetyMargin`, architecture §9 — the true-peak detector's under-read plus a guard). **Every cap** — leveling's, the peak-safe cap, the fold's trim — is measured against C_work, so the net reads 0 dB |
+| The peak-safe cap, per track (US-R1F-19) | three numbers: **g** = the leveling gain (capped so true peak + g ≤ C_work); **−ΔL** = the taste layer's loudness-neutral offset (exists); **C_cap** = C_work − (true peak + g + B), B the program's biggest boost — **C_cap may be positive**, never clamped to 0. The published offset beyond leveling **G = min(−ΔL, C_cap)**; the turn-down shown **T = G − (−ΔL) ≤ 0** |
+| Loudness compensation | bass only; the **ISO 226:2003 difference** between 80 phon and (80 − D) phon for a D dB turn-down; a 20 dB turn-down at the full difference is **+10.5 dB at 20 Hz, +8.2 at 50 Hz, +6.2 at 100 Hz, +3.9 at 200 Hz, +1.2 at 500 Hz, about 0 from 1 kHz up**; start at **50 %** of it (the evening on the XM4 picks 40, 50 or 60 %); bass lift capped at **+6 dB**; no treble figure exists |
+| Composed read-back | the response the graph draws equals the response measured through the chain within **0.1 dB** |
+| Compare / Enhance-hold level match | within **0.2 dB** over every offset |
+| Intensity-sweep identity (leveling Off) | integrated LUFS unchanged within **0.1 dB** |
+| Fold (BS.775-4) | L′ = L + 0.7071·C + 0.7071·Ls (R′ likewise); a centre-only signal comes out **−3.0 dB per side**; L = R = C in phase comes out **+4.6 dB per side**; the worst case (1 + 0.7071 + 0.7071 = 2.414) is **+7.66 dB** |
+| A level change a listener notices | about **1 dB** on music |
+
+### The chain, stage by stage (who owns each)
+
+| # | Stage | Today (R1) | Planned | Story |
+|---|---|---|---|---|
+| 1 | Channel layout from the file's labels | positional (KI-MC-02) | roles from labels, R1.1-B; one owner from the decoder, Engine sprint | US-R1F-08, US-PE-01 |
+| 2 | Fold N → 2 and its per-track trim | the spatial unit keeps the first M channels and drops the rest | BS.775 matrix + trim + a backstop net in the spatial unit, R1.1-B; **final home: inside the engine before the one net, decided and built in the Engine sprint** | US-R1F-08 |
+| 3 | Per-track gain (leveling gain + peak-safe pre-gain) | the loudness-neutral EQ gain only (`TrackLoudnessGain` → `eq.outputGainDb`) | leveling + pre-gain through the same path, R1.1-B; one pre-gain, once, before the EQ | US-R1F-10, US-R1F-19 |
+| 4 | The EQ program: layers **correction \| taste \| compensation** (Clarity later) | the 31-point graphic EQ only | one program, S12; correction layer, S13; compensation + the ledger, S14-lite | US-TON-02, US-TON-03, US-TON-07 |
+| 5 | Crossfeed (the headphones stage today) | stereo only; bypassed at N ≠ 2; already before the net in the kernel | after the fold and **before the one net** once the fold moves (the engine's stereo-out slot); one "Headphones" control, S18 | US-DEVICE-07, US-SPAT-01 |
+| 6 | The headphone render (Spatial — the headphones stage from S18) | stub inside the Intensity blend | at the engine's stereo-out slot for every width, **before the one net**, its peaks covered by the fold's per-track trim rule, S18 | US-SPAT-01 |
+| 7 | The safety net | last stage of the effects unit; unmetered | last, metered and shown, S14-lite | US-TON-07 |
+| 8 | Master Gain / the output's volume | app slider (Enhanced), device volume (Pure) | unchanged; read by compensation | US-TON-03, US-ADAPT-03 |
+
+### What every sound story states (the four extra lines)
+
+**Sprint · Stage** (the row above) · **Pure** (what it does in the bit-perfect mode — almost always "not applied; the row shows the shared *Not in bit-perfect mode* state, US-R1F-20") · **Not in this story** (what an implementer must not build) · **Verified by** (the rig: *C++ null test* = the GoogleTest harness, `Tests/*.inc`; *Swift Testing* = `@testable` tests on the shipped view model and kits, `Tests/AdaptiveSoundTests/`; *oracle* = libebur128; *founder* = ear or hardware).
+
+---
+
 ## Epics
 
 **Note:** The Phase column indicates architectural scope (0 = player foundation, 1 = mix-level features, 1.5 = stem features, 2 = system-wide). It is **not** a timeline or gate; sprint assignments are in `docs/sprints/sprint-plan.md`.
@@ -121,11 +181,11 @@ A story is done when:
 | EP-PLAYER | Local file playback, queue, metadata, session state | 0 | FR-PLAY-01..06, FR-UI-01/04/06, NFR-REL-01..03 | Median session > 25 min; crash-free > 99.5% |
 | EP-DEVICE | Output-device enumeration, type classification, auto-profile switching | 0→1 | FR-DEVICE-01..06, FR-SPAT-06/07 | Profile switch < 500 ms; no dropout > 50 ms |
 | EP-PERCEPTUAL | **(new)** Typed-contributor model + Arbiter (ERB/Bark + masking + partial-loudness) + off-RT Realizer (min-phase default, content-driven phase; FIR/biquad fit) | 1 | LD-12/13, FR-TONAL-01, FR-ADAPT-*, NFR-PERF-01 | Clarity/masking decisions made perceptually; users do **not** perceive the EQ "moving" |
-| EP-TONAL | **(reframed)** Correction-to-target EQ (AutoEq), loudness-comp (fractional contour-diff + SPL calibration), **no-program-DRC** dynamics + true-peak limiter, psychoacoustic bass (mono-sum) | 1 | FR-TONAL-02..07, LD-17 | "Sounds better" > 70%; dropouts < 0.1% |
+| EP-TONAL | **(reframed)** Correction-to-target EQ (AutoEq), loudness-comp (a bass-only ISO 226 difference curve against a one-time reference level *(2026-10-23; was "fractional contour-diff + SPL calibration")*), **no-program-DRC** dynamics + true-peak limiter, the headroom ledger, psychoacoustic bass (mono-sum) | 1 | FR-TONAL-02..07, LD-17 | "Sounds better" > 70%; dropouts < 0.1% |
 | EP-IMMERSION | **(was EP-SPAT + EP-HEADTRACK)** BRIR-first binaural (HRTF + room reflections/reverb), room synthesis, head-tracking (opt-in), speaker M/S + ambience (mono-safe) | 1 | FR-SPAT-01..07, LD-14, DEP-03 | Externalisation works (ABX vs dry-HRTF); spatial adoption |
 | EP-ADAPT | **(absorbs EP-AMBIENT)** Pre-analysis pipeline (look-ahead, cached), content/genre, on-demand ambient, conservative cadence | 1 | FR-ADAPT-01/04..08, NFR-PERF-02/04 | Adaptation imperceptible-as-motion; adapts with foresight |
-| EP-REIMAGINE | **(new)** The single intensity control (0 = bit-faithful → full reimagine); mix-range now, stem-range at 1.5 | 1 (stem-range 1.5) | FR-REIMAGINE-01..04, NFR-QUAL-03, LD-16 | Reimagine engagement; intensity-0 verified bit-transparent |
-| EP-MCP | **(new, founder 2026-10-13)** Agent control surface: every player function exposed through a local MCP server, so an LLM client (Claude, OpenClaw, any MCP client) can drive the app, over the same command / state API as the UI | ~~unscheduled (placement: 2026-10 council)~~ after W2 + the command layer, R2 or later (FD-8, 2026-10-14) | FR-AGENT-01 | 100 % of user-facing actions have an MCP tool; an end-to-end agent demo (Claude Desktop + OpenClaw) |
+| EP-REIMAGINE | **(new)** The single intensity control (0 = nothing automatic → full reimagine); scales only Clarity depth and room amount, as settings, never a crossfade *(2026-10-23)*; mix-range now, stem-range at 1.5 | 1 (stem-range 1.5) | FR-REIMAGINE-01..04, NFR-QUAL-03, LD-16 | Reimagine engagement; intensity-0 verified bit-transparent |
+| EP-MCP | **(new, founder 2026-10-13)** Agent control surface: every player function exposed through a local MCP server, so an LLM client (Claude, OpenClaw, any MCP client) can drive the app, over the same command / state API as the UI | ~~unscheduled (placement: 2026-10 council)~~ ~~after W2 + the command layer, R2 or later (FD-8, 2026-10-14)~~ a consumer of S15's command layer (W2's transport half is S15's slice — founder, 2026-10-23), R2 or later | FR-AGENT-01 | 100 % of user-facing actions have an MCP tool; an end-to-end agent demo (Claude Desktop + OpenClaw) |
 | EP-PLAYENGINE | **(new, founder 2026-10-14 — FD-4)** The Engine sprint: study SFBAudioEngine at code level, build our own Enhanced engine as its own module behind a clean interface, compare the two, decide | 0 (execution: after R1.1, before R2) | FR-PLAY-01/03, FR-DEVICE-06, NFR-QUAL-02/04, NFR-REL-02 | Same-format joins sample-continuous; the 11 measured checks pass; one Enhanced engine ships |
 | EP-RELEASE | **(new 2026-10-14 — deferred by FD-7)** Release readiness: the Apache-2.0 LICENSE and notices, Developer ID + notarization, diagnostics, playlist export + library backup, a clean-Mac first run | — (when the founder calls a wider release) | NFR-INSTALL-01, NFR-REL-01, LD-9, CON-12 | A tester installs, plays, and can send diagnostics back |
 | EP-PROFILE | Named profiles, device↔profile binding, A/B mode | 1 | FR-DEVICE-04/05 | D30 active-use > 40% |
@@ -147,12 +207,12 @@ A story is done when:
 > | EP-ENGINE | Shipped (two-path engine, param bus, Realizer plumbing); the perceptual Arbiter is not built | S6 (#15), S7 gates; Arbiter → S15–S16 |
 > | EP-PLAYER | Mostly shipped: library playback, transport, queue, metadata, gapless, persistence; what plays next is what the app shows (D41) | S9 #23, S10.2 #54, S10.4 #58, S10.6 #57, PR #85, PR #88; gaps → S11, US-R1F-01/05 |
 > | EP-LIBRARY / EP-PLAYLIST | Shipped except single-file play / loose add UI (US-LIB-02, US-PLIST-02), folder-to-folder move (US-LIB-07, superseded) and root recovery (US-LIB-08); a sweep deletes songs only on evidence, each folder bound to its drive (PR #88) | S8 #15 #17, S10.1 #53, S10.3 #59 #60, Sprint C #70, PR #85, PR #88; LIB-VOL-1 → US-R1F-03 |
-> | EP-TONAL | Partly: 31-band graphic EQ (Sprint EQ #73), presets, limiter, LUFS normalisation; no parametric, correction, loudness comp, bass enhancement | S12, S13, S14; US-TON-04 unscheduled |
+> | EP-TONAL | Partly: 31-band graphic EQ (Sprint EQ #73), presets, limiter, LUFS normalisation (the old auto-leveller, removed in R1.1-B); no parametric, correction, loudness comp, headroom ledger, bass enhancement | R1.1-B (leveling, US-R1F-10 / -19), S14-lite (US-TON-03 / -07), S12, S13; US-TON-04 unscheduled |
 > | EP-DEVICE | Partly: enumeration, device policy (pin / follow, pause on loss, return to the chosen device when it reconnects), per-output EQ memory, crossfeed; no profiles, classification or spatial modes | PR #85, #73, #88; S13; DEV-1 → US-R1F-05 |
 > | EP-UI | Partly: Now Playing, EQ, Monitoring, Settings, Library in Liquid Glass, dark + light, VoiceOver / keyboard; no onboarding, l10n or adaptive feedback | S10.7 #61, S10.8 #62–#85 |
 > | EP-ADAPT / EP-PERCEPTUAL | Not built, except the signal-path readout (US-ADAPT-06) and load-time track loudness analysis | S15–S17 |
-> | EP-REIMAGINE | Knob shipped (QW1); it now scales only the adaptive enhancement (decision 25); the mapping is not built | S17 |
-> | EP-IMMERSION | Not built beyond crossfeed (BRIR stub); a 5.1 / 7.1 file on a stereo output loses centre, LFE and surrounds (KI-MC-01) | S18; interim US-R1F-08 |
+> | EP-REIMAGINE | Knob shipped (QW1); it now scales only the adaptive enhancement (decision 25); hidden at 0 until S17; the mapping is not built (target: Clarity depth + room amount, default 0 — 2026-10-23) | S17 |
+> | EP-IMMERSION | Not built beyond crossfeed (BRIR stub); a 5.1 / 7.1 file on a stereo output loses centre, LFE and surrounds (KI-MC-01) | S18 (one Headphones control, opt-in); interim fold US-R1F-08 (R1.1-B), final fold home in the Engine sprint |
 > | EP-PRIVACY | No microphone, network or telemetry code exists; the sandbox story is superseded (Developer-ID, not sandboxed) | US-PRIV-02 |
 > | EP-QA | Shipped, except the THD+N oracle | US-QA-07 (new) |
 
@@ -245,6 +305,7 @@ As a **developer** I want a transparent true-peak limiter as the final stage in 
 
 **Status:** Shipped · proven-by: Enhanced-chain true-peak limiter stage (8× ISP oversampling, control-plane-adjustable threshold; bypassed in Pure Mode) + dual-oracle true-peak gate
 *(Amended 2026-10-10, Sprint EQ decision 29, PR #73: with Intensity 0 and the EQ on, the ceiling is **−0.1 dBTP** on a local lossless output (built-in, USB, Thunderbolt, HDMI…) and stays −1 dBTP on Bluetooth / AirPlay — `Limiting/OutputCeiling.h:19-38`, `DSPKernel.cpp` P1 branch. The full chain keeps −1 dBTP. The ceiling follows the output when it changes — PR #85.)*
+*(Scoped 2026-10-23, reconciliation card "the ceiling" (founder): the −0.1 dBTP EQ-only ceiling holds **only where the link is lossless and the output runs at the engine's 48 kHz** (the HDMI soundbar, a 48 kHz DAC). On Bluetooth / AirPlay and on any other-rate output the ceiling is **−1 dBTP** until the Engine sprint measures the output-side conversion (US-PE-01 / US-PE-03: a −0.1 dBTP test signal through the 48 → 44.1 kHz output path; if the overshoot exceeds the limiter's 0.27 dB working margin the rate condition stays; if not, the Engine sprint may extend −0.1 dBTP to other-rate wired outputs and records it here). With the peak-safe pre-gain (US-R1F-19) the net never works on an EQ'd track, so the ceiling question is moot for loudness; the ceiling remains the backstop. Test: the ceiling-selection unit tests (`OutputCeiling.h`) cover soundbar 48 kHz → −0.1, USB DAC 48 kHz → −0.1, USB DAC 44.1 kHz → −1, Bluetooth → −1, AirPlay → −1. Verified by: C++ null test.)*
 **Traceability:** FR-TONAL-07, NFR-QUAL-01
 
 ---
@@ -273,6 +334,7 @@ As a **Ramith** I want a bit-perfect playback path that drives the DAC directly 
 **Status:** Shipped · proven-by: `HALOutputEngine` (HAL-direct Pure path: hog mode + per-track physical-rate match, DSP bypassed) + C++ null-test bit-exactness gate. *By-ear check on a USB DAC still owed to the founder; B3/B4/B5/A2 polish tracked in the Pure-Mode sprint doc.*
 *(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:111-115`. **R1 blocker fixes (PR #88):** a track whose channel count is not the device stream's, or a device format Pure cannot write exactly, plays in Enhanced with a notice (it used to be endless silence, or an IO-buffer overrun for packed 24-bit) — `PureModePolicy.cpp:126-135`, `PureModeFormat.h`; NaN / Inf become silence; a changed next track reaches Pure (D41, KI-PB-01 closed); a teardown never reopens the render gate. Open: KI-PB-05, KI-PB-16, KI-SET-02 in [known-issues.md](known-issues.md). **Follow-up (unscheduled):** map channels inside Pure (AUHAL `kAudioOutputUnitProperty_ChannelMap`), so a mono file, or a stereo file on a multichannel interface, can stay bit-perfect.)*
 *(2026-10-14: the **USB-DAC check is parked** (FD-5) — no DAC for about two weeks, and the virtual-DAC rig waits for the founder's hardware rig. It owes: the integer path on real hardware; Pure pause and resume, which today tears the device down and switches its rate twice (council C-100, KI-PURE-01); the HAL device-state contract (C-31); and that HDMI is still accepted after R1's format rules. Pure honesty (the reason shown, "not bit-perfect" at a lower depth) is R1.1-A → [US-R1F-13](#us-r1f-13--pure-says-why).)*
+*(2026-10-23: the same parked hardware check list gains three founder checks: **volume keys during Pure, then the end of the queue** (the level the device ends on — US-R1F-20); **leveling on the device** (the cut the XM4 and the DAC actually land on, in their own volume steps — US-R1F-10); and **whether the XM4's own buttons move the Mac's volume slider** (US-TON-03). The XM4 can be checked now; the DAC when it arrives.)*
 **Traceability:** FR-PLAY-01, FR-DEVICE-06, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -293,7 +355,8 @@ As a **Marcus** I want the engine to measure program loudness to the BS.1770-5 s
 
 **Status:** Shipped · proven-by: `LoudnessModule` (BS.1770-5 integrated-loudness meter + ramped LUFS-normalization makeup gain, off-RT; not applied in Pure Mode) + libebur128 oracle gate
 *(Since Sprint EQ, PR #73: each track is also analysed at load time, off the audio path — `TrackLoudnessKit/TrackLoudnessAnalyzer.swift` (a ~25 s prefix at once, then the whole track; the next track prefetched) — feeding the loudness-neutral EQ gain (decision 26). The normaliser's contribution fades in over Intensity 0 → 10 % and glides ~2 s when Intensity crosses 0 (decision 33), so at Intensity 0 a track plays at its original level. Target: −16 LUFS, `AudioConstants.h:34`. The runtime meter is the in-house `LufsMeter`; libebur128 is a test-only oracle.)*
-*(2026-10-14, FD-2 and council C-38: the normaliser is a session-long AGC — its make-up gain carries across tracks and a gapless run is never re-measured. **R1.1-A** turns leveling off by default ([US-R1F-09](#us-r1f-09--a-faithful-default)); **R1.1-B** makes leveling its own setting — Off / Album / Track, a static gain from the existing analysis, off by default ([US-R1F-10](#us-r1f-10--leveling-as-its-own-setting)).)*
+*(2026-10-14, FD-2 and council C-38: the normaliser is a session-long AGC — its make-up gain carries across tracks and a gapless run is never re-measured. **R1.1-A** turns leveling off by default ([US-R1F-09](#us-r1f-09--a-faithful-default)); **R1.1-B** makes leveling its own setting — Off / Album / Track, a static gain from the existing analysis, off by default ([US-R1F-10](#us-r1f-10--leveling-as-its-own-setting-in-both-modes-rewritten-2026-10-23-reconciliation-card-1)).)*
+*(2026-10-23, reconciliation card 1: in R1.1-B the normaliser's make-up gain is **removed, not switched off** (US-R1F-10): the options are Off / Auto / Album / Track at a **−18 LUFS** target (today's −16 goes), through the existing per-track gain, in both modes. The BS.1770 meter (`LufsMeter`) and the load-time analysis stay; only the session-long make-up path goes.)*
 **Traceability:** FR-TONAL-07, NFR-QUAL-01, NFR-PERF-04
 
 ---
@@ -532,37 +595,94 @@ As a **Tom** I want a graphic EQ where I can drag the response curve per band an
 
 ---
 
-#### US-TON-02 — Device correction EQ (headphone and speaker profiles)
+#### US-TON-02 — Device correction EQ (headphone and speaker profiles) *(rewritten 2026-10-23 — two parts, S12 and S13)*
 
-As a **Marcus** I want the app to automatically apply a frequency response correction for my AirPods Pro or Sony WH-1000XM5, so that the headphones sound as neutrally balanced as the driver allows right out of the box.
+**Status (2026-10-23):** Planned · not built (no correction data, AutoEq import, parametric band or layer exists in the code). The nearest shipped piece is the per-output EQ memory ("Used on <output>" pins, `EQEditKit/EQOutputPin.swift`, PR #73) — it remembers a listener's **taste** per output; it does **not** recognise a headphone model. *(Reconciliation card 6, founder 2026-10-23: the earlier claim that identification was "delivered early" by the pins was wrong and is withdrawn.)* **Forward:** Part A → **S12**; Part B → **S13**. The profile model is cut to "correction + taste" (US-DEVICE-04 / -05).
 
-**Status (2026-10-13):** Planned · not built (no correction data or AutoEq import in the code). The nearest shipped piece is the per-output EQ memory ("Used on <output>" pins, `EQEditKit/EQOutputPin.swift`, PR #73). **Forward:** S12 (AutoEq `ParametricEQ.txt` import) + S13 (correction auto-load by identified device).
+##### Part A — S12: the one EQ program (layers, parametric bands, AutoEq file import)
+
+As a **Tom** I want one EQ that holds my own curve, parametric bands and an imported AutoEq file, drawn exactly as it plays, with a bypass for each part, so that what I see is what I hear and I can switch any piece off.
+
+**Sprint:** S12. **Stage:** the EQ program in the effects unit — an ordered list of layers **correction | taste | compensation** (S16 adds Clarity as a further layer), designed **once**, off the audio thread, by the Realizer into **one set of filter coefficients** (`EQProgram` / `FilterSpec`, per-band glide, SVF shelves by Simper mixing). The 31 points, the Tone macros and the parametric bands are the **taste** layer; compensation is US-TON-03's layer; correction is Part B's. **Pure:** not applied; the rows show the shared *Not in bit-perfect mode* state (US-R1F-20).
 
 **Acceptance Criteria:**
-- See FR-TONAL-02 Given/When/Then: "Apple AirPods Pro 2" identified; correction profile loaded and togglable on/off with audible difference.
-- At least 20 device correction profiles ship at launch (per P0-6: AirPods, Sony, Bose, Sennheiser, Mac built-in — covering common output devices).
-- Correction data sourced from AutoEQ (MIT license) or self-measured and validated (ASM-05).
-- Toggle persists per profile.
+1. **One engine.** The audio thread runs the one coefficient set; no second EQ engine or fitter exists in the code (S16's referee emits into this program — US-PERC-02). *Verified by:* a code-search test in the C++ null test harness (one EQ design entry point) and the review.
+2. **Composed read-back, ≤ 0.1 dB.** The graph draws the read-back of the finished coefficients; a log sweep through the real chain differs from it by **≤ 0.1 dB** at every point of the existing 31-band sweep grid at 44.1 and 48 kHz (the `EQ_Sweep31Bands_48k` / `_44k` pattern), in three cases: taste only; taste + compensation; taste + compensation + one parametric band (63 Hz, +9 dB, Q 1.4). *Verified by:* C++ null test.
+3. **A bypass per layer.** Each layer has its own on / off; off removes the layer from the design (the program is re-designed without it, and glides — never a live zeroing); with every layer off the EQ module is the identity and the bit-exact anchor holds (nothing else on). *Verified by:* C++ null test (identity, glide continuity as in `EqTransitionTests`).
+4. **Parametric bands.** Bands at any frequency 20 Hz – 20 kHz, gain within ±12 dB, Q 0.5 – 10, plus a low and a high shelf, beside the 31 points, in the taste layer; the Tone macros move the 31 points only. Presets and My Presets store them in a new format version; **every preset saved before S12 loads unchanged** (a fixture of each shipped preset). *(Ranges follow US-PERC-02's box constraints; confirm in the S12 design.)* *Verified by:* Swift Testing.
+5. **AutoEq file import.** A `ParametricEQ.txt` is read into parametric bands in the taste layer of the *current output*. Its **`Preamp:` line is read and discarded** — the ledger (US-TON-07) supplies the only pre-gain. The same file with and without `Preamp: -6.1 dB` gives an identical composed read-back and an identical published pre-gain. A filter whose gain is above +12 dB is accepted and the graph draws what the ledger plays (marked "protected", US-TON-07), never a silent clamp. An import never writes the correction layer (Part B's). *Verified by:* Swift Testing + C++ null test.
+6. **Per-output memory, extended.** The existing per-output pin is the **only** per-device memory; it now also stores the parametric bands, the correction choice (Part B: model id, variant, on / off) and the loudness reference (US-TON-03). Pin an output with two parametric bands and a correction-choice stub, switch away and back: recalled equal. *Verified by:* Swift Testing on the shipped view model.
+7. **KI-EQ-01 is fixed in this same change** (unpin must never overwrite the shared EQ) — acceptance in US-R1F-06.
+8. **Compare** has one meaning and **Bypass all processing** is a separate latching switch — US-PROF-02. The "Clarity" preset's display name becomes "Detail" — US-TON-06.
 
-**Priority:** Should | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-DEVCORRLIB
+**Not in this story:** identification and the correction library (Part B); the channel-layout owner and the "stage concept" — **removed from S12, they belong to the Engine sprint (US-PE-01 / US-PE-02)**; the compensation curve (US-TON-03); the ledger itself (US-TON-07 lands first, in S14-lite — this story consumes it); Clarity (S16). The older "A/B already shipped / still open" line is deleted: Compare keeps one meaning.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 8 sp *(re-sized 2026-10-23; S12 keeps the 2-week cap with honest contents)* | **Dependencies:** US-TON-07, US-TON-03 (S14-lite runs first), US-ENG-02
+**Traceability:** FR-TONAL-01, FR-TONAL-02, FR-TONAL-06, FR-DEVICE-04
+
+##### Part B — S13: the correction layer (recognise the headphones, offer the right curve, remember it)
+
+As a **Marcus** I want the app to recognise my Sony WH-1000XM4 or AirPods Pro and **offer** the correction made for that model — letting me hear it first, at the same loudness — so that, if I like it, my headphones sound as neutral as the driver allows with one tap, and never because the app decided for me.
+
+**Sprint:** S13. **Stage:** the **correction** layer — the first layer of the EQ program (Part A), *before* the taste layer and before any headphone render (the render assumes a neutral headphone). **Pure:** not applied; shared *Not in bit-perfect mode* state.
+
+**Acceptance Criteria:**
+1. **Identification.** The output's headphone **model** (from the device's name / model id) maps to one entry of the correction library, with the **ANC variant** (ANC on / off) where the library carries both (the XM4 has both). Fixtures: "WH-1000XM4" → the XM4 entry; "WH-1000XM5" → the XM5 entry and **never** the XM4's (the wrong-model error is the one to prevent); an unknown name → no offer; two pairs of the same model → the same entry. The ANC state and the codec cannot be read, so the offer shows the variant and lets the listener choose the other in one tap. *Verified by:* Swift Testing.
+2. **A layer keyed by model, separate from taste.** The output's memory stores the correction as a *choice* (`{model id, variant, on / off}`) that references the library entry; the correction's filters are **never copied into the taste layer or a preset**. A second pair of the same model is a new output: it is offered the correction afresh and never inherits a second copy — with both pairs' taste curves in the program, the composed gain at 105 Hz contains the XM4 entry's gain **once** (−4.2 dB, not −8.4 dB). *Verified by:* Swift Testing + C++ null test (composed read-back).
+3. **Offered, never applied.** Off on a fresh install. With the XM4 connected and a correction available, the played stream is **bit-identical to the source** until the listener accepts (MD5 null with the correction available). The offer reads, in these words: "Sony WH-1000XM4 recognised — hold to hear it corrected". *Verified by:* C++ null test + Swift Testing.
+4. **A level-matched hold-to-hear preview.** Holding the offer plays the corrected sound; releasing returns to the uncorrected. The two are **matched within 0.2 dB** in integrated loudness — the library entry's own preamp is *not* used; the ledger's loudness match replaces it (for the XM4 entry the file's −6.1 dB preamp would otherwise play it 6 dB quieter). One tap keeps it for these headphones; "Not now" is remembered per output and is not re-offered on every connect (the listener can still turn it on in Settings). *Verified by:* C++ null test (loudness within 0.2 dB on pink noise and a −9 LUFS master) + Swift Testing.
+5. **Per-output memory.** The choice (accepted / declined / variant) is remembered per output in the existing per-output memory (Part A item 6). **The device class only picks the default suggestion for a never-seen output** (headphones → the offer is made; speakers → no headphone offer); it never applies anything. Because "headphones" is a guess (a DAC feeding headphones reads as "USB"), the app asks **once per never-seen output** whose class is not certain — "What's plugged into this output?" (Headphones / Speakers / Something else) — remembers the answer, and everything headphone-shaped (this offer, crossfeed's default, the Headphones control) follows it — headphones on a USB DAC are then treated as headphones. *Verified by:* Swift Testing.
+6. **A chip.** While the correction plays, the status badge names it ("Corrected · Sony WH-1000XM4 · ANC on"). *Verified by:* Swift Testing.
+7. **The ledger counts it.** The correction's gains enter the per-band sum (US-TON-07) and are never clipped silently.
+8. **The library.** At least 20 correction entries ship (AirPods, Sony, Bose, Sennheiser, Mac built-in), each with a per-model provenance note; data from AutoEq's *computed* curves with attribution (SPIKE-DEVCORRLIB); entries are stored **without** their `Preamp:` line.
+
+**Not in this story:** applying a correction automatically (by class, by name or by any rule); a "Tune for my headphones" blind mini-test (not decided); the taste layer's tools (Part A); the headphone render (S18); a profile model beyond "correction + taste" (US-DEVICE-04). The earlier wording "automatically apply … right out of the box" and the claim that identification was "delivered early" are deleted.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 8 sp *(re-sized 2026-10-23: identification and the library are now in)* | **Dependencies:** Part A, US-TON-07, US-DEVICE-03, SPIKE-DEVCORRLIB
 **Traceability:** FR-TONAL-02, DEP-07, ASM-05
 
 ---
 
-#### US-TON-03 — Fletcher-Munson loudness-compensated EQ
+#### US-TON-03 — Loudness compensation: keep the bass at low volume *(rewritten whole 2026-10-23; was "Fletcher-Munson loudness-compensated EQ")*
 
-As a **Ramith** I want the app to automatically boost bass and treble when I turn the volume down, so that music sounds full and warm even at low volume.
+As a **Ramith** I want the bass and warmth to stay when I turn the volume down at night, so that music does not thin out at the volume I actually listen at — on my headphones by following the volume I turn, and on my soundbar by an amount I set.
 
-**Status (2026-10-13):** Planned · not built. **Forward:** S14 (loudness compensation, ISO-226). *(Naming note: the "Loudness" preset was renamed "Bass & Treble" so it does not clash with S14 — decision 31. These AC's figures (+6–10 dB bass, +12 dB cap) disagree with FR-TONAL-03's provisional values (50 % fraction, +6 dB bass / +4 dB treble caps); S14 must settle one set — SPIKE-LOUDNESS-COMP-TUNING.)*
+**Status (2026-10-23):** Planned · not built (no compensation code exists). **Sprint:** **S14-lite** (the first R2 sprint). **Decoupled from the Engine sprint and from W2** — it needs only the device-volume listener that already exists for Pure (US-ADAPT-03 lifts it out of its Pure-only gate). *(The earlier text — "boost bass and treble", "+6–10 dB bass, +3–5 dB at 8–12 kHz", "+12 dB cap", "updates on every volume change event", "SPL calibration" — is withdrawn: every treble figure is deleted; the ear asks for essentially no treble lift, and the planned one would add fizz.)*
+
+**Stage:** the **compensation** layer, the last of the EQ program's ordered layers (correction | taste | compensation; US-TON-02 Part A makes the program in S12 — S14-lite builds this layer against that contract so S12 does not rebuild it). Its broadband offset is an entry in the headroom ledger (US-TON-07). **Form: ease the mids, never boost.** **Pure:** **not applied** — the control shows the shared *Not in bit-perfect mode* row state (US-R1F-20) and says so in words.
 
 **Acceptance Criteria:**
-- See FR-TONAL-03 Given/When/Then: volume reduced by 20 dB; bass (80–200 Hz) increases ~6–10 dB; highs (8–12 kHz) increases ~3–5 dB per ISO 226 curves; applied within one DSP processing block.
-- Compensation updates on every volume change event (FR-ADAPT-05).
-- Compensation is limited to a configurable maximum boost (default: +12 dB) to prevent distortion on laptop speakers.
-- No audible discontinuity during volume changes (ramp per US-ENG-04).
 
-**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-03, US-ENG-04
-**Traceability:** FR-TONAL-03, FR-ADAPT-05
+*Which volume counts (per output).*
+1. **A readable output** (one whose volume reads at run time — your XM4 today; the soundbar does not): **Level** (dB, at the ear, relative to the reference) = Master Gain + the device's own volume + the playing track's leveling gain (US-R1F-10) + the peak-safe pre-gain (US-R1F-19) + **this layer's own loudness change** (the predicted loudness change of its published curve — a negative number: "volume minus its own cut"). The taste and correction layers are loudness-neutral by design and add 0. Test (invariance): after the listener restores loudness by raising the volume by exactly the layer's cut, the published curve is unchanged within 0.1 dB. The Realizer solves the level's dependence on its own cut off the audio thread (the cut is bounded, so it converges). *Verified by:* Swift Testing + C++ null test.
+2. **A non-readable output** (the Mac can neither read nor set its volume — "Set on device": the HDMI soundbar): a **manual "Loudness amount"** slider, labelled exactly so, in **dB of assumed turn-down, 0 – 20 dB**: 20 dB = the designed curve for a **20 dB turn-down** at the global depth, 0 dB = flat (the depth fraction stays the global setting). It does **not** follow any volume (the caption says so); Master Gain and leveling are not read on this output. *(The 20 dB top of the range is this story's definition — open until S14-lite's design, decided by the founder.)* *Verified by:* Swift Testing with a `fixed`-volume device double.
+3. **Which one is used is decided per output at run time** by whether the volume reads, never by device name or type. **Owed (founder, a minute): do the XM4's own buttons move the Mac's volume slider?** If not, the caption on that output reads "use the Mac's volume keys"; the answer is recorded here. *Founder.*
+
+*The one-time reference.*
+4. Each output has a reference: a button **"This is my normal loud setting"** stores the current Level (with this layer flat) as the reference for that output, in the per-output memory (US-TON-02 Part A item 6). The turn-down **D** = max(0, reference − Level); at or above the reference the layer is flat (it never adds when you turn up).
+5. **Until an output's reference is set, the layer does nothing** (flat), the row reads "Set your normal volume to start", and Enhance never turns Loudness on there (US-UI-08). Not on a non-readable output (it has the manual amount instead).
+
+*The curve.*
+6. **Bass only, the ISO 226:2003 difference.** The target is `depth ×` the ISO 226:2003 equal-loudness difference — the lift in each band, relative to 1 kHz, that keeps the tonal balance when the level falls from 80 phon to (80 − D) phon. For D = 20 dB the full difference is **+10.5 dB at 20 Hz, +8.2 at 50 Hz, +6.2 at 100 Hz, +3.9 at 200 Hz, +1.2 at 500 Hz, about 0 from 1 kHz to 8 kHz**. **Depth starts at 50 %** (so +5.25 / +4.1 / +3.1 / +1.95 / +0.6 dB, nothing above 1 kHz); the founder's evening on the XM4 picks 40, 50 or 60 % (item 12) and the choice is recorded here. The **bass lift is capped at +6 dB** (it engages only at full depth in the deep bass). There is **no treble figure anywhere**. Test: at each of the 31 centre frequencies the designed target equals `depth × ISO 226 difference` within 0.1 dB (the test computes the standard's table itself); the response above 1 kHz is flat — the realised gains at 1, 2, 4, 8, 10 and 16 kHz are equal within 0.1 dB. *Verified by:* C++ null test.
+7. **Ease the mids; the net never wakes.** The published layer is the target minus its own maximum, so **every band gain is ≤ 0 dB**; at D = 20 dB, depth 50 % the layer is **0.0 dB at 20 Hz, −1.15 at 50 Hz, −2.15 at 100 Hz, −3.30 at 200 Hz, −4.65 at 500 Hz and −5.25 dB from 1 kHz up** (each within 0.1 dB, read-back rule). On a −9 LUFS master with the layer at full depth and the output at its ceiling, the limiter's gain reduction is **0.0 dB**. *Verified by:* C++ null test.
+8. **The caption** contains "nudge the volume up a notch" (the music is quieter by the cut, so the listener nudges the volume once); the net-gain readout (item 10) shows the cut in dB.
+
+*When it updates (these events, and no others).*
+9. The design is recomputed off the audio thread, and published within **100 ms**, on: a Master Gain change; a device-volume change on the current output (the HAL listener, US-ADAPT-03); an output change (that output's reference and level source); a track change (the leveling gain and pre-gain at the seam change Level); setting the reference; switching the layer on or off; changing the manual amount. It is **never** recomputed per audio buffer, and never while none of those has changed. The filters move by the engine's own per-band glide: no click and no zipper noise on a 20 dB volume step (the `EqTransitionTests` pattern). *Verified by:* Swift Testing (event → recompute) + C++ null test (glide).
+
+*The Level card.*
+10. One **"Level" card** (Settings or the inspector — a UI call, one place, in signal order) with plain names — **"Even out track levels"** (leveling, US-R1F-10) and **"Keep bass at low volume"** (this layer) — and a **net-gain readout**: "Net gain now: −X.X dB" = leveling gain + peak-safe pre-gain + this layer's own offset (not Master Gain, not the device volume — those are the listener's), shown to 0.1 dB and equal to the sum of the published offsets within 0.1 dB. *Verified by:* Swift Testing.
+
+*Not in bit-perfect mode.*
+11. In Pure the layer is not applied and the control says "Not in bit-perfect mode" (US-R1F-20); the volume loan is untouched by this story.
+
+*The blind test (last).*
+12. **Before the sprint ends, the evening (founder):** the curve pre-rendered at 40 / 50 / 60 % at a 20 dB turn-down on three familiar loud masters on the XM4; the pick sets the depth constant. **Last acceptance line:** the founder's blind, level-matched A/B on their own gear, **at the real late-night level with the reference set**, "with" against "without, nudged to equal loudness" (matched within 0.2 dB over every offset, the layer's own cut included), the ladder (about 23 trials, capped at 60), on the XM4 (follows the volume) **and** the soundbar (manual amount). Bar: **prefer** (Enhance turns it on). If it does not win, it ships **off and hidden** and Enhance excludes it. *Founder.*
+
+**Not in this story:** a treble lift or any boost; per-device SPL calibration or a level meter; auto-detecting the listener's volume habit; the ledger (US-TON-07) and Enhance (US-UI-08), which it feeds; engine events, W2 or any Engine-sprint work; the Intensity knob (it never scales this layer); the correction and parametric layers (S13 / S12).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp *(re-sized 2026-10-23 from 5: the reference, the Level card, the per-output source)* | **Dependencies:** US-ADAPT-03, US-TON-07, US-R1F-10, US-R1F-19, US-R1F-20, US-ENG-03, US-ENG-04
+**Traceability:** FR-TONAL-03, FR-ADAPT-05, LD-17
 
 ---
 
@@ -606,7 +726,31 @@ As a **Tom** I want to select from named presets (Neutral, Warm, Bright, Bass Bo
 
 **Status:** Shipped (QW1) · proven-by: ~~`EQPresetPickerView`~~ + `SaveCustomPresetView` + `EQViewModel+Persistence` (house-curve presets + Save-as-Custom + per-output recall). Founder by-ear verification still pending.
 *(Updated 2026-10-13: `EQPresetPickerView` no longer exists. Sprint EQ, PR #73, re-voiced the built-ins (decision 30) — **7** of them, each built from the five Tone regions: Flat, Presence, Clarity, Warm, Bass & Treble (decision 31, id "Loudness"), Vocal, Bass Boost (decision 32, replaces "Studio", which loads as Flat) — `EQEditKit/EQBuiltInPreset.swift:23-71`; plus **My Presets** (`EQMyPresets.swift`, `UI/EQ/EQPresetList.swift`, `SaveCustomPresetView`), and per-output pins (`EQOutputPin.swift`). So the list is 7 named built-ins, not the 8 (Neutral / Warm / Bright / Bass Boost / Podcast / Film / Classical / Electronic) the AC named.)*
+*(**S12 — the rename (reconciliation card 10, founder 2026-10-23, rides with S12's EQ change):** the built-in preset **"Clarity" is displayed as "Detail"** so it does not clash with the Clarity feature (S16). **Its stored id stays `"Clarity"`** (`EQBuiltInPreset.clarity`, as decision 31 kept "Loudness" for "Bass & Treble"); only `displayName` changes. Acceptance: every place that shows the preset (picker, per-output pin toast, My Presets provenance, accessibility label) reads "Detail"; a pin or preset stored with id `"Clarity"` before S12 loads and plays identically; the round-trip raw value is still `"Clarity"`. *Verified by:* Swift Testing. Not in this change: any re-voicing of the curve.)*
 **Traceability:** FR-TONAL-06, FR-DEVICE-04
+
+---
+
+#### US-TON-07 — The headroom ledger: one sum, one turn-down, a metered safety net *(new — 2026-10-23, reconciliation card 4)*
+
+As a **Ramith** I want every boost in the sound — my EQ, a headphone correction, anything later — added up in one place, so that the total never silently passes +12 dB in any band, a loud record with a big EQ plays a little quieter instead of squashed, and I can see when the safety net works.
+
+**Status (2026-10-23):** Planned · not built. Today there are three separate ±12 dB limits (the EQ points, the loudness-neutral EQ gain, the old leveller's make-up) and nothing adds them; the architecture's cumulative +12 dB clamp (architecture §11) is design only. **Sprint:** **S14-lite**, as its structural slice (it replaces the old "taste-only neutrality" slice; S12, S13 and S16 then add *entries* to it, not new rules). **Stage:** the Realizer (off the audio thread), over the EQ program's layers (US-TON-02 Part A); the one pre-gain is applied once, before the EQ, through the per-track gain path (US-R1F-19); the safety net's reduction is read from the limiter. **Pure:** none of this runs (the stream is untouched).
+
+**Acceptance Criteria:**
+1. **Per-band sum ≤ +12 dB, scaled proportionally.** At every band the sum over the layers (correction + taste + compensation, and Clarity once S16 lands) of their dB gains is **≤ +12 dB**. Where it would exceed it, the layers' **positive** contributions in that band are scaled by one common factor *s* so that *s*·(sum of positives) + (sum of negatives) = +12 dB; negatives are never scaled; nothing is clipped per layer. Evaluated at the 31 centre frequencies (from S12, at every sweep-grid point of the composed response). Tests: taste +12 and correction +5 at 60 Hz → sum 17 → taste **8.47**, correction **3.53** (±0.01); taste +12, correction +5, compensation −2 → *s* = 14/17 → taste **9.88**, correction **4.12**. *Verified by:* C++ null test (ledger unit tests).
+2. **One pre-gain, applied once.** The ledger publishes **one** broadband offset beyond leveling, **G = min(−ΔL, C_cap)** — the smaller of the two: **−ΔL** is the loudness-neutral offset (decision 26) computed over the **correction and taste layers only** (compensation is exempt from neutrality: its own loudness change is the point of the layer and is read by US-TON-03's level); **C_cap** is US-R1F-19's peak-safe cap over the composed, clamped response (it may be positive, never clamped to 0); the turn-down shown is T = G − (−ΔL) ≤ 0. G is applied **once, before the EQ**; no layer applies a preamp of its own. The parameter block has exactly one such field. *Verified by:* C++ null test (the field's value equals G in the stacked case below).
+3. **AutoEq's preamp line is replaced by the ledger.** A file's `Preamp:` line never reaches the audio (S12's import discards it; US-TON-02 Part A item 5) and the correction library stores entries without it (S13); the ledger's G is the only turn-down. *Verified by:* Swift Testing (same file with and without `Preamp: -6.1 dB` → identical composed read-back and identical G).
+4. **The safety net's gain reduction is metered and shown.** The limiter publishes its maximum gain reduction over the last second at the existing 20 Hz readout rate (an atomic read — never a main-thread wait on the engine). It is shown as "Safety net: X.X dB" in the Monitoring tab and on the Level card; when it is **0.1 dB or more** the EQ graph's status line says so. Test: a forced overshoot on a fixture (a −9 LUFS master, +6 dB bass, no pre-gain) gives a reading within 0.1 dB of an offline simulation of the limiter. *Verified by:* C++ null test.
+5. **"Protected", not "held".** Where the sum clamp scaled a band the graph marks it "Protected at +12 dB"; where the turn-down T is below 0 dB the readout says "Protected: −X.X dB so loud peaks stay clean". The words "held" and "refused" appear nowhere in the UI. *Verified by:* Swift Testing (the strings).
+6. **The stacked worst case.** Taste +12 dB at 60 Hz, compensation at full depth (US-TON-03), and a headphone correction with ≥ +5 dB of bass (the HD 650 fixture), on a bass-heavy **−9 LUFS** master at the **−0.1 dBTP** wired ceiling (and again at −1 dBTP): (a) the realised gain is **≤ +12 dB at every band** (a sweep through the chain); (b) the limiter's reduction is **below 0.1 dB**; (c) the integrated loudness of the whole program against Off differs from the compensation layer's own predicted loudness change by **no more than 0.2 dB**. *Verified by:* C++ null test (offline render + oracle loudness).
+7. **The golden master is re-baselined deliberately.** The new pre-gain field changes the kernel parameter block, so the bit-exact golden master is re-recorded as a recorded step (the diff of the field and nothing else, in the PR); with everything off the path is still bit-exact (the anchor holds).
+8. **What it does not claim.** The safety net protects the *signal* from clipping, not the listener's ears from level; the ledger's +12 dB sum is the real boost protection. The architecture §11 hearing-safety loudness clamps (session cap, confirmation gate) stay design-only.
+
+**Not in this story:** the layers' UI, parametric bands and AutoEq import (S12), the correction library (S13), Clarity's emission (S16), the hearing-safety loudness clamps, any per-layer budget (there is one sum). The measured (rather than bounded) form of the peak-safe pre-gain is US-R1F-19's, brought here only if it has not shipped.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp *(about a week)* | **Dependencies:** US-R1F-10 (true-peak field), US-R1F-19, US-TON-03, US-ENG-05
+**Traceability:** FR-TONAL-02, FR-TONAL-03, FR-TONAL-07, NFR-QUAL-01, LD-12
 
 ---
 
@@ -652,18 +796,21 @@ As a **Marcus** I want the app to automatically detect whether I am playing clas
 
 ---
 
-#### US-ADAPT-03 — Volume-level tracking and signal dispatch
+#### US-ADAPT-03 — Volume-level tracking: the device-volume listener, lifted out of its Pure-only gate *(rewritten 2026-10-23)*
 
-As a **developer** I want the adaptivity engine to monitor current playback volume continuously and dispatch updated compensation curve parameters to the DSP chain within 100 ms of any volume change, so that Fletcher-Munson compensation is always current.
+As a **developer** I want the output device's own volume read while Enhanced plays, so that loudness compensation (US-TON-03) can follow the volume the listener actually turns — and so that a device volume is never painted onto Enhanced.
 
-**Status (2026-10-13):** Planned · not built. **Forward:** S14 (loudness compensation). *(Today the only volume control is Master Gain, `AudioViewModel+MasterGain.swift`; on Pure it is the device's volume.)*
+**Status (2026-10-23):** Planned · not built. **Sprint:** **S14-lite** (moved in from "waits for W2": it needs a HAL listener, not an engine event). *(Today the only volume control is Master Gain, `AudioViewModel+MasterGain.swift`; the HAL volume listener exists but runs only while Pure holds the device — `AudioEngineBridge+MasterGain.swift`; R1.1-A's closure of KI-SET-03 relies on that gate, which is why a regression test is owed.)* **Stage:** outside the sound chain — a read-only input to the Realizer. **Pure:** unchanged: Pure keeps the volume loan; the listener already serves it.
 
 **Acceptance Criteria:**
-- See FR-ADAPT-05 Given/When/Then: volume 50% → 30%; compensation EQ parameters update within 100 ms; no audio dropout.
-- Volume is monitored via system volume API (kAudioHardwareServiceDeviceProperty_VirtualMainVolume) and the in-app volume control.
-- Dispatch uses lock-free bus (US-ENG-03); ramp applied (US-ENG-04).
+1. **The listener runs on Enhanced** for the current output (the HAL volume property, on the device-volume queue — never the main thread, the PR #86 rule) and publishes a read-only "device level" (dB on the device's own scale, with its range) to the Realizer. A device whose volume cannot be read publishes "not readable" (the input US-TON-03's manual amount keys off); the "Set on device" state is kept as it is today.
+2. **Regression test — a device volume is never painted onto Enhanced.** With Enhanced playing, change a fake device's volume (the `DeviceVolumeControl` double): Master Gain's value and the Enhanced player's volume are unchanged, and the app writes nothing to the device. The converse holds: moving Master Gain on Enhanced never writes the device volume. *Verified by:* Swift Testing on the shipped view model.
+3. A device-volume change reaches the published compensation inputs within **100 ms** (FR-ADAPT-05) with no audio dropout; the compensation design then moves by the engine's own glide (US-TON-03 item 9). *Verified by:* Swift Testing (event → published within 100 ms) + C++ null test (no dropout).
+4. Dispatch uses the lock-free bus (US-ENG-03); ramps per US-ENG-04.
 
-**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-03, US-ENG-04, US-TON-03
+**Not in this story:** engine events, the transport reducer or any W2 work (the old dependency is deleted); the compensation curve itself (US-TON-03); writing the device volume on Enhanced (never).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-03, US-ENG-04 *(US-TON-03 now depends on this story, not the reverse)*
 **Traceability:** FR-ADAPT-05
 
 ---
@@ -678,7 +825,7 @@ As a **Tom** I want to open a debug/analysis view that shows exactly which signa
 
 **Acceptance Criteria:**
 - See FR-ADAPT-07 Given/When/Then: adaptivity engine active; Transparency view open; each active signal listed with current value and DSP adjustment; updates at ≥ 2 Hz.
-- View shows at minimum: Volume level → bass/treble gain; Genre → EQ curve name; Device type → spatialisation mode.
+- View shows at minimum: Volume level → bass compensation *(2026-10-23: bass only — US-TON-03 has no treble)*; Genre → EQ curve name; Device type → spatialisation mode *(offered, not applied — US-SPAT-01)*.
 - Each row has an inline Undo link.
 - View is accessible via VoiceOver (NFR-ACC-01).
 
@@ -692,13 +839,19 @@ As a **Tom** I want to open a debug/analysis view that shows exactly which signa
 As a **Tom** I want a master Adaptation Strength slider (0–100%) that lets me dial back how aggressively the engine modifies the sound, so that I can choose how much automation I want while keeping my manual EQ corrections.
 
 **Status (2026-10-13):** Planned · not built as specified. The closest shipped control is the Reimagine **Intensity** knob, which since decision 25 (PR #73) scales only the adaptive enhancement and leaves the EQ intact — exactly this story's shape — but there is no adaptation for it to scale yet. **Forward:** S17 (full Reimagine mapping).
+*(Rewritten 2026-10-23, reconciliation card 2 (founder): **this story and US-RMG-01 / US-RMG-02 are one control — Intensity — built once, in S17.** It scales **only the automatic stages — Clarity depth and the spatial room amount — as settings inside each stage**; **default 0**; **never a crossfade; never a hand-set switch.** The earlier "100 % (default)" is deleted.)*
+
+**Sprint:** S17. **Stage:** none of its own — it sets two stage settings (US-PERC-03's Clarity depth; US-SPAT-03's room amount) through US-RMG-02's mapping. **Pure:** not applied (those stages are not in Pure).
 
 **Acceptance Criteria:**
-- See FR-ADAPT-08 Given/When/Then: Adaptation Strength = 0%; content/volume/ambient all change; DSP parameters do not change from baseline (verifiable in Transparency view).
-- At 100% (default), full adaptive range is active.
-- Slider position persists per profile.
+- See FR-ADAPT-08, as amended: **Strength 0 = nothing automatic; stages the listener set by hand still play** (the earlier "DSP parameters do not change from baseline" is read the same way: the baseline is the listener's own settings).
+- **Default 0** (a fresh launch is faithful; FD-2). Test: a new install's strength is 0 and the engine is on the bit-exact path (C++ null test; Swift Testing on the shipped view model).
+- **It never changes a hand-set switch.** Sweeping strength 0 → 1 → 0 leaves these state fields byte-identical: leveling mode, Loudness on / amount, crossfeed / Headphones position, every EQ layer's on / off and gains, the correction choice, Enhance. *Verified by:* a control-plane assertion on `TargetState` in the C++ null test and Swift Testing on the view model.
+- The slider position persists as an app setting (**not in a profile** — the profile model is cut to correction + taste, US-DEVICE-04).
 
-**Priority:** Should | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-ADAPT-02, US-ADAPT-03, US-ADAPT-04
+**Not in this story:** a wet / dry blend of any kind; scaling leveling, Loudness, crossfeed, correction or the EQ; a visible macro that moves other sliders.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-RMG-02, US-PERC-03 *(was US-ADAPT-02 / -03 / -04: content classification and the transparency view are not needed)*
 **Traceability:** FR-ADAPT-08
 
 ---
@@ -734,19 +887,23 @@ As a **developer** I want the app to enumerate all available Core Audio output d
 
 ---
 
-#### US-DEVICE-02 — Device-change auto-profile switching with crossfade
+#### US-DEVICE-02 — Device change: recall what this output remembers, and offer — never apply *(rewritten 2026-10-23; was "auto-profile switching with crossfade")*
 
-As a **Marcus** I want the DSP profile to switch automatically within 500 ms when I plug in or unplug headphones, with no audio dropout and a smooth crossfade, so that my listening is never interrupted.
+As a **Marcus** I want what I last chose for an output to come back within 500 ms when I plug it in or switch to it — and, for a headphone the app recognises but has never heard from me, an offer I can hear first — so that my listening is never interrupted and the app never changes my sound on its own.
 
 **Status (2026-10-13):** Partly shipped · what exists: the **per-output EQ** — a pinned output recalls exactly what was last heard on it, and an output change raises a toast naming the output and its EQ ("AirPods Pro · Late Night") — Sprint EQ, PR #73 (`EQEditKit/EQOutputPin.swift`, `EQOutputSwitch.swift`, `UI/Shell/EQOutputToast.swift`); the pin / follow rule and the limiter ceiling, rate readout and crossfeed check follow the output — PR #85 (`OutputDeviceKit/OutputDevicePolicy.swift`, `AudioViewModel.adoptOutput`). **Missing:** whole DSP profiles and a category fallback → S13. Open: KI-EQ-01.
 
-**Acceptance Criteria:**
-- See FR-DEVICE-02 Given/When/Then: AirPods Pro profile saved; AirPods connected; profile loaded within 500 ms; no dropout.
-- Journey 2.4 Step 3: crossfade window = 200 ms default (configurable); ring buffer absorbs the gap.
-- Non-blocking banner confirms the switch (Journey 2.4 Step 4).
-- If no specific profile exists for the new device, the generic profile for the device category is loaded.
+**Sprint:** S13 (the remembered part is shipped: per-output EQ recall, PR #73). **Stage:** the per-output memory and the EQ program's layers (US-TON-02). **Pure:** the memory is recalled, but only the Pure-compatible parts act (US-R1F-20).
 
-**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-01, US-ENG-03, US-ENG-04
+**Acceptance Criteria:**
+- **Recall.** An output that has a memory (US-TON-02 Part A item 6: taste incl. parametric bands, the correction choice, the loudness reference, the Headphones position, Enhance) gets it back within **500 ms** of the output becoming the playing output, with no audio dropout longer than 50 ms; the parameters move by the engine's own per-band glide (no click). *(The earlier dedicated 200 ms "profile crossfade" is not built and not required; the glide satisfies "no audible discontinuity".)* *Verified by:* Swift Testing (recall within 500 ms) + C++ null test (no click).
+- **Never apply a guess.** For an output with no memory, **nothing is applied** — the file plays as recorded. If the app recognises the headphone model it **offers** the correction with a level-matched hold-to-hear preview (US-TON-02 Part B). **The earlier "if no specific profile exists, the generic profile for the device category is loaded" is deleted**; the device class only picks the default *suggestion* for a never-seen output. *Verified by:* C++ null test (fresh install, XM4 connected: bit-identical to source).
+- **A second pair of the same model** is a new output: it is offered afresh and is never silently given a second copy of the correction (US-TON-02 Part B item 2).
+- A non-blocking toast confirms the switch and names what was recalled ("AirPods Pro · Late Night" — shipped) and, when a correction is on, the correction ("· corrected").
+
+**Not in this story:** whole DSP profiles with spatial / dynamics / strength settings (US-DEVICE-04: cut to correction + taste); spatial-mode auto-switching (S18 offers it); head tracking.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-01, US-ENG-03, US-ENG-04, US-TON-02
 **Traceability:** FR-DEVICE-02, NFR-REL-03
 
 ---
@@ -758,9 +915,10 @@ As a **developer** I want connected output devices classified into six categorie
 **Status (2026-10-13):** Partly shipped · the type comes from the CoreAudio transport alone — built-in / USB / wireless (Bluetooth, BLE, AirPlay) / unknown, with a name fallback (`CoreAudioDevice.cpp:326-359`); "headphones" means USB or wireless (`AudioViewModel.swift:169-181`). No in-ear / over-ear / DAC split, no data-source query. **Defect:** wired headphones in the Mac's own jack report the built-in transport, so crossfeed is disabled for them (KI-DEV-01). **Forward:** S13 (identified-device correction needs this) + US-R1F-06 for KI-DEV-01.
 
 **Acceptance Criteria:**
-- See FR-DEVICE-03 Given/When/Then: AirPods Pro identified as "in-ear headphones"; HRTF + headphone correction pipeline auto-selected.
-- Built-in MacBook speaker classified as "built-in speakers"; speaker widening and psychoacoustic bass enhancement selected.
-- Unknown devices default to neutral/headphones profile with a prompt to select category manually.
+- See FR-DEVICE-03 Given/When/Then: AirPods Pro identified as "in-ear headphones"; the **default suggestion** for a never-seen output is the headphone one *(2026-10-23: the class only picks which offer is made — correction with a hold-to-hear preview, the Headphones control — it never applies anything; "auto-selected" is withdrawn, reconciliation card 7)*.
+- Built-in MacBook speaker classified as "built-in speakers"; the speaker-side suggestions (widening, psychoacoustic bass enhancement) are offered by the same rule.
+- Unknown devices default to **no processing** with a prompt to select the category manually.
+- **S13 — "What's plugged into this output?"** (reconciliation, smaller items): for a never-seen output whose class is not certain (a USB / HDMI DAC that may feed headphones or speakers) the app asks once — Headphones / Speakers / Something else — and remembers the answer **per output** in the per-output memory; everything headphone-shaped (the correction offer, crossfeed's default) then follows it. Test: a USB output answered "Headphones" is treated as headphones in the offer and the crossfeed default; answered "Speakers" it is not; the answer survives a relaunch. *Verified by:* Swift Testing.
 
 **Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-01
 **Traceability:** FR-DEVICE-03
@@ -769,17 +927,22 @@ As a **developer** I want connected output devices classified into six categorie
 
 #### US-DEVICE-04 — Named profile creation, editing, and device association
 
-As a **Tom** I want to create named DSP profiles ("Night Mode — AirPods," "Office — Sony"), link them to specific output devices, and switch between them from the device menu, so that I can maintain different listening setups without re-configuring the app every time I switch headphones.
+As a **Tom** I want to create named profiles ("Night Mode — AirPods," "Office — Sony"), link them to specific output devices, and switch between them from the device menu, so that I can maintain different listening setups without re-configuring the app every time I switch headphones.
 
 **Status (2026-10-13):** Planned · not built (no profile model). Nearest shipped: My Presets + per-output EQ pins (PR #73). **Forward:** S13 (profile JSON import / export implies the profile model).
+*(Narrowed 2026-10-23, reconciliation card 6 (founder): **the profile model is cut to "correction + taste".** Per-output memory plus Enhance covers the rest.)*
+
+**Sprint:** S13. **Stage:** the per-output memory (US-TON-02 Part A item 6) — a profile is the **same record** as an output's memory, given a name; there is no second per-device memory. **Pure:** a profile's EQ and correction are not applied in Pure.
 
 **Acceptance Criteria:**
-- See FR-DEVICE-04 Given/When/Then: "Night Mode — AirPods" created with custom EQ; AirPods connected; app offers to auto-load; manual switch also available.
-- Profile stores: EQ bands, spatialization settings, dynamics settings, Adaptation Strength, linked device ID.
-- Profiles persist across app restarts (FR-PLAY-05 persistence layer reused).
+- See FR-DEVICE-04 Given/When/Then: "Night Mode — AirPods" created with custom EQ; AirPods connected; the app **offers** to load it; a manual switch is also available (never applied silently to a never-seen pairing).
+- **A profile stores exactly two things: the correction choice (`{model id, variant, on / off}`) and the taste layer (the 31 points, Tone, the parametric bands), plus the linked device id.** It does **not** store spatialisation or Headphones settings, dynamics settings or Adaptation Strength — those are not part of a profile (the Headphones position and Enhance are remembered per output on their own; Adaptation Strength is an app setting; there are no dynamics settings, LD-17). The earlier list "EQ bands, spatialization settings, dynamics settings, Adaptation Strength, linked device ID" is deleted. Test: a saved profile's serialised form has the keys `correction`, `taste`, `deviceId`, `name` and no others. *Verified by:* Swift Testing.
+- Profiles persist across app restarts (FR-PLAY-05 persistence layer reused); a profile's correction is a *reference* to the library entry, never a copy of its filters (so a model update reaches every profile and nothing is applied twice).
 - At least 3 profiles can coexist; no artificial limit imposed.
 
-**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-02, US-TON-01
+**Not in this story:** spatial / dynamics / strength inside a profile; iCloud sync (US-PROF-01, Won't this horizon); automatic application of a profile.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp *(was 5; narrowed)* | **Dependencies:** US-DEVICE-02, US-TON-01, US-TON-02
 **Traceability:** FR-DEVICE-04
 
 ---
@@ -788,11 +951,12 @@ As a **Tom** I want to create named DSP profiles ("Night Mode — AirPods," "Off
 
 As a **Tom** I want to export any profile as a JSON file and import it on another Mac, so that I can share my carefully tuned settings with other users.
 
-**Status (2026-10-13):** Planned · not built. **Forward:** S13.
+**Status (2026-10-13):** Planned · not built. **Forward:** S13. *(Narrowed 2026-10-23 with US-DEVICE-04: a profile is "correction + taste", so that is all the file carries.)*
 
 **Acceptance Criteria:**
-- See FR-DEVICE-05 Given/When/Then: profile exported; imported on different Mac; all parameters correctly restored and audible.
-- Export uses a versioned schema; import validates schema version before applying.
+- See FR-DEVICE-05 Given/When/Then: profile exported; imported on a different Mac; the **correction choice and the taste layer** correctly restored and audible *(the earlier "all parameters" is narrowed to those two)*.
+- Export uses a versioned schema; import validates schema version before applying. The correction travels as `{model id, variant, on / off}`; a model id the importing Mac's library does not have is kept, inactive, with a one-line message — it is never guessed to another model.
+- An imported profile is **offered, never applied** to an output the listener has not chosen it for.
 - Import/export available from profile menu.
 
 **Priority:** Could | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-04
@@ -804,7 +968,7 @@ As a **Tom** I want to export any profile as a JSON file and import it on anothe
 
 As a **Ramith** I want the app to automatically switch to stereo widening mode when I am using MacBook speakers and back to HRTF mode when I plug in headphones, so that I get the appropriate spatialisation for each device without manual intervention.
 
-**Status (2026-10-13):** Planned · not built (no speaker M/S or HRTF mode exists; `BRIRModule.h` is a pass-through stub). Only crossfeed auto-disables on a non-headphone output (`AudioViewModel+Devices.swift:81-84`). **Forward:** S18 for the headphone side (BRIR); the speaker M/S + ambience mode is **unscheduled**.
+**Status (2026-10-13):** Planned · not built (no speaker M/S or HRTF mode exists; `BRIRModule.h` is a pass-through stub). Only crossfeed auto-disables on a non-headphone output (`AudioViewModel+Devices.swift:81-84`). **Forward:** S18 for the headphone side (BRIR); the speaker M/S + ambience mode is **unscheduled**. *(2026-10-23, reconciliation card 7: any mode change on an output is **offered with a preview and remembered per output**, never applied silently — "automatically switch" below reads "suggests the matching mode"; US-SPAT-01 has the rule.)*
 
 **Acceptance Criteria:**
 - See FR-SPAT-06 Given/When/Then: active output is speakers; HRTF inactive; stereo width processing applied; mid/side balance adjustable.
@@ -822,6 +986,7 @@ As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed
 
 **Status:** Shipped (QW1) · proven-by: `CrossfeedModule` (Bauer/bs2b, knob-scaled, headphone-gated) + `AudioEngineBridge+CrossfeedControl` + `CrossfeedStrength`. Founder by-ear verification still pending. ~~⚠ Open caveat: the **OQ-17 / SPIKE-LIBBS2B** licence gate (libbs2b MIT vs clean-room Bauer reimpl) is presumed resolved by shipping but its written spike outcome was **not** confirmed against code in this audit — see the OQ-17 row.~~ *(Resolved, verified 2026-10-13: the QW1 design §2 decided "do NOT link the LGPL bs2b library — implement the ~20 lines of math from first principles" ([qw1 design](../sprints/qw1-quick-win-differentiators-design.md)); the code is an in-house one-pole cross-path low-pass + ITD delay using bs2b's published coefficient sets — `Spatial/CrossfeedModule.h`, no libbs2b in `third_party/`. Crossfeed lives in the Now Playing inspector (`UI/NowPlaying/InspectorColumn.swift`), off by default; Relaxed / Default / Strong. **Defect:** unavailable on wired headphones in the Mac's own jack — KI-DEV-01.)*
 *(Council 2026-10-14, C-42: the crossfeed is not bs2b as claimed — it counts the interaural delay twice and leaves the direct path flat, a −4.2 to −6.3 dB centre notch near 1 kHz, and the "Default" preset is mislabelled (KI-SND-04). **Scheduled:** R1.1-A → [US-R1F-12](#us-r1f-12--the-sound-chain-does-what-it-says), with headphones detected by data source (KI-DEV-01).)*
+*(2026-10-23, reconciliation cards 5, 7, 8: **crossfeed is stereo-only until the fold moves** into the engine (the Engine sprint) — on a surround file folded to stereo (US-R1F-08) it does nothing, and the chip and switch read the engine's bypass so "XF" never shows when nothing plays. Its availability follows the per-output rule: remembered per output, the device class picks the default suggestion (headphones: suggested; speakers: not), a manual override always wins. From S18 it is one position of the single **Headphones: Off / Crossfeed / Spatial** control (US-SPAT-01).)*
 **Traceability:** FR-SPAT-03, DEP-16, CON-12, OQ-17
 
 ---
@@ -973,6 +1138,32 @@ As a **Marcus** I want subtle visual feedback when the adaptivity engine changes
 
 **Priority:** Should | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-UI-02, US-ADAPT-02
 **Traceability:** FR-UI-07, NFR-ACC-04
+
+---
+
+#### US-UI-08 — Enhance: one switch per output for the stages that won *(new — 2026-10-23, reconciliation card 11)*
+
+As a **Marcus** I want one "Enhance" switch that turns on whatever has been proven to sound better on the output I am using, with a label that says in plain words what it did, so that I get the better sound without knowing what "loudness compensation" or "crossfeed" mean — and can check the claim in a second by holding the label.
+
+**Status (2026-10-23):** Planned · not built. **Sprint:** the first sprint that has a winning stage — expected **S14-lite**. Until a stage has won on an output there is **no Enhance control** for that output. **Stage:** none — a control layer over the stages' own switches, which stay visible underneath. **Pure:** one honest line and one tap out (item 9).
+
+**Acceptance Criteria:**
+1. **Per output, off on a fresh install.** One Enhance switch per output, remembered in the per-output memory (US-TON-02 Part A item 6).
+2. **It turns on exactly the stages that won on that output.** Each output the founder has tested has a recorded set of stage ids that won their blind A/B there (the sprint's closing step writes it; the founder's gear is the XM4 and the soundbar). Enhance turns on that set, together. A stage that lost its blind test, or a processing stage never tested on that output, is **never** turned on by Enhance (a stage that "ships off and hidden" is not in any set). **Leveling qualifies by its measurements** — US-R1F-10's oracle within 0.2 LU and the net's gain reduction 0 dB — and enters the set as "even levels", mode Auto; it is never A/B-judged (a constant gain per track is level-matched by definition). An output with no recorded set has **no Enhance control**. Test: for every stage id and every recorded output, Enhance switches on a stage if and only if it is in the output's set. *Verified by:* Swift Testing.
+3. **What pressing it does.** One thing gets better *now*, at the same loudness, nothing else moving: no fade-in over seconds (the stages move by the engine's own glides), no level jump, **nothing the listener set by hand is touched** — the state difference before and after is exactly the `on` flags of the winning stages (Enhance never changes a value and never turns anything off). The integrated loudness before and after differs by exactly the leveling / turn-down gain the chip states (item 6), and by no more than 0.2 dB otherwise. *Verified by:* Swift Testing (state diff) + C++ null test (loudness).
+4. **Never Loudness before its reference is set.** If the output's reference is unset (US-TON-03 item 5), Enhance leaves Loudness off and the row says "Set your normal volume to add 'full at low volume'". *Verified by:* Swift Testing.
+5. **The chip** names what it did in the listener's words, in signal order, from the engine's state of the stages **actually playing**: "Enhance: even levels · full at low volume · headphones in a room" (leveling = "even levels"; Loudness = "full at low volume"; Spatial = "headphones in a room"; later stages add their own phrase when they ship). A stage that is on but bypassed by the engine (crossfeed on a folded file) is not listed.
+6. **The level line.** Where Enhance changes the level by design — the playing track's leveling gain plus peak-safe pre-gain is **1 dB or more** in either direction — the chip adds it in whole dB: "−6 dB to match your other albums" (updating at each track change). Below 1 dB nothing is added.
+7. **Hold to hear without.** Holding the chip plays the file **without the stages Enhance turned on**, at matched loudness — **within 0.2 dB** of Enhance-on over every offset (leveling, turn-down, compensation's change) — and releasing returns. A keyboard / VoiceOver equivalent exists ("Hold to hear without Enhance"). *Verified by:* C++ null test (loudness within 0.2 dB) + Swift Testing.
+8. **Off** turns off exactly the stages Enhance turned on (stages the listener had already on stay on), removes the chip, and — if nothing else is on — returns the file as recorded.
+9. **In Pure** the Enhance row reads "Not in bit-perfect mode — leave Pure?" with one tap that leaves Pure (it takes effect as US-R1F-13's copy says); nothing else. The Pure card's own sentence on why there are two "untouched" states is US-R1F-20.
+10. **The badge never shows "ENHANCED" alone.** The status badge either names what is playing or says nothing is on ("Untouched"); a test walks every state (Pure; Enhanced, nothing on; Enhanced with each stage and combination) and fails if the badge text is just "ENHANCED". *Verified by:* Swift Testing.
+11. **The blind test (last).** The founder's blind, level-matched A/B of Enhance **on against off**, per output, the ladder (about 23 trials, capped at 60, matched within 0.2 dB over every offset), on the XM4 and the soundbar. Bar: **prefer**. An output where it does not win gets no Enhance control. *Founder.*
+
+**Not in this story:** turning on any stage that has not won; changing any hand-set value; an all-outputs switch; a "Tune for my headphones" blind mini-test (not decided); the Pure card sentence and the shared row state (US-R1F-20); Intensity (S17).
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 5 sp *(a few days of UI)* | **Dependencies:** US-TON-03, US-R1F-10, US-R1F-19, US-R1F-20, US-TON-07
+**Traceability:** FR-UI-02, FR-UI-07, LD-16
 
 ---
 
@@ -1327,17 +1518,28 @@ As a **Ramith** I want a playlist that contains a song to still contain that exa
 As a **Marcus** I want binaural HRTF rendering that places the soundstage outside my head when I use headphones, so that listening feels three-dimensional and less fatiguing on long commutes.
 
 **Status (2026-10-13):** Planned · not built — `Spatial/BRIRModule.h` is a bit-exact pass-through stub; no libmysofa / SOFA / FFTConvolver code. **Forward:** S18 (SPIKE-BRIR + BRIR spatial render v1).
+*(Rewritten 2026-10-23, reconciliation cards 7, 8, 10 (founder): **one "Headphones: Off / Crossfeed / Spatial" control per output; the render at one home for every source width; opt-in per device with a preview; headphone-equalised responses; correction before the render; the stub retired; the blind A/B as the last line.** The earlier ABX "audible difference" bar and "default-on for headphones" are deleted.)*
+
+**Sprint:** S18. **Stage:** the **engine's stereo-out slot** — the output boundary the Engine sprint's design leaves after the fold and **before the one safety net** (US-PE-01 settles its exact place; the render's peaks are covered by the same per-track trim rule as the fold, so the net stays a backstop) — for **every source width**: a stereo file and a folded 5.1 file get the same render. The kernel's pass-through render stub inside the Intensity blend (`BRIRModule`, `DSPKernel`) is **retired** (deleted with its parameter fields), and the older spatial design that chose an Apple spatial node is superseded. **Pure:** not applied; shared *Not in bit-perfect mode* state (US-R1F-20).
 
 **Acceptance Criteria:**
-- See FR-SPAT-01 Given/When/Then: stereo track, headphone device active, HRTF mode enabled; naive listener ABX test shows audible spatial difference vs. bypass at statistically significant rate.
+- **One control, exclusive by construction.** "Headphones: Off / Crossfeed / Spatial" is one setting with three values (not two switches that grey each other out), remembered **per output**, each position with one line of plain words and a hold-to-hear. Test: a state-machine test proves "crossfeed on and render active" is unreachable. *Verified by:* Swift Testing + C++ null test.
+- **Opt-in per device, with a preview.** Spatial is off on a fresh install and on every never-seen output; the app **offers** it (the device class only picks the default suggestion) with a **hold-to-hear preview** against a **timbre-matched dry reference** (the same correction applied to both, headphone-equalised responses), the two **matched within 0.2 dB**; one tap keeps it, remembered per output. The earlier "HRTF is default-on for any device classified as headphones" is deleted.
+- **Headphone-equalised responses — Spatial changes space, not tone.** The shipped response set is equalised for a neutral headphone; the long-term spectrum of rendered pink noise differs from the dry reference by no more than the tolerance fixed in SPIKE-BRIR *(the architecture's **within 1 dB** on the long-term third-octave spectrum is provisional — the sources give no number; SPIKE-BRIR confirms it before S18's build and the figure is recorded here)*. *Verified by:* C++ null test (1/3-octave long-term spectrum).
+- **Correction before the render.** The correction layer (US-TON-02 Part B) is applied *before* the render slot and the render's output is never corrected again. Test: the realised chain order. *Verified by:* C++ null test.
+- **Never a crossfade with dry.** The render's room amount is a **setting** (US-SPAT-03), not a wet / dry blend: a sweep through Spatial at every room amount shows **no comb structure** in the magnitude response (the signature of a delayed wet crossfaded with dry). *Verified by:* C++ null test.
+- **The ceiling holds.** With Spatial on, the true peak at the output stays at or under the ceiling for the corpus, with the net not working: the render sits before the one net and its peaks are covered by **the same per-track trim rule as the fold** (the analyser measures the track's true peak through the chosen render, room amount included — architecture §7).
 - HRTF rendering is implemented as **custom SOFA-HRIR partitioned convolution** using **libmysofa (BSD-3)** for SOFA loading and **vDSP / FFTConvolver (MIT)** for convolution (DEP-06, DEP-12). Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly NOT used for HRTF (their HRTFs are fixed and non-replaceable — see FR-SPAT-01 and `docs/session-notes/prior-art.md`).
 - Default dataset is **SADIE II (Apache-2.0)** (ASM-04, DEP-06 — confirmed permissive; OQ-04 resolved).
 - Convolution CPU within NFR-PERF-02 budget. Validated in SPIKE-HRTF.
-- HRTF is default-on for any device classified as headphones; off for speakers.
+- ~~HRTF is default-on for any device classified as headphones; off for speakers.~~ *(Replaced 2026-10-23: opt-in per device, above.)*
 - Non-medical framing enforced in all UI copy (LD-7).
+- **Last acceptance line — preference and an artifact checklist replace the ABX "difference" bar.** The founder's blind, level-matched A/B of Spatial against the timbre-matched dry reference — the ladder (about 23 trials, capped at 60), matched within 0.2 dB over every offset, on the XM4 (and the soundbar if Spatial applies there) — bar **prefer**; plus a pass / fail checklist: **no smeared centre** (a centre-panned vocal stays a point), **no hollow or comb tone**, **bass intact**, **tone unchanged**. "I can tell them apart" proves nothing and is not a pass. A stage that does not win ships **off and hidden**. *Founder.*
 
-**Priority:** Must | **Phase:** 1 | **Estimate:** 13 — split into: US-SPAT-01a (SOFA-HRIR convolution engine with libmysofa + FFTConvolver), US-SPAT-01b (integration into DSP chain), US-SPAT-01c (HRTF toggle and UI)
-**Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-HRTF
+**Not in this story:** head tracking (US-HT-01, opt-in, unscheduled); the fold's final home or the channel-layout owner (the Engine sprint); crossfeed's algorithm; the correction layer (S13); room-impulse presets and the room amount setting (US-SPAT-03); a second render home inside the Intensity blend.
+
+**Priority:** Must | **Phase:** 1 | **Estimate:** 13 — split into: US-SPAT-01a (SOFA-HRIR convolution engine with libmysofa + FFTConvolver), US-SPAT-01b (integration at the stereo-out slot, the one Headphones control, the stub's retirement), US-SPAT-01c (the control, the opt-in offer with preview, and the blind-test checklist)
+**Dependencies:** the Engine sprint — US-PE-01 / US-PE-02 (the fold's final home and the stereo-out slot); S13 — US-TON-02 Part B (correction before the render); S17 — US-RMG-02 (room amount joins the knob); SPIKE-BRIR
 **Traceability:** FR-SPAT-01, ASM-04, DEP-06, DEP-12, DEP-15 (BNNS for any RT ML path), LD-7
 
 ---
@@ -1361,12 +1563,14 @@ As a **Marcus** I want to choose from at least 3 HRTF profiles, so that I can pi
 
 As a **Marcus** I want to optionally place a virtual listening room around my music, so that I can experience a concert hall or studio feel on headphones.
 
-**Status (2026-10-13):** Planned · not built. **Forward:** S18.
+**Status (2026-10-13):** Planned · not built. **Forward:** S18. *(Amended 2026-10-23, reconciliation cards 2, 8: **room amount is a setting** inside the Spatial render that Intensity scales (US-RMG-02) — never a wet / dry crossfade.)*
 
 **Acceptance Criteria:**
 - See FR-SPAT-05 Given/When/Then: room IR selected; convolution enabled; output contains reverb consistent with IR RT60; CPU within NFR-PERF-01 budget.
 - At least 3 IR presets shipped. IRs are licensed for redistribution in open-source software (permissive licence required — project is personal/open-source per LD-9).
-- Room convolution is off by default; user opt-in only.
+- Room convolution is off by default; user opt-in only (Spatial itself is opt-in per output, US-SPAT-01).
+- **Room amount** is a setting on the Spatial row with its own visible slider (0 – 100 %); Intensity (S17) moves it as a convenience, and moving the slider by hand is always allowed. It scales the room's level inside the render; the dry-HRTF part is never crossfaded against the room. At room amount 0 with Spatial on, Spatial **still plays** (head and speaker responses without the room) and the copy says so. Its default when the listener picks Spatial is set in S18's design from the founder's blind test — **Intensity's default of 0 does not set it** *(raised 2026-10-23: the reconciliation says only "a setting Intensity scales")*. *Verified by:* C++ null test (level at room amount 0 equals the room-less render) + Swift Testing.
+- **Not in this story:** a wet / dry blend; head tracking; the control (US-SPAT-01).
 
 **Priority:** Should | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-SPAT-01
 **Traceability:** FR-SPAT-05, NFR-PERF-01
@@ -1442,19 +1646,25 @@ As a **Tom** I want to sync my profiles across my Macs via iCloud and export/imp
 
 ---
 
-#### US-PROF-02 — A/B listening mode (bypass toggle with matched loudness)
+#### US-PROF-02 — Compare (without my EQ, level-matched) and Bypass all processing *(rewritten 2026-10-23; was "A/B listening mode")*
 
-As a **Tom** I want to quickly toggle between enhanced and bypassed audio with loudness-matched levels so that I can hear exactly what the Adaptivity Engine is adding.
+As a **Tom** I want to hear my song without *my* EQ at exactly the same loudness, and — separately — to switch every processing stage off to hear the file as recorded, so that I can judge what I did and what the app did.
 
-**Status (2026-10-13):** Partly shipped · the EQ's **hold-to-Compare** (Sprint EQ decision 28, PR #73, `UI/EQ/EQCompareButton.swift`) plays the song without the EQ at the same loudness while held — an EQ-only A/B, loudness-fair because the EQ is loudness-neutral (decision 26). A whole-enhancement A/B toggle with LUFS matching is not built. **Forward:** S12 (A/B LUFS-matched bypass).
+**Status (2026-10-13):** Partly shipped · the EQ's **hold-to-Compare** (Sprint EQ decision 28, PR #73, `UI/EQ/EQCompareButton.swift`) plays the song without the EQ at the same loudness while held — an EQ-only A/B, loudness-fair because the EQ is loudness-neutral (decision 26). ~~A whole-enhancement A/B toggle with LUFS matching is not built.~~ **Forward:** S12 (Compare's level match over every offset; "Bypass all processing" — see below).
+
+*(2026-10-23, reconciliation card 6 (founder): the "whole-enhancement A/B toggle … still open" line is **deleted** — there are now two things with two meanings. **Compare** (shipped; its meaning is fixed here) and a separate latching **Bypass all processing**, scheduled **S12**.)*
+
+**Sprint:** S12 (Compare's level-match widening may land earlier as US-R1F-19 requires). **Stage:** Compare acts on the EQ program's **taste** layer; Bypass all acts on every stage. **Pure:** neither does anything (Pure already plays the file untouched); both controls show the shared *Not in bit-perfect mode* state, and Bypass all's tooltip says "Pure already plays the file untouched".
 
 **Acceptance Criteria:**
-- Single button or keyboard shortcut toggles between enhanced and bypass mode.
-- Loudness is matched (LUFS-matched, ± 0.5 LU) so the comparison is fair (loudness preference bias eliminated).
-- NFR-QUAL-03: bypass mode is bit-transparent.
-- A/B state visible in the UI and announced via VoiceOver.
+- **Compare means one thing: the song without *my* EQ** — the taste layer only (the 31 points, Tone, the parametric bands). The **correction layer and the compensation layer stay** (and leveling and the peak-safe turn-down stay): Compare answers "is *my* curve helping?" on corrected headphones. Hold to hear; release returns. Test: with a correction layer on, holding Compare removes exactly the taste layer's contribution from the composed read-back and nothing else. *Verified by:* C++ null test (composed read-back).
+- **Compare is level-matched within 0.2 dB over every offset the program adds** — the loudness-neutral offset, the peak-safe pre-gain, the compensation's own loudness change, a correction's offset — not only the taste layer's. Measured: the integrated loudness (libebur128, offline render) of Compare-held against EQ-on differs by **≤ 0.2 dB** on pink noise and on three −9 LUFS masters, at the −0.1 and the −1 dBTP ceilings, with each of: taste only; taste + compensation; taste + correction. A Compare that is louder than EQ-on on a hot master wins by habit and fails this test. *Verified by:* C++ null test + oracle.
+- **Bypass all processing is a separate, latching switch** (toolbar or menu, plus a keyboard shortcut). On, it plays **the file as recorded**: every stage is off — leveling, every EQ layer, correction, compensation, crossfeed, Spatial — except what playing at all requires (the sample-rate conversion to the engine's rate and the surround fold). On a stereo file at the engine's rate the output is **bit-identical to the source** (NFR-QUAL-03; the C++ null test's anchor). It is **not** level-matched — the file as recorded is the point, and the readout says so; Compare is the level-matched A/B. *(The earlier "LUFS-matched ± 0.5 LU" acceptance is dropped for Bypass all: a file as recorded cannot be level-matched without processing it — decided, reconciliation card 6: "Bypass all" gives the file.)* *Verified by:* C++ null test.
+- Compare and Bypass all state is visible in the UI and announced via VoiceOver ("Compare: without your EQ", "Bypass all: on, the file as recorded").
 
-**Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-ENG-02
+**Not in this story:** a whole-chain level-matched A/B toggle; a menu on Compare; per-layer bypass (US-TON-02 Part A item 3); the Enhance hold (US-UI-08).
+
+**Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-ENG-02, US-TON-02 Part A, US-TON-07
 **Traceability:** NFR-QUAL-03, FR-ADAPT-08
 
 ---
@@ -1474,12 +1684,24 @@ As a **Tom** I want to quickly toggle between enhanced and bypassed audio with l
 
 **US-PERC-01 | Typed-contributor model + Arbiter** [Enabler]
 As a **developer** I want an Arbiter that composes **typed** contributions (EQ-curve + per-band dynamic + transient + spatial) in the **ERB/Bark** domain with a masking + partial-loudness model and enforces governing-principle clamps, producing a per-stem TargetState, so that clarity/adaptive moves compose correctly.
-Acceptance: LD-12; governing-principle clamp verified — an auto-contributor cannot counteract a confirmed user move in its band.
+Acceptance: LD-12; governing-principle clamp verified — an auto-contributor cannot counteract a confirmed user move in its band. *(2026-10-23: the cumulative +12 dB per-band clamp is the **ledger's** (US-TON-07, shipped in S14-lite) — the Arbiter does not rebuild it; its output goes into the one EQ program (US-TON-02 Part A) as contributions the ledger sums. Not here: a second clamp, a second filter engine.)*
 Priority: Must | Phase: 1 | Estimate: 8 sp | Dependencies: US-ENG-03, SPIKE-MASKING-MODEL
 Traceability: LD-12, FR-ADAPT-02/03
 
-**US-PERC-02 | Off-RT Realizer (min-phase default; FIR opt-in)** [Enabler]
-As a **developer** I want an off-RT Realizer that turns a TargetState into finished coefficients — **minimum-phase biquads by default**, linear/mixed-phase FIR opt-in or content-selected — so the RT kernel only ramps & runs.
+**US-PERC-02 | The referee emits into the one EQ program (the second fitter is dropped)** [Enabler] *(rewritten 2026-10-23, reconciliation card 6 (founder); was "Off-RT Realizer (min-phase default; FIR opt-in)")*
+As a **developer** I want S16's perceptual referee (the Arbiter, US-PERC-01) to emit its per-band contributions **into the one EQ program** (US-TON-02 Part A), so that the Realizer's single design — one set of minimum-phase filters, one glide, one composed read-back, the ledger's sum — is the **only** filter engine, and Clarity's slow per-band changes ride the existing filters' own glide.
+
+**Sprint:** S16. **Stage:** the EQ program (a Clarity layer after taste; its position in the order is settled in S16's design, and the ledger counts it). **Pure:** not applied.
+
+**Acceptance (new):**
+- **One engine.** No second biquad-fitting or filter-design path exists in the code after S16 (the greedy / Levenberg–Marquardt fitter specified below is **not built**). A code-search test in the C++ null test harness finds one EQ design entry point. *Verified by:* C++ null test + review.
+- **The composed read-back still holds with Clarity on:** a sweep through the chain differs from the read-back by **≤ 0.1 dB** (the S12 rule) with a Clarity contribution active; Clarity's contribution never makes a band's sum exceed +12 dB (the ledger, US-TON-07). *Verified by:* C++ null test.
+- **Phase:** minimum-phase by default (the shipped SVF bells). A linear / mixed-phase FIR remains only an opt-in decided at S16's design (OQ-18, narrowed: a second engine is dropped, so FIR is considered only inside the program). Not built here unless that decision says so.
+- Parameters move by the existing per-band glide (US-ENG-04); no zipper noise on a Clarity depth change.
+
+**Not in this story:** the Arbiter's masking model (US-PERC-01 / SPIKE-MASKING-MODEL); Clarity's switch, depth and chip (US-PERC-03); a second fitter; a wet / dry blend.
+
+**Withdrawn 2026-10-23 — the second fitter (kept for provenance; of its tests, (1) null target ≤ 0.01 dB and (4) stability |p| < 1 − 1e-6 hold for the program's single design already):**
 
 **Biquad fitting specification (architecture.md §4, locked 2026-06-13):**
 - **Greedy iterative add:** Start with 2 biquads initialized at max-gain frequency; L-M optimize; check weighted Chebyshev error `E_max`; if > 1.0 dB and < 10 biquads, add 1 biquad at peak-residual frequency, re-optimize. Repeat until `E_max ≤ 1.0 dB` or 10 biquads.
@@ -1489,14 +1711,20 @@ As a **developer** I want an off-RT Realizer that turns a TargetState into finis
 - **Convergence:** Typical ~20–50 L-M iterations per greedy pass; ~5 passes for typical curve = ~10–15 ms total on M1 Pro.
 - **Test acceptance:** (1) Null test: all-zero target → E_max ≤ 0.01 dB. (2) Single-peak test: +6 dB at 1 kHz → 1 section, E_max ≤ 1.0 dB. (3) Stress test: 1000 random ERB curves → ≥95% meet budget in ≤8 sections within 10 ms. (4) Stability: all poles `|p| < 1 − 1e-6`. (5) Phase coherence: re-sum comb artifacts ≤ −20 dB relative to direct signal.
 
-Acceptance: LD-13; biquad fit per spec above (greedy add + L-M, ERB/masking-weighted, ≤ ±1 dB to target); no design/fitting on the audio thread; all 5 tests pass.
-Priority: Must | Phase: 1 | Estimate: 13 sp | Dependencies: US-ENG-02, SPIKE-MASKING-MODEL, OQ-18
-Traceability: LD-13, FR-TONAL-01, NFR-PERF-01, architecture.md §4 (biquad cascade fitting)
+~~Acceptance: LD-13; biquad fit per spec above (greedy add + L-M, ERB/masking-weighted, ≤ ±1 dB to target); no design/fitting on the audio thread; all 5 tests pass.~~ *(Replaced by "Acceptance (new)" above; "no design / fitting on the audio thread" still holds.)*
+Priority: Must | Phase: 1 | Estimate: ~~13 sp~~ 5 sp *(2026-10-23: the fitter is dropped; S16 shrinks)* | Dependencies: US-TON-02 Part A, US-TON-07, US-PERC-01, OQ-18
+Traceability: LD-13, FR-TONAL-01, NFR-PERF-01
 
-**US-PERC-03 | Masking/clarity contributor**
-As **Marcus** I want masked detail (e.g. a buried instrument region) lifted so I can actually hear what's playing.
-Acceptance: ERB/Bark masking-relief contribution; conservative, gain-limited; imperceptible-as-motion (FR-ADAPT note).
-Priority: Should | Phase: 1 | Estimate: 8 sp | Dependencies: US-PERC-01, SPIKE-MASKING-MODEL
+**US-PERC-03 | Masking/clarity contributor — with its own switch, depth and chip** *(amended 2026-10-23, reconciliation cards 2, 10 (founder))*
+As **Marcus** I want masked detail (e.g. a buried instrument region) lifted so I can actually hear what's playing — with a switch of its own that I can hear the moment it ships, and a plain-words label saying it is on.
+**Sprint:** S16. **Stage:** a Clarity layer in the EQ program (US-PERC-02), counted by the ledger (US-TON-07). **Pure:** not applied; shared *Not in bit-perfect mode* state.
+Acceptance:
+- ERB/Bark masking-relief contribution; **gain-limited** by a per-band cap and a rate limit **set from S15's findings and recorded here before S16 starts** *(the earlier text gave no number — "conservative" is not a test)*; imperceptible-as-motion: contributions move only by the existing per-band glide (US-ENG-04), and a test shows no band's realised gain changes faster than that glide on a step in the analysis. *Verified by:* C++ null test.
+- **Clarity has its own on / off (off on a fresh install) and its own depth setting, each on its own row, and a chip** in the status badge ("Clarity") while it plays. Clarity is **audible in the sprint it ships** — it does not wait for Intensity (S17), which only scales its depth later. Depth is a visible setting inside the stage (US-RMG-02), never a blend. *Verified by:* Swift Testing (the row, the chip, off-by-default) + C++ null test (depth 0 is identity).
+- The level never moves with Clarity's depth: integrated loudness across a depth sweep 0 → 1 is flat within **0.2 dB** (the loudness-neutral offset and the ledger's pre-gain apply to this layer too). *Verified by:* C++ null test (oracle loudness).
+- **Last acceptance line — the founder's blind A/B (card 10):** Clarity on against the **static "Detail" preset** (the adaptive-tone ladder's baseline), then against the original; the ladder (about 23 trials, capped at 60), matched within 0.2 dB over every offset, on the XM4 and the soundbar. Bar: **can't tell** for anything on by default; **prefer** for anything Enhance turns on. **If Clarity does not win it ships off and hidden** (the switch is not shown; Enhance never turns it on). *Founder.* (The project's own study found no published test in which automatic EQ beats a finished master — this line is the one most likely to fail, by design.)
+**Not in this story:** Intensity (S17); a second filter engine or a wet / dry blend; Clarity inside Pure.
+Priority: Should | Phase: 1 | Estimate: 8 sp | Dependencies: US-PERC-01, US-PERC-02, US-TON-07, SPIKE-MASKING-MODEL
 Traceability: LD-12, FR-ADAPT, OQ-22
 
 ### EP-REIMAGINE — Intensity Control
@@ -1507,12 +1735,21 @@ As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can di
 **Status:** Shipped (QW1) · proven-by: steerable equal-power wet/dry intensity primitive (intensity-0 = bit-exact anchor, see US-ENG-08) + `AudioEngineBridge+IntensityControl` + ~~`NowPlayingWidget`~~ knob UI. Founder by-ear verification still pending; the full intensity→parameter *mapping* (US-RMG-02) stays not-done — `ClarityModule`/`BRIRModule` are empty stubs (S15–S17).
 *(Updated 2026-10-13: the knob is the "Intensity" carved slider in the Now Playing inspector — `ReimagineSectionView`, `UI/NowPlaying/InspectorColumn.swift:79-114` (S10.7, PR #61); default 20 % (`AudioViewModel.swift:142`), not kept across launches (KI-SET-01). Since decision 25 (PR #73) it scales only the adaptive enhancement and never the EQ; "0 % — Reimagine off (your EQ still plays)". Bit-exact = Intensity 0 **and** EQ Off.)*
 *(2026-10-14, FD-2: the default becomes Intensity 0, and the control is **hidden until its effects are real** — Clarity and BRIR are stubs, so today it changes loudness, not sound (council C-41, C-40). R1.1-A → [US-R1F-09](#us-r1f-09--a-faithful-default); it returns with S17 and a correlation-compensated blend.)*
+*(2026-10-23, reconciliation card 2 (founder): the "+3 dB mid-knob level hump" of today's equal-power blend **goes — by removing the blend**, not by compensating it: Intensity becomes a convenience over two stage settings (US-RMG-02). The old auto-leveller that the knob used to wake is removed in R1.1-B (US-R1F-10).)*
 Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
 
-**US-RMG-02 | Intensity→parameter mapping (mix-range)**
-As a **developer** I want the knob to crossfade original↔processed and scale clarity/widening across the mix-range, smoothly.
-Acceptance: FR-REIMAGINE-03/04; ramped (FR-ADAPT-03); mapping curve per SPIKE-REIMAGINE-MAP.
-Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-RMG-01, SPIKE-REIMAGINE-MAP
+**US-RMG-02 | Intensity = Clarity depth + room amount, as settings (never a crossfade)** *(rewritten 2026-10-23, reconciliation card 2 (founder); was "Intensity→parameter mapping (mix-range)")*
+As a **developer** I want the Intensity knob to move exactly two settings inside the automatic stages — Clarity's depth and Spatial's room amount — so that Intensity never changes loudness, never blends, and never touches a switch the listener set by hand.
+**Sprint:** S17. **Stage:** none of its own: it writes the two stage settings (US-PERC-03's depth; US-SPAT-03's room amount) through the mapping curve of SPIKE-REIMAGINE-MAP. S17 wires Clarity depth; the room-amount target is declared in S17 and wired when S18 lands (no code path to a room that does not exist). **Pure:** not applied.
+Acceptance:
+- **Default 0; 0 = nothing automatic; hand-set stages still play.** Both settings stay visible **on their own rows**; Intensity is a convenience over them, and moving a row by hand is always allowed (Intensity then reads "custom"). *Verified by:* Swift Testing on the shipped view model.
+- **Never a hand-set switch.** Sweeping Intensity 0 → 1 → 0 leaves byte-identical: leveling mode, Loudness on / amount, crossfeed / Headphones position, EQ layers' on / off and gains, the correction choice, Enhance (a control-plane assertion on `TargetState`). *Verified by:* C++ null test + Swift Testing.
+- **Never a level change, never a crossfade.** Across a slow Intensity sweep 0 → 1 with pink noise and a correlated wet stand-in ("dry + a 0.5 dB shelf"), the output's integrated loudness is flat within **0.2 dB**; the equal-power wet / dry blend (`DSPKernel` P3, its +3 dB mid-knob hump) is **deleted**, with its parameter fields and tests. *Verified by:* C++ null test (oracle loudness).
+- Ramped (FR-ADAPT-03): a step in Intensity moves the two settings by the engine's glide, no click.
+- Intensity at 0 with Spatial chosen: Spatial still plays at its own room amount; the copy says "room 0" only if the room slider is 0 (US-SPAT-03).
+- FR-REIMAGINE-03/04 as amended: 0 = nothing automatic (FR-REIMAGINE-02's "all stages bypassed" is withdrawn); the "100 % default" is withdrawn.
+**Not in this story:** scaling leveling, Loudness, crossfeed, the EQ, correction or Enhance; any wet / dry blend; a stem range (Won't this horizon).
+Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-RMG-01, SPIKE-REIMAGINE-MAP, US-PERC-03 (US-SPAT-03 for the room target)
 Traceability: FR-REIMAGINE-03, FR-REIMAGINE-04, LD-16
 Status (2026-10-13): Planned · not built. **Forward:** S17 (Reimagine intensity — full mapping).
 
@@ -1719,7 +1956,8 @@ As a **Marcus** I want crossfeed on my wired headphones and an EQ that never sil
 
 **Covers:** KI-DEV-01 (classify the built-in jack's headphone data source as headphones — `kAudioDevicePropertyDataSource` — and stop treating AirPlay speakers as headphones), KI-DEV-02 (HDMI / DisplayPort transport types), KI-EQ-01 (unpin offers Bring back, or keeps the shared EQ), KI-EQ-02, KI-EQ-03 (visual check).
 **Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-SPAT-03, FR-DEVICE-03, US-DEVICE-03, US-DEVICE-07, US-TON-06
-**Scheduled (2026-10-14):** **R1.1-A** — KI-DEV-01, with the crossfeed fix in US-R1F-12 (council C-42, C-30's classification slice). **Pool** — KI-EQ-01 (the first candidate if a lane has room: it destroys user edits), KI-EQ-02, KI-EQ-03, KI-DEV-02.
+**Scheduled (2026-10-14):** **R1.1-A** — KI-DEV-01, with the crossfeed fix in US-R1F-12 (council C-42, C-30's classification slice). **Pool** — ~~KI-EQ-01 (the first candidate if a lane has room: it destroys user edits),~~ KI-EQ-02, KI-EQ-03, KI-DEV-02.
+**Rescheduled (2026-10-23, reconciliation card 6 (founder)):** **KI-EQ-01 → S12**, fixed in the same change that extends the per-output memory with the parametric bands and the correction choice (US-TON-02 Part A item 7). **Acceptance:** with a shared EQ *S*, pin an output, edit its curve to *P*, then unpin the output: the shared EQ is still exactly *S* (every band equal — an unpin never overwrites the shared EQ), and *P* is recoverable through "Bring back edits" or the output's re-pin, not lost; pinning, editing and unpinning a second output does not alter the first output's memory. *Verified by:* Swift Testing on the shipped view model (the pin / unpin sequence, the shared EQ and the pin store compared before and after).
 
 #### US-R1F-07 — Engine and test-harness hygiene
 
@@ -1735,7 +1973,23 @@ As a **Tom** I want a 5.1 or 7.1 album to play all its channels on my stereo hea
 
 **Covers:** KI-MC-01 — today the spatial AU keeps the first M channels and drops the rest (`SpatialRenderKernel.cpp:59-89`). *(Added 2026-10-14: KI-MC-02 — channel roles from the file's labels, council C-44 — and the BS.1770 channel weights, C-45, both preconditions of a correct fold.)*
 ~~**Decision for the founder:**~~ *(Decided 2026-10-14, FD-9: option **(b)**, the standard ITU-R BS.775 fold-down, after the channel-order fix — council C-44, KI-MC-02: roles from the file's channel labels — with a safety ceiling after the spatial stage (C-43) and the loudness weights fixed (C-45). It also keeps FR-SPAT-01's rule that Apple's spatial nodes are not used. **Scheduled:** R1.1-B. Acceptance: every channel of a 5.0 / 5.1 / 7.1 file reaches a stereo output by the BS.775 coefficients (LFE omitted), checked by an independent oracle; the true peak after the fold stays under the ceiling.)* ~~(a) pull forward the fold the [S4 design](../sprints/05-sprint-5b-s4-binaural-design.md) §1 already chose — Apple's `AVAudioEnvironmentNode` / `AUSpatialMixer` (HRTFHQ, sources at ITU-R BS.775 positions) — as the interim device-boundary render; (b) an interim standard fold-down (BS.775 coefficients, loudness-safe, labelled interim), which bends the "no naive downmix" rule for a while; or (c) keep the truncation and warn (Monitoring / Settings) until S18. Recommended: (a) if it fits a small sprint, else (b) — silence for four channels is the worse violation of the rule's intent.~~ (The architecture reconciliation raised the same finding as its F1.)
-**Priority:** Must (it is wrong audio) | **Estimate:** ~~2 sp~~ 5 sp (with C-44 / C-45, 2026-10-14) | **Traceability:** FR-SPAT-07, NFR-QUAL-02 · final fix in **S18**
+*(**Rewritten 2026-10-23, reconciliation card 5 (founder):** the 2026-10-14 acceptance above is superseded by the following. "A safety ceiling after the spatial stage" becomes **"a backstop that the trim keeps asleep"**; "final fix in S18" becomes **final arrangement in the Engine sprint**, the Spatial render in S18.)*
+
+**Sprint:** R1.1-B. **Stage:** the **spatial unit** (N in, M out), where truncation lives today (`SpatialRenderKernel`), with a small control path from the app into it (roles, trim, LFE gain) and a backstop net after the fold. The effects unit before it still runs at N channels (crossfeed is bypassed at N ≠ 2). **Pure:** Pure declines a multichannel file on a narrower output and Enhanced plays it, folded (US-R1F-13's reason enum).
+
+**Acceptance (new):**
+1. **Matrix (BS.775-4 Table 2).** L′ = L + 0.7071·C + 0.7071·Ls, R′ = R + 0.7071·C + 0.7071·Rs for 5.0 / 5.1; 7.1's extra pair as the independent oracle's matrix defines (recorded in the test). Channel roles come from the file's labels (KI-MC-02 / C-44, a precondition). Tests: a centre-only 1 kHz sine → **−3.0 dB per side** (±0.1); L = R = C in phase → **+4.6 dB per side** before the trim; the worst-case coherent sum is +7.66 dB; a stereo file inside a 5.1 container (C, Ls, Rs silent) folds to **exactly the stereo input** (null) with trim 0. *Verified by:* C++ null test + oracle.
+2. **Per-track trim from the folded true peak.** US-R1F-10's one analysis pass measures the folded true peak (with the chosen LFE gain, item 4); the trim = min(0, C_work − folded true peak) (C_work = the limiter's working ceiling — the numbers table), a constant per track applied at the fold. Until a track has its folded analysis the trim is the fixed worst-case **−7.7 dB**. Checks: the analyser's folded true peak equals the measured true peak of the actually folded stereo within the US-QA-03 gate tolerance (oracle); with the trim, the backstop's gain reduction over the founder's surround albums is **0.0 dB**. *Prototype first (an afternoon, founder's albums):* histogram the trims — if most sit within 0 – 3 dB the per-track trim stands; if they cluster near 7 dB a fixed trim is nearly as good (recorded here). *Verified by:* C++ null test + oracle.
+3. **Folded loudness in the same pass** (US-R1F-10's). The profile also stores the folded integrated loudness; leveling (US-R1F-10) uses it for any file being folded (a surround fixture's folded figure is 1 – 2 LU under its six-channel figure; the leveling gain follows the folded one). *Verified by:* oracle.
+4. **The LFE rule, per track from the analysis.** *Omit* when the LFE is a copy of the mains' bass (coherent with their low band, below ~120 Hz — including it would double that bass, +6 dB, boomy); *include at full level (0 dB) in each side* when it carries bass the mains do not; **default omit when unknown / not analysed**; the trim is computed with the chosen gain. The coherence threshold is set in the sprint from the two albums below and recorded here. Tests: synthetic 5.1 with LFE = low-passed copy of the mains → omitted (the folded low band stays within 1 dB of the mains-only fold — the failure being detected is +6 dB); synthetic 5.1 with bass only in the LFE → included (low-band level not below the LFE's). *Verified by:* C++ null test.
+5. **Listen before it ships — pass / fail (founder):** on the XM4, one album whose LFE carries bass the mains do not and one where it is a copy; a bass-heavy passage three ways (omit / −6 dB / full), trim applied. Pass = no "where did the bass go" on the first, no boominess on the second. A fail blocks the include rule; the founder says what ships instead. *Founder.*
+6. **The badge "5.1 → stereo"** (7.1: "7.1 → stereo") shows whenever the fold plays; the Pure reason reads "This track has 6 channels and your output has 2, so Enhanced plays it, folded to stereo." *Verified by:* Swift Testing (the reason enum → string; the badge).
+7. **Crossfeed does nothing on a folded file, and says so (KI-SND-06).** The crossfeed switch and the chip read the engine's bypass state: with crossfeed on and a 5.1 file folded, the engine reports crossfeed bypassed, the badge shows **no "XF"**, and the switch reads "not active on surround albums"; on a stereo file "XF" shows. *Verified by:* Swift Testing + C++ null test.
+8. **The ceiling:** the backstop uses the output's ceiling (−0.1 dBTP only if lossless and 48 kHz, else −1 dBTP).
+
+**Not in this story:** the **final arrangement** — the fold inside the engine before the one safety net, crossfeed after it, one owner of the channel layout from the decoder — decided in US-PE-01 and built in US-PE-02 (Engine sprint; KI-SND-06's second half); a percentile trim; the Spatial render (S18); crossfeed on surround.
+
+**Priority:** Must (it is wrong audio) | **Estimate:** ~~2 sp~~ ~~5 sp~~ 8 sp *(2026-10-23: matrix, trim, folded loudness, LFE rule, badge, control path ≈ a week; confirm)* | **Dependencies:** US-R1F-10 (the one analysis pass: stereo true peak, folded true peak, folded loudness), C-44 (KI-MC-02), US-R1F-13 | **Traceability:** FR-SPAT-07, NFR-QUAL-02 · final arrangement in the **Engine sprint**, render in **S18**
 
 #### US-R1F-09 — A faithful default
 
@@ -1749,18 +2003,33 @@ As a **Ramith** I want a fresh launch to play my music as it is — no leveller,
 - A test on the shipped view model (not a mirror) proves the defaults.
 **Scheduled:** R1.1-A. **Priority:** Must | **Estimate:** 1 sp | **Traceability:** FR-REIMAGINE-04, FR-TONAL-05, LD-17 (as changed by FD-2), US-RMG-01
 
-#### US-R1F-10 — Leveling as its own setting
+#### US-R1F-10 — Leveling as its own setting, in both modes *(rewritten 2026-10-23, reconciliation card 1)*
 
-As a **Marcus** I want to choose Off, Album or Track leveling, so that albums keep their own dynamics, shuffled songs play at a similar level, and nothing is levelled unless I ask.
+As a **Marcus** I want my albums and shuffled songs to sit at one level whether I listen in Enhanced or in Pure, so that I never reach for the volume between a 1980s master and a modern one, and nothing ever moves inside a song.
 
-**Covers:** council C-38 — the normaliser is a session-long AGC: its make-up gain carries across tracks, a gapless run is never re-measured, up to +12 dB of make-up feeds a −1 dBTP limiter (dynamic-range compression by default), and the make-up snaps to 0 dB on re-allocation. The product triage's "no explicit volume-leveling setting" (item 15). **Decision:** FD-2.
-**Acceptance:**
-- A setting: **Off** (the default) / **Album** / **Track**.
-- The gain is static per track (Track) or per album (Album, from the album's tracks), computed from the existing load-time analysis (`TrackLoudnessKit`), applied sample-accurately at the seam, and capped so the true peak stays under the ceiling without the limiter acting as a compressor.
-- Off changes nothing: the bit-exact anchor holds.
-- An independent oracle (libebur128) proves the gains.
-- Open: whether ReplayGain / R128 tags, when present, take precedence (C-38 notes they are not read today).
-**Scheduled:** R1.1-B. **Priority:** Should | **Estimate:** 5 sp | **Dependencies:** US-R1F-09 | **Traceability:** US-ENG-09, FR-TONAL-05, LD-17, NFR-QUAL-03
+**Covers:** council C-38 — the old normaliser is a session-long auto-leveller (`LoudnessModule` make-up gain, −20 to +12 dB, slewed about 1 dB/s, carried across tracks, feeding a −1 dBTP limiter). Nothing in the app sets its enabled flag; it is silent only because Intensity is held at 0, so it would wake the day Intensity returns. **Decisions:** FD-2; card 1 (founder, 2026-10-23).
+**Sprint:** R1.1-B. **Stage:** *Enhanced* — the existing per-track gain path (`TrackLoudnessGain` → `eq.outputGainDb`, effects unit, upstream of the limiter): one constant multiply, fixed when the track starts. *Pure* — the device's own volume through the volume loan (`MasterGainOnPure` / `PureVolumeLoan`), cut only.
+**Acceptance — setting and gain (both modes):**
+1. Setting **Off** (default) / **Auto** / **Album** / **Track**. **Auto** = the album gain when the neighbouring track — the one just played or the next — is from the same album, else the track gain; a gapless album takes the album gain (item 7). Off on a fresh install: the bit-exact anchor holds (C++ null test).
+2. **Target −18 LUFS** integrated, shown on the row ("Target −18 LUFS") with the playing track's gain and its source ("from analysis" / "from file tags" / "unknown: −5 dB"). Not user-settable here.
+3. Gain = −18 − the track's (Track) or album's (Album) integrated loudness from **our own analysis** (`TrackLoudnessKit`). Album loudness is the BS.1770 power-average over the album's analysed tracks. Verified against libebur128 within **0.2 LU** (the `Loudness_Oracle_Integrated_vs_ebur128` gate — oracle).
+4. **Tags only for a track not yet analysed:** its ReplayGain 2.0 (relative to −18 LUFS) or EBU R128 (relative to −23 LUFS) tag, converted to the −18 target. **No analysis and no tag: a fixed −5 dB**, constant for the whole track — **never the live running estimate while leveling is on**. The gain is fixed when the track starts; an analysis that finishes mid-track takes effect at the next track. Test: on an unanalysed fixture the applied gain sampled at 100 points over the track has max − min = 0.
+5. **The analysis profile gains a true-peak field** (`TrackLoudnessProfile`, measured by the 8× `TruePeakKernel` the limiter shares), checked against the libebur128 true-peak oracle within the US-QA-03 gate's tolerance. This story owns the **one analysis pass**: it measures the stereo true peak, the folded true peak and the folded loudness together (US-R1F-08 consumes the folded pair). A cached profile without the field counts as not yet analysed (re-analysed), never as peak 0.
+6. **The cap:** a gain above 0 dB is limited to (C_work − the track's true peak; for Album, the album's highest track peak), C_work = the output's ceiling − 0.27 dB, the limiter's working ceiling (the numbers table). Over the leveled corpus (the founder's loudest albums plus the fixture set) in Track, Album and Auto with the EQ Off, the limiter's maximum gain reduction is **0.0 dB**. A ceiling change mid-track re-caps at the next track start. Ceiling rule: −0.1 dBTP only where lossless **and** 48 kHz, else −1 dBTP (sound model).
+7. **A gapless album takes the album gain**, even in Track mode: a gapless pair shows one constant gain across the seam (output = input × g on both sides, identical g). The gain is applied **"at the seam as the engine counts it, within one buffer until the Engine sprint"** (KI-GAP-02 stays the Engine sprint's; "leveling at the seam" is one of its carried contract tests, US-PE-01).
+8. **A folded file** (US-R1F-08) is leveled from its **folded** loudness, not the six-channel figure.
+9. With leveling on and the EQ off the output equals input × gain to within one float32 ulp (not bit-exact, expected).
+**Acceptance — the old leveller is removed, not switched off:**
+10. The make-up path of `LoudnessModule` (the −20 / +12 dB, ~1 dB/s gain, its `LoudnessParams` fields and the never-set `enabled` flag) and its tests are **deleted**; `LufsMeter` and the load-time analysis stay. Test: with Leveling Off, an Intensity sweep 0 → 1 → 0 leaves the integrated LUFS of a fixture unchanged within **0.1 dB**. The golden master is re-baselined deliberately if the parameter block changes (recorded). *Verified by:* C++ null test.
+**Acceptance — Pure (cut only, on the device volume loan):**
+11. In Pure the leveling gain is a **cut-only** offset added to the loan's Master Gain cut (`level(anchor:ceiling:gain:range:)`): a positive gain is never applied ("Quiet — bit-perfect mode can only turn down"); the file is never touched. Set at the seam between tracks, never inside one.
+12. **The loan is taught that its own moves are not the listener's.** After each of its own sets the loan records what the device reads back as `lastSet`, so a device reading equal to that (within `sameLevel`, 0.05 dB) is not read as a listener change. Test (Swift Testing, `DeviceVolumeControl` double that quantises to device steps): **ten consecutive track changes with differing cuts never re-anchor** (anchor unchanged after the tenth; no creep; the level after each = anchor + that track's cut within one device step). Converse: a volume-key move between tracks **is** taken as the listener's, re-anchors, and the next cut applies on top.
+13. The applied cut is the nearest device step and the readout shows the applied value ("Leveled −4.2 dB on the device volume"; the Mac's volume indicator moves by itself at track changes and the readout says why). If Master Gain's cut plus the leveling cut would pass the device's range, **the leveling part is reduced to fit and the readout says so — leveling never makes Pure wait or fall to Enhanced** *(my reading of "never louder than Master Gain says" — open until R1.1-B's design, decided by the founder)*.
+14. **The soundbar ("Set on device", a volume the Mac cannot read or set) is excluded and told:** no leveling in Pure there; the row reads "Leveling needs a volume the Mac can set — this output is set on the device". Test with a `fixed`-volume double.
+15. **"Volume restored" toast.** When Pure hands the device volume back — on a stop that ends playback (Stop, end of the queue, queue cleared), Enhanced starting, or the output moving to another device (the loan's `leave`; **not** on pause or device loss) — and the level it puts back differs from the level the device had been at, a non-blocking toast reads "Volume restored". While Pure plays, the Master Gain readout shows both numbers ("−6 dB · device at −18 dB"). Test: Swift Testing with the double — restore after end-of-queue shows the toast once; no toast when Pure touched nothing. *Founder (owed hardware):* volume keys during Pure, then end of queue, on the XM4; and the cut the XM4 / DAC actually land on.
+**Not in this story:** the peak-safe turn-down (US-R1F-19); loudness compensation (US-TON-03); the ledger; a target setting; raising a quiet track in Pure; tag *writing*; Intensity.
+*(Closed: the earlier "Open: whether tags take precedence" — our analysis first, tags only for an unanalysed track.)*
+**Priority:** Should | **Estimate:** 8 sp *(was 5; Enhanced "a few days beyond", Pure "about a week" — README footnote)* | **Dependencies:** US-R1F-09, US-R1F-05 (US-R1F-08 depends on this story's analysis pass, not the reverse) | **Traceability:** US-ENG-09, FR-TONAL-05, LD-17, NFR-QUAL-03
 
 #### US-R1F-11 — Seek to the end, and treble that isn't rolled off
 
@@ -1780,9 +2049,10 @@ As a **Marcus** I want the limiter, the crossfeed and the loudness readout to be
 **Covers:** council C-39 (KI-SND-03), C-42 (KI-SND-04, with KI-DEV-01's headphone detection — C-30's classification slice), C-46 (KI-UI-03), C-50 (flush-to-zero never restored). **Waits:** C-40 (the Intensity blend's +2 dB) until Intensity returns in S17.
 **Acceptance:**
 - **Limiter:** the fast release acts on a transient (each branch's time constant measured), and the −1 dBTP guarantee still holds (US-QA-03).
-- **Crossfeed:** each preset (Jmeier / Cmoy / bs2b) matches the bs2b reference response within a stated tolerance, checked by an independent oracle; libbs2b itself is not linked (OQ-17). It can be enabled on any output, and wired headphones in the built-in jack are detected as headphones (by data source).
+- **Crossfeed:** each preset (Jmeier / Cmoy / bs2b) matches the bs2b reference response within a stated tolerance, checked by an independent oracle; libbs2b itself is not linked (OQ-17). ~~It can be enabled on any output~~ *(2026-10-23, aligned to the shipped gate)*: it is available on **headphones** (the gate as shipped); wired headphones in the built-in jack are detected as headphones (by data source). **Crossfeed is stereo-only until the fold moves into the engine:** on a folded surround file it is bypassed, and the chip and switch read the engine's bypass so "XF" never shows when nothing plays (KI-SND-06, R1.1-B; crossfeed after the fold is the Engine sprint's). Test: stereo file → "XF" shown; folded 5.1 file → none (US-R1F-08 item 7).
 - **Readout:** "Integrated" resets per track; the analysis workers sleep while paused.
 - **Numerics:** flush-to-zero is scoped to the render call and restored.
+*Forward (2026-10-23, card 7's per-output rule — not shipped here):* crossfeed **remembered per output**, the device class picking only the default suggestion for a never-seen output (headphones: suggested; speakers: not), a manual override always winning, and the per-output question "What's plugged into this output?" — **S13**, [US-TON-02 Part B](#part-b--s13-the-correction-layer-recognise-the-headphones-offer-the-right-curve-remember-it) / US-DEVICE-03; the one Headphones control that replaces the switch — S18 (US-SPAT-01).
 **Scheduled:** R1.1-A. **Priority:** Should | **Estimate:** 5 sp | **Traceability:** FR-TONAL-07, FR-SPAT-03, US-DEVICE-07, US-QA-01, US-QA-03
 
 #### US-R1F-13 — Pure says why
@@ -1849,6 +2119,35 @@ As a **developer** I want the gaps the test-rig redesign left closed, so that ev
 
 **Covers:** KI-ENG-05 (the scan and metadata pass on the cooperative pool), KI-ENG-06 (test seams: the device-menu sort, two view countdowns, `FFmpegOptIn.isOn`), KI-ENG-07 (`build-measure.sh`), KI-ENG-08 (the dead toast, the `playTrack(at:)` guard); the review's M8 (expected test-count floors from the first CI run's counts) and L15 (per-variant test-data folders, so plain, ASan and TSan can run in parallel locally). Also: make `WorkTracker`'s in-flight count readable (`private(set) var inFlight`), so the OnDeck rig's quiescence heuristic can become an exact witness (review L4).
 **Priority:** Should / Could | **Estimate:** 3 sp | **Scheduled (2026-10-23):** pool (KI-ENG-05 recommended for R1.1-B) · [the redesign record](../sprints/testrig-redesign.md#follow-ups-each-in-known-issues-or-the-backlog).
+
+#### US-R1F-19 — The peak-safe turn-down: the safety net never works on an EQ'd track *(new — 2026-10-23, reconciliation card 4)*
+
+As a **Ramith** I want a loud record with a bass boost to play a little quieter instead of squashed, so that drums keep their snap and Compare is fair.
+
+**Covers:** with one boost on a loud master over Bluetooth the net already works up to 74 % of the time (> 1 dB, a −9 LUFS master, −1 dBTP; `OutputCeiling.h`) and the listener hears it against Compare. **Sprint:** R1.1-B, with leveling (it uses the same true-peak number). **Stage:** the per-track gain path (US-R1F-10): **one broadband pre-gain, applied once, before the EQ**. **Pure:** none (the EQ is not applied; the rows show US-R1F-20's state).
+
+**Acceptance:**
+1. **The cap: C_cap = C_work − (track true peak + g + B)**, where g = the leveling gain (0 with Leveling Off), B = the largest positive gain, in dB, of the finished EQ design's read-back (0 if none) and C_work = the output's ceiling − 0.27 dB, the limiter's working ceiling (the numbers table). The peak *after* leveling is what is protected. **C_cap may be positive** — it is a cap, never clamped to 0 (no `min(0, ·)`). **With the EQ Off the turn-down T is 0; with the EQ Off and Leveling Off the stream is untouched** — the anchor holds. Test: bass preset (+B) on a −9 LUFS fixture at −1 dBTP: the true peak at the output ≤ ceiling and the limiter's gain reduction is **0.0 dB**. *Verified by:* C++ null test.
+2. **Applied once; one published number.** The published broadband offset beyond leveling is **G = min(−ΔL, C_cap)** — the existing loudness-neutral offset (−ΔL, decision 26; the compensation layer is exempt from it: its level change is read, not neutralised) or the cap, whichever is smaller, never both summed — and the turn-down shown to the listener is **T = G − (−ΔL) ≤ 0**; the one per-track gain carries g + G. Its physical home stays `eq.outputGainDb`, applied by the EQ module after its cascade — in a double-precision cascade a broadband gain before or after it is the same signal to within float rounding, so "before the EQ" is the accounting position; **an implementer adds no second gain stage** (architecture §2.5). A test asserts a single application (the output equals input × (g + G) through the flat path).
+3. **The bounded form first:** B is the design's largest boost (turns down more than needed on most tracks). **The measured form as soon as the analysis can:** the EQ'd track's real true peak (the realised design run over the analysis pass) replaces the bound; the measured P is never more negative than the bounded P (it turns down less or equal), and the net still never works (limiter reduction 0.0 dB). *(The measured form lands in S14-lite's ledger — US-TON-07 — unless the analysis can already do it in R1.1-B.)*
+4. **Compare is level-matched to it:** Compare-held vs EQ-on integrated loudness within **0.2 dB**, the turn-down included (US-PROF-02).
+5. **Wording:** when T < 0 the EQ readout says "Protected: −X.X dB so loud peaks stay clean" — never "held" or "refused". *Verified by:* Swift Testing.
+6. A folded file uses its folded true peak (US-R1F-08).
+**Not in this story:** the per-band +12 dB sum, AutoEq's preamp, the gain-reduction meter and the correction / compensation layers (the ledger, US-TON-07, S14-lite); changing the ceiling values.
+**Priority:** Should | **Estimate:** 3 sp *(a day or two on top of the true-peak number)* | **Dependencies:** US-R1F-10 | **Traceability:** FR-TONAL-07, NFR-QUAL-01
+
+#### US-R1F-20 — The shared "Not in bit-perfect mode" row state, and the Pure card's sentence *(new — 2026-10-23)*
+
+As a **Ramith** I want every control that cannot work in Pure to say so in words, so that nothing looks broken and I know what leaving Pure buys.
+
+**Sprint:** R1.1-B (first instance); reused by every later DSP control. **Stage:** UI only. **Pure:** this is the Pure behaviour.
+**Acceptance:**
+1. **One component, one state:** when the signal path actually playing is Pure, each DSP control row (EQ on / off and Tone today; crossfeed; later Loudness, correction, Clarity, Spatial, Enhance, Compare, Bypass all) is not interactive and reads "Not in bit-perfect mode", with one action "Leave Pure" (it takes effect as US-R1F-13's copy says). The state follows the **path actually in use** (`SignalPathInfo`), not the Pure switch alone: Pure on but the track playing in Enhanced (Bluetooth, channel mismatch) leaves rows live. VoiceOver reads "unavailable, not in bit-perfect mode". *Verified by:* Swift Testing.
+2. **A new control cannot skip it:** a test over the registry of DSP rows asserts each reports the state in Pure; a row not in the registry fails the build's test.
+3. **The Pure card gains one sentence** on why there are two untouched states: "Pure sends the file to your device untouched; Enhanced with every effect off leaves the sound untouched too, but plays through the app's engine, which is what lets leveling, surround folding and the effects work."
+4. The "Volume restored" toast and the Pure readout are US-R1F-10 items 15 and 11–13.
+**Not in this story:** any control's own behaviour; leveling in Pure (US-R1F-10); Enhance's line (US-UI-08).
+**Priority:** Should | **Estimate:** 3 sp | **Dependencies:** US-R1F-13 | **Traceability:** NFR-QUAL-03, FR-UI-02
 
 #### US-QA-07 — THD+N oracle
 
@@ -1932,6 +2231,10 @@ call on the main thread (the PR #86 rule); finish-or-revert, and two Enhanced en
 As a **developer** I want to understand how a mature open-source engine solves gapless, seek, format and device changes, so that our own engine starts from that knowledge rather than from today's workarounds.
 
 **Status:** Planned · Engine sprint, phase 1.
+**Acceptance (2026-10-23 additions, reconciliation card 9 — founder):**
+- **The discovery list names the contract tests the new engine must carry and re-prove** (they sit on the path it replaces): (1) the **one-converter seam** (a same-rate join plays through one converter, KI-GAP-04's closure); (2) **seek-to-end** (US-R1F-11); (3) **channel roles from the file's labels** (KI-MC-02); (4) **leveling at the seam** (US-R1F-10 item 7: one constant gain across a gapless seam, sample-accurate once the engine counts the seam itself).
+- **Also in the carry:** the **below-44 kHz EQ gap** (**KI-EQ-04**, forwarded to this epic): on a graph rate below 44.1 kHz (a Bluetooth headset with its microphone on drops to 16 or 24 kHz) the EQ must not silently play flat while the screen says it is on — either a reduced band set (every band whose centre is below the rate's Nyquist plays; the rest leave the graph and the read-back) or a floor on the graph rate; and the **output-side conversion measurement** (a −0.1 dBTP signal through the 48 → 44.1 kHz path; it settles the ceiling rule — US-ENG-05, **KI-SND-07**: today the EQ-only ceiling is chosen by the transport alone, never by the rate, so the selection gains the rate condition in this sprint).
+- **The design doc settles three things:** the **fold's final home** (inside the engine before the one safety net, crossfeed after it — KI-SND-06's second half), the **one owner of the channel layout** from the decoder onward, and the **shape of the headroom ledger** (where the per-track pre-gain and the per-band sum sit relative to the engine, US-TON-07). It also fixes the engine half of W2 (seam events carrying the item's identity, one seek, one end flag).
 **Acceptance:**
 - SFBAudioEngine is cloned at a pinned version (the council read 0.14.0 at 9ed712d; the version used is recorded) into a scratch folder outside the repo's build and read as data; none of its build scripts run.
 - A written analysis with file:line references: the decode-ahead ring and decode thread; the render block; same-format gapless and the "non-gapless join"; seek (clamped, asynchronous, stale audio dropped); configuration changes and device selection; which calls run on which thread, and the lock-free getters; the delegate events and their timestamps; where sample-rate conversion happens (implicit conversion inside AVAudioEngine fails our bar — engine research §1).
@@ -1950,7 +2253,7 @@ As a **Marcus** I want gapless albums to join with no gap, click or early title 
 - Enhanced first: an `AVAudioSourceNode` pulls from Pure's proven C++ decode and gapless pipeline (`FileDecodeSource`, `GaplessSource`); the Mastering converter from US-R1F-11 converts to the device rate; our two audio units are unchanged. The decode layer is designed so Pure can share it later, with one format predicate (rate, channel count and layout — C-37).
 - Same-format joins are sample-continuous, proven by the P3 seam replicas as contract tests; a format change is an honest short gap with every channel present; seam events carry the item's identity at the audible moment, with the output's presentation latency; one seek path, one end flag, one playhead.
 - No engine call on the main thread; TSan clean; an Enhanced start and the output-device rule never end silent in the explored interleavings (C-28).
-- It lands behind a developer switch; today's path stays the default until US-PE-03 decides. A 2-week cap; finish-or-revert.
+- It lands behind a developer switch; today's path stays the default until US-PE-03 decides (**the switch and the losing path are deleted inside the sprint**, US-PE-03). It delivers the **engine half of W2** (seam events with the item's identity, one seek, one end flag). A 2-week cap; finish-or-revert.
 **Priority:** Must | **Estimate:** 13 sp | **Dependencies:** US-PE-01, US-R1F-11 | **Traceability:** FR-PLAY-01, FR-PLAY-02, FR-PLAY-03, FR-DEVICE-06, NFR-QUAL-02, NFR-QUAL-04, NFR-REL-02
 
 #### US-PE-03 — Compare, then decide
@@ -1962,7 +2265,8 @@ As a **Ramith** I want our engine and SFBAudioEngine compared on the same measur
 - The 11 checks of [engine research §5](../reviews/2026-10-council/working/engine-research.md#5-recommendation-and-spike-plan-refines-stage5-architect-45) run against both engines where each applies — SFB in a scratch harness outside the main checkout: P1 SRC; P2 our audio units in the graph; P3 same-format gapless; P4 format-change joins; P5 seek; P6 threads; P7 device and hardware-rate change; P8 formats and a real corpus; P9 Pure decode sharing; P10 supply chain; P11 real-time robustness. P7 and the by-ear part of P11 are the founder's.
 - A code-level comparison: size, complexity, threading model, test surface, dependencies and maintenance (SFB: one maintainer, a 0.x API, about 21 packages and 10 binary frameworks).
 - A licence check: the project is Apache-2.0 (FD-7), and CON-12 lets only permissive code ship. SFB's mpg123, libsndfile, lame and tta-cpp are LGPL, so adopting SFB as-is needs CON-12 amended, or those decoders left out.
-- The founder decides: our engine, SFBAudioEngine, or today's path with the R1.1 fixes. The losing path is deleted.
+- The founder decides: our engine, SFBAudioEngine, or today's path with the R1.1 fixes. **The developer switch and the losing path are deleted inside this sprint** (2026-10-23; a reverted build with the switch left in is still two engines): a repository search finds no engine-selection switch and no code of the losing path.
+- **The carry is proven on the chosen engine:** the four contract tests of US-PE-01 (one-converter seam, seek-to-end, roles from labels, leveling at the seam) pass; the below-44 kHz EQ gap (KI-EQ-04) is closed (a 16 kHz and a 24 kHz graph rate: the realised response matches the drawn curve for every band below Nyquist, or the rate floor holds); the output-side conversion is measured and the ceiling rule (US-ENG-05) is settled in writing, with the rate condition in the ceiling selection (KI-SND-07: a wired device whose rate differs from the graph rate gets −1 dBTP on the EQ-only path until the measurement says otherwise).
 **Priority:** Must | **Estimate:** 5 sp | **Dependencies:** US-PE-02 | **Traceability:** as US-PE-02, plus CON-12 and LD-9
 
 ---
@@ -1980,7 +2284,9 @@ As a **Ramith** I want our engine and SFBAudioEngine compared on the same measur
 >
 > **Placement (FD-8, 2026-10-14):** EP-MCP waits for the full playback-ownership rework (W2) and the command layer,
 > in R2 or later — no early spike. An agent is a fast client, and today's transport breaks under single-client
-> interleavings (council C-14, C-15). EP-MCP is what funds W2 (US-MCP-00).
+> interleavings (council C-14, C-15). ~~EP-MCP is what funds W2 (US-MCP-00).~~
+>
+> **Re-placed (founder, 2026-10-23, reconciliation card 9):** W2's transport half (the reducer and the command layer) is **S15's slice**; the Engine sprint delivers the engine half. EP-MCP is a **consumer** of S15's command layer, not W2's funder ("S14's adaptive half" is no longer a funder either). **Written fallback** if S15 cannot carry the reducer under its cap: the R3 sprints use only the track-identity seam event, and W2's transport half waits for its trigger bug (a wrong-song or silent-playing report) — agent control then waits with it.
 
 **Principles:**
 - **One command layer:** every MCP tool maps 1:1 onto a UI command, and the coverage table is generated from the
@@ -1992,13 +2298,13 @@ As a **Ramith** I want our engine and SFBAudioEngine compared on the same measur
 
 | ID | Story | Notes |
 |---|---|---|
-| US-MCP-00 [Enabler] | **W2 — one owner for playback, and the command layer** (council C-01, C-05, C-06, C-13, C-15 in full, C-18; the library lane C-58, C-59): a transport reducer that owns play / pause / seek / advance, a command catalogue the UI and MCP both call, and one engine event channel. Funded by EP-MCP (FD-8); also by S14's adaptive half or crossfade; triggered early by any wrong-song or silent-playing bug after R1.1's transport fixes | The Engine sprint delivers the engine half (seam events with the item's identity, one seek, one end flag); 2-week cap per slice, finish-or-revert (FD-1) |
+| US-MCP-00 [Enabler] | **W2 — one owner for playback, and the command layer** (council C-01, C-05, C-06, C-13, C-15 in full, C-18; the library lane C-58, C-59): a transport reducer that owns play / pause / seek / advance, a command catalogue the UI and MCP both call, and one engine event channel. ~~Funded by EP-MCP (FD-8); also by S14's adaptive half or crossfade;~~ **slot = S15's slice (2026-10-23)**: acceptance — a transport reducer that is the one owner of play / pause / seek / advance for the event families S15 cuts (per family, finish-or-revert), a command catalogue the UI calls, driven by the engine's seam events; a test that a wrong-song interleaving from the council's breakers cannot occur through the reducer. Triggered early by any wrong-song or silent-playing bug after R1.1's transport fixes. **Fallback in writing:** if S15 cannot carry it, the R3 sprints use only the track-identity seam event and this waits for its trigger bug | The Engine sprint delivers the engine half (seam events with the item's identity, one seek, one end flag); 2-week cap per slice, finish-or-revert (FD-1); EP-MCP is a consumer of the command layer |
 | SP-MCP-01 | *(2026-10-14: not run early — FD-8; it opens EP-MCP.)* **Spike: the connection design.** A stdio shim CLI (`adaptivesound-mcp`, launched by the MCP client) talking to the running app over XPC / a local socket, vs Streamable HTTP on localhost. Authentication, consent, discovery; sharing the command catalogue with App Intents | Decides US-MCP-01 |
 | US-MCP-01 | As a user, I can turn on "Allow AI agents to control AdaptiveSound", see which clients are connected, and revoke them; nothing is reachable when it's off | Local only; per-client token and scopes |
 | US-MCP-02 | As an agent, I can control **transport and the queue**: play / pause / stop / next / previous / seek; add, remove, reorder and clear the queue; shuffle and repeat; play next / add to queue | Same commands as the UI's transport |
 | US-MCP-03 | As an agent, I can **search and browse the library** (songs, albums, artists, genres, playlists) and play any of them, using stable entity ids exposed as MCP resources | One search semantics (council LIB-05) |
 | US-MCP-04 | As an agent, I can **manage playlists**: create, rename, delete (confirmed), add, remove, reorder | — |
-| US-MCP-05 | As an agent, I can **shape the sound**: choose an EQ preset, set points or Tone, switch the EQ on / off, set Master Gain, crossfeed and Intensity, all within server-enforced safety limits | Hearing-safety clamps server-side |
+| US-MCP-05 | As an agent, I can **shape the sound**: choose an EQ preset, set points or Tone, switch the EQ on / off, set Master Gain, crossfeed and Intensity, all within server-enforced safety limits | Hearing-safety clamps server-side — the clamps are the ledger's (US-TON-07), one place *(2026-10-23)* |
 | US-MCP-06 | As an agent, I can **manage output**: list and select devices, pin to a device, turn Pure Mode on / off, and read the signal path | — |
 | US-MCP-07 | As an agent, I can **read the player's state** (now playing, queue, signal path, loudness) and **subscribe to changes** (track change, play / pause, device change) | Built on the engine event channel |
 | US-MCP-08 | **Proof:** contract tests per tool (headless); a coverage check (every UI command has a tool); an end-to-end demo with Claude Desktop and OpenClaw; a security review | Gate before release |
@@ -2036,7 +2342,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Ongoing curation process and owner identified
 
 **Time-box:** 3 days | **Phase:** 0 | **Estimate:** 2 sp | **Blocks:** US-TON-02
-**Status (2026-10-13):** Planned · **Forward:** S12 (AutoEq import) / S13 (device correction).
+**Status (2026-10-13):** Planned · **Forward:** S12 (AutoEq import) / S13 (device correction). *(2026-10-23: library entries are stored **without** AutoEq's `Preamp:` line — the ledger supplies the turn-down; each entry names its model and ANC variant — US-TON-02 Part B.)*
 **Traceability:** FR-TONAL-02, ASM-05, DEP-07, OQ-08 (resolved: AutoEq MIT computed curves)
 
 ---
@@ -2155,8 +2461,8 @@ Time-box: 5 days | Estimate: 5 sp | Refs: NFR-PERF-06, OQ-19, EP-STEM
 Time-box: 5 days | Estimate: 5 sp | Refs: FR-STEM-01/05 (validation protocol), architecture.md §12 (ML decision tree), OQ-20
 
 #### SPIKE-REIMAGINE-MAP — Reimagine intensity→parameter mapping + user test
-**Goal:** Define the mapping from the 0–100% knob to crossfade + spatial spread + unmask depth (mix-range and stem-range ceiling), and validate with a small listening test that the progression feels natural and that 0% is unmistakably "faithful".
-**Output:** the mapping curve (FR-REIMAGINE-03) + test findings.
+**Goal:** ~~Define the mapping from the 0–100% knob to crossfade + spatial spread + unmask depth (mix-range and stem-range ceiling)~~ *(2026-10-23, card 2)* Define the mapping from Intensity (0–1) to **exactly two targets — Clarity depth and Spatial room amount** — as settings, with **no crossfade, no level stage and no hand-set switch in the map**, default 0; validate (a) with a level-vs-knob sweep on pink noise and a correlated wet stand-in (flat within 0.2 dB — the one plot that settles crossfade-versus-parameter) and (b) by the founder's own listening that 0 is unmistakably "faithful" (no panel).
+**Output:** the mapping curve (FR-REIMAGINE-03) + the sweep plot + the founder's findings.
 Time-box: 3 days | Estimate: 3 sp | Refs: FR-REIMAGINE-03/04, OQ-21
 Status (2026-10-13): Planned · **Forward:** S17.
 
@@ -2167,8 +2473,8 @@ Time-box: 4 days | Estimate: 5 sp | Refs: architecture.md §4 (Moore-Glasberg ro
 Status (2026-10-13): Planned · **Forward:** S15 (SPIKE: masking model + arbitration).
 
 #### SPIKE-BRIR — BRIR room synthesis + externalisation validation
-**Goal:** Validate the BRIR-first immersion: synthesise (image-source + FDN) or source CC0/CC-BY room responses combined with the SADIE-II HRIR; ABX-test externalisation **vs. the dry-HRTF minimal mode**; confirm convolution cost fits the budget.
-**Output:** a default "treated room" BRIR + alternates, and evidence BRIR externalises better than dry HRTF (FR-SPAT-01).
+**Goal:** Validate the BRIR-first immersion: synthesise (image-source + FDN) or source CC0/CC-BY room responses combined with the SADIE-II HRIR, **headphone-equalised** so Spatial changes space, not tone; ~~ABX-test externalisation vs. the dry-HRTF minimal mode~~ *(2026-10-23, card 10)* judge by the founder's **preference** in a blind, level-matched A/B against a timbre-matched dry reference plus the artifact checklist (US-SPAT-01) — "I can tell them apart" is not the bar; confirm convolution cost fits the budget; **record the tone tolerance** (long-term 1/3-octave difference from the dry reference) that US-SPAT-01 uses.
+**Output:** a default "treated room" BRIR + alternates, the tone tolerance, and the founder's preference result (FR-SPAT-01).
 Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
 Status (2026-10-13): Planned · **Forward:** S18.
 
@@ -2202,8 +2508,8 @@ The following items are tracked from OQ-* and must be resolved before the storie
 
 | Item | Blocks | Urgency |
 |------|--------|---------|
-| SPIKE-LOUDNESS-COMP-TUNING — FR-TONAL-03 loudness-compensation fraction validation | Phase 0 Polish: determine whether 50% (provisional) is the correct fraction; test frequency-variable fractions; validate gain caps (+6 dB bass, +4 dB treble). MUSHRA-style listening test, 10+ listeners, 4–6 tracks at −15 dB and −25 dB SPL offsets. Audio-dsp endorses 50% as provisional with precedent (THX Loudness Plus, broadcast 40–60% range); Phase 0 testing will lock final value (likely 40–55%). | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with provisional values. *(2026-10-13: loudness compensation is not built; this belongs to **S14**.)* |
-| SPIKE-HEARING-SAFETY-VALIDATION — per-band gain / loudness-safety numeric clamps UX validation | Phase 0 Polish: validate whether the locked hearing-safety bounds (+10 dB per-band, +12 dB cumulative, −9 LUFS session cap, confirmation gate at +8 dB) are appropriately responsive to user gain requests (a large boost should feel satisfied by +10 dB, not over-constrained). Measure: (a) Can users achieve their desired adjustments within the bounds? (b) Is the confirmation gate at +8 dB triggering appropriately (not too frequent, not missed)? (c) Is the session loudness tracker visible/useful? Test with 5–8 listeners, naturalistic usage over 1–2 weeks. Accept outcome: if +10 dB is perceived as too tight, widen to +12 dB. If confirmation gate is noise, move to +10 dB. If no feedback, lock the bounds as-is. | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with locked numeric values. *(2026-10-13: the bounds it would validate are the architecture §11 **design**, enforced by an Arbiter that does not exist; nothing shipped uses them. The shipped EQ instead has a +12 dB per-point ceiling and a loudness-neutral gain, with the −1 dBTP limiter catching peaks (Sprint EQ decisions 23 / 26, PR #73). Re-scope with S16.)* |
+| SPIKE-LOUDNESS-COMP-TUNING — FR-TONAL-03 loudness-compensation fraction validation | Phase 0 Polish: determine whether 50% (provisional) is the correct fraction; test frequency-variable fractions; validate gain caps (+6 dB bass; ~~+4 dB treble~~ the treble cap is deleted — the curve is bass-only). ~~MUSHRA-style listening test, 10+ listeners, 4–6 tracks at −15 dB and −25 dB SPL offsets.~~ **Replaced 2026-10-23 (founder, card 10) by the founder's own evening: the curve pre-rendered at 40 / 50 / 60 % at a 20 dB turn-down on three familiar loud masters on the XM4 (settles depth and cap), then the blind ladder (about 23 trials, capped at 60) as US-TON-03's last acceptance line.** *(Form settled: ease the mids; 50 % is the starting depth — US-TON-03.)* Audio-dsp endorses 50% as provisional with precedent (THX Loudness Plus, broadcast 40–60% range); Phase 0 testing will lock final value (likely 40–55%). | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with provisional values. *(2026-10-13: loudness compensation is not built; this belongs to **S14**.)* |
+| SPIKE-HEARING-SAFETY-VALIDATION — per-band gain / loudness-safety numeric clamps UX validation | Phase 0 Polish: validate whether the locked hearing-safety bounds (+10 dB per-band, +12 dB cumulative, −9 LUFS session cap, confirmation gate at +8 dB) are appropriately responsive to user gain requests (a large boost should feel satisfied by +10 dB, not over-constrained). Measure: (a) Can users achieve their desired adjustments within the bounds? (b) Is the confirmation gate at +8 dB triggering appropriately (not too frequent, not missed)? (c) Is the session loudness tracker visible/useful? Test with 5–8 listeners, naturalistic usage over 1–2 weeks. Accept outcome: if +10 dB is perceived as too tight, widen to +12 dB. If confirmation gate is noise, move to +10 dB. If no feedback, lock the bounds as-is. | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with locked numeric values. *(2026-10-13: the bounds it would validate are the architecture §11 **design**, enforced by an Arbiter that does not exist; nothing shipped uses them. The shipped EQ instead has a +12 dB per-point ceiling and a loudness-neutral gain, with the −1 dBTP limiter catching peaks (Sprint EQ decisions 23 / 26, PR #73). Re-scope with S16.)* *(2026-10-23: the **+12 dB cumulative bound is now the ledger's sum clamp and ships in S14-lite** — US-TON-07; the rest stays design-only. Re-scoped to the ledger.)* |
 | ~~OQ-02 — monetization / feature gating model~~ | ~~Feature flag architecture across all phases~~ | **Resolved and removed (LD-9).** Project is personal / open-source and non-commercial. No feature-flag or paywall architecture required anywhere. |
 | OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-SYSWIDE/EP-VDEVICE, which are out-of-window |
 | ~~OQ-07 — macOS minimum deployment target~~ | ~~ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice~~ | **Resolved:** the floor is **macOS 26 on Apple Silicon** (`Package.swift` `.macOS(.v26)`; `Info.plist` `LSMinimumSystemVersion` 26.0, PR #87). Any future tap path is far above 14.2. |
@@ -2212,9 +2518,16 @@ The following items are tracked from OQ-* and must be resolved before the storie
 | ~~OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed)~~ | ~~SPIKE-LIBBS2B → US-DEVICE-07~~ | **Resolved (QW1 design §2):** bs2b treated as LGPL and not linked; the Bauer crossfeed was reimplemented in-house (`CrossfeedModule`). |
 | ~~OQ-04 — HRTF dataset selection~~ | ~~SPIKE-HRTF → US-SPAT-01~~ | **Resolved (prior-art pass):** SADIE II (Apache-2.0) is the default; libmysofa (BSD-3) + FFTConvolver (MIT) for convolution; Apple HRTF APIs not used. SPIKE-HRTF scope reduced to performance benchmarking only. |
 | ~~OQ-08 — Device correction library source~~ | ~~SPIKE-DEVCORRLIB → US-TON-02~~ | **Resolved (prior-art pass):** AutoEq computed parametric curves (MIT + attribution) confirmed as source. SPIKE-DEVCORRLIB continues for model selection and provenance verification. |
-| OQ-18 — Min-phase vs linear-phase per content | SPIKE / US-PERC-02 (off-RT Realizer) | High — before Realizer implementation (→ S16). *(The shipped graphic EQ is minimum-phase IIR, an SVF bell per band.)* |
+| OQ-18 — Min-phase vs linear-phase per content | SPIKE / US-PERC-02 (off-RT Realizer) | High — before Realizer implementation (→ S16). *(The shipped graphic EQ is minimum-phase IIR, an SVF bell per band. 2026-10-23: narrowed — the second fitter is dropped, so FIR is considered only inside the one EQ program, US-PERC-02.)* |
 | OQ-19 — Stem-engine render budget (caps) | SPIKE-PERF-BUDGET → EP-STEM QualityProfile caps | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-STEM, which is out-of-window |
 | OQ-20 — 6-stem quality-gating policy | SPIKE-SEP-QUALITY → US-STEM-06 | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-STEM, which is out-of-window |
-| OQ-21 — Reimagine intensity→parameter mapping | SPIKE-REIMAGINE-MAP → US-RMG-02 | Medium-High — before US-RMG-02 (→ S17). *(Narrowed by decision 25: the mapping must never include the EQ.)* |
+| OQ-21 — Reimagine intensity→parameter mapping | SPIKE-REIMAGINE-MAP → US-RMG-02 | Medium-High — before US-RMG-02 (→ S17). *(Narrowed by decision 25: the mapping must never include the EQ. **Answered in scope 2026-10-23:** two targets only — Clarity depth and room amount — as settings, default 0, never a crossfade; the curve itself is still the spike's.)* |
 | OQ-22 — Masking + partial-loudness model choice | SPIKE-MASKING-MODEL → US-PERC-01/03, US-STEM-04 | Medium — before EP-PERCEPTUAL (→ S15) |
+| ~~Leveling: do ReplayGain / R128 tags take precedence? (US-R1F-10's "Open")~~ | ~~US-R1F-10~~ | **Closed 2026-10-23:** our own analysis first; tags only for a track not yet analysed, ahead of the fixed −5 dB; target −18 LUFS. |
+| ~~Leveling target −16 vs −14~~ | ~~US-R1F-10~~ | **Closed 2026-10-23: −18 LUFS** (every album can reach it under the true-peak cap), shown on screen. |
+| ~~"Which volume counts" for loudness compensation; two caps and two definitions (US-TON-03)~~ | ~~US-TON-03~~ | **Closed 2026-10-23:** Master Gain + the device's volume where readable (one-time reference), a manual amount on the soundbar; one cap (+6 dB bass); one level definition. Still owed: whether the XM4's buttons move the Mac's slider; the depth evening. |
+| ~~Is the "A/B" whole-chain or EQ-only? (US-PROF-02)~~ | ~~US-PROF-02~~ | **Closed 2026-10-23:** Compare = without my EQ, matched within 0.2 dB; "Bypass all processing" separate (S12). |
+| ~~Who funds W2, and when?~~ | ~~US-MCP-00~~ | **Closed 2026-10-23:** S15's slice (engine half in the Engine sprint); agent control is a consumer; the fallback is written. |
+| ~~Auto-load correction / default-on spatial?~~ | ~~US-TON-02, US-SPAT-01~~ | **Closed 2026-10-23:** opt-in per device, off on a fresh install; offered with a level-matched hold-to-hear preview and remembered per output. |
+| ~~US-SPAT-01's ABX "difference" bar~~ | ~~US-SPAT-01~~ | **Closed 2026-10-23:** preference plus an artifact checklist, the last line of S18. |
 | ~~US-REL-02 — the open-source licence~~ | ~~the public repository (LD-9, PRD §6)~~ | **Decided 2026-10-14 (FD-7): Apache-2.0.** The LICENSE file itself is deferred to release readiness (EP-RELEASE). *(Was: High — the repository is already public without one, council 2026-10-13.)* |

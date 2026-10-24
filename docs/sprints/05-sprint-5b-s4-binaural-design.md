@@ -2,6 +2,8 @@
 
 > **⏸ DEFERRED — folded into [sprint-plan.md](sprint-plan.md) Phase 2 (S17 — BRIR spatial render).** This Apple-native binaural design is retained as the reference design for that future sprint.
 
+> **Superseded 2026-10-23** — the render's home, control and blend were re-decided in the [roadmap reconciliation](../product/roadmap-reconciliation-2026-10/README.md) (cards 5 and 8: the render at the engine's stereo-out slot once the fold's final home exists, one "Headphones: Off / Crossfeed / Spatial" control, room amount as a setting Intensity scales, opt-in per device, headphone-equalised responses, correction before the render); this design's choice of Apple's environment node (`AVAudioEnvironmentNode` / `AUSpatialMixer`) is not used. The sprint is S18 in the current plan. The DSP background below stays as reference.
+
 **Status:** DESIGN — founder-approved direction · **Date:** 2026-06-17 · **Branch:** `feat/sprint-5-eq-wiring`
 
 > **This revision supersedes the two earlier S4 cores** (per-channel HRIR convolution; and the

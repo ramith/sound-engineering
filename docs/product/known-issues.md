@@ -15,6 +15,17 @@ red test on a reference branch) where one exists, the place in the code, and whe
 > here are now listed too, under [Found by the 2026-10 council](#found-by-the-2026-10-council); each names its
 > register row (C-xx, [`stage5-architect.md` §1](../reviews/2026-10-council/working/stage5-architect.md#1-finding-register)).
 >
+> **Reconciled 2026-10-23** to the founder's decisions on the sound roadmap
+> ([roadmap reconciliation](roadmap-reconciliation-2026-10/README.md), "Decisions taken"). Nothing was closed: every
+> OPEN entry was re-checked in `main`'s source on 2026-10-23 and the code has not moved. What changed is the forward
+> on the entries those decisions touch — each dated "decided 2026-10-23", naming the sprint, the fix in one line and
+> the measurement that will prove it (the measurements are collected in the
+> [validation strategy](../architecture/validation-strategy.md#verifying-the-2026-10-23-sound-decisions)). Two latent
+> defects the reconciliation found are listed under
+> [Found by the 2026-10 roadmap reconciliation](#found-by-the-2026-10-roadmap-reconciliation). The sprint names are the
+> reconciliation's: **R1.1-B** (the next fix sprint — one sprint, no player / sound split), the **Engine sprint**,
+> **S14-lite**, **S12**, **S13**, **S16**, **S17**, **S18**.
+>
 > - **Severity:** **HIGH** = wrong audio, a stuck state, or user data lost; **MEDIUM** = visibly wrong behaviour that
 >   has a workaround; **LOW** = rare, cosmetic or wording; **internal** = a developer-only follow-up.
 > - **Scheduled:** **R1.1-A** / **R1.1-B** (the two halves of R1.1), the **Engine sprint**, a later roadmap sprint,
@@ -36,8 +47,8 @@ red test on a reference branch) where one exists, the place in the code, and whe
 
 | ID | Issue | Severity | Scheduled | Forward link |
 |---|---|---|---|---|
-| KI-MC-01 | A 5.1 / 7.1 file on a stereo output plays only its front left and right: centre, LFE and surrounds are dropped | HIGH | R1.1-B (BS.775 fold-down, FD-9); S18 replaces it | US-R1F-08 |
-| KI-MC-02 | Channel roles come from positions, not the file's labels: an ALAC / AAC 5.1 file plays its centre on the left; 3-, 4-, 5- and 7-channel files fall back to stereo | HIGH | R1.1-B | US-R1F-08 |
+| KI-MC-01 | A 5.1 / 7.1 file on a stereo output plays only its front left and right: centre, LFE and surrounds are dropped | HIGH | R1.1-B (the BS.775 matrix + a per-track trim, FD-9 as amended 2026-10-23); the Engine sprint moves the fold into the engine; S18 renders in that slot | US-R1F-08 |
+| KI-MC-02 | Channel roles come from positions, not the file's labels: an ALAC / AAC 5.1 file plays its centre on the left; 3-, 4-, 5- and 7-channel files fall back to stereo | HIGH | R1.1-B, before the fold; re-proved in the Engine sprint's acceptance (2026-10-23) | US-R1F-08 |
 | KI-PB-18 | Dragging the scrubber to the end of a track that isn't 48 kHz stops playback for good | HIGH | R1.1-A | US-R1F-11 |
 | KI-GAP-05 | An Enhanced gapless join to a file with a different channel count drops channels | HIGH | Engine sprint | US-R1F-02 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | Engine sprint | US-R1F-02 |
@@ -49,15 +60,17 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-PB-12 | A single click on a playlist row replaces the queue and plays | MEDIUM | pool | US-R1F-04 |
 | KI-PB-21 | A crash or force-quit loses your place in the queue | MEDIUM | R1.1-B (atomic queue restore) | US-R1F-01 |
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
-| KI-GAP-02 | At a resampled seam to another rate or width, the title and track B's gain switch up to ~0.2 s early | MEDIUM | Engine sprint | US-R1F-02 |
+| KI-GAP-02 | At a resampled seam to another rate or width, the title and track B's gain switch up to ~0.2 s early | MEDIUM | Engine sprint (Leveling's seam tolerance until then, 2026-10-23) | US-R1F-02 |
 | KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
-| KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | pool (first candidate) | US-R1F-06 |
+| KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | ~~pool (first candidate)~~ S12 (decided 2026-10-23: fixed with the per-output memory extension) | US-R1F-06 |
+| KI-SND-06 | Crossfeed does nothing on a 5.1 / 7.1 file (it is stereo-only and runs before the fold), while the "XF" chip still shows | MEDIUM | R1.1-B (the chip and the switch read the kernel's bypass); the Engine sprint (crossfeed after the fold) | US-R1F-08, US-R1F-12 |
+| KI-SND-07 | The EQ-only −0.1 dBTP ceiling is chosen by the transport alone, never by the output's rate — a wired DAC at 44.1 or 96 kHz would get it today, into an unmeasured conversion after the engine | LOW (latent: no non-48 kHz wired output in use) | Engine sprint (decided 2026-10-23: the rate condition; the conversion measured) | US-PE-03, NFR-QUAL-05 |
 | KI-DEV-03 | An Enhanced start just after a device connects can end silent or on the wrong device | MEDIUM | Engine sprint | EP-PLAYENGINE |
 | KI-LIB-02 | A folder whose walk fails outright says nothing; there is no Rescan control *(narrowed in R1.1-A: a paused folder says why)* | ~~MEDIUM~~ LOW | ~~R1.1-A~~ the rest: for triage | US-R1F-03 |
 | LIB-VOL-1 | A paused folder on a replaced or UUID-less drive stays paused; re-adding it loses play stats | MEDIUM | R1.1-B ("Use this drive") | US-R1F-03 |
 | KI-LIB-03 | A failed first metadata pass leaves "No Music Yet", with no retry | MEDIUM | pool | US-R1F-03 |
 | KI-LIB-04 | Dragging a multi-selection onto a playlist adds one song | MEDIUM | pool | US-R1F-04 |
-| KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5) | US-ENG-07 |
+| KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5); its check list grew 2026-10-23 | US-ENG-07 |
 | KI-ENG-05 | A library scan or metadata pass can starve the app's background work on a Mac with few cores | LOW | pool (recommended R1.1-B) | US-R1F-18 |
 | KI-PB-07 | Next / Previous while paused keep the old song's duration | LOW | R1.1-A | US-R1F-01 |
 | KI-PB-13 | Two quick tile Plays can land out of order | LOW | pool | US-R1F-04 |
@@ -70,6 +83,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | ENH-002 | The UI loudness readout is L/R-only on a >2-channel output | LOW | pool | US-R1F-07 |
 | KI-EQ-02 | Esc during a graph drag re-announces "Bring back edits" | LOW | pool | US-R1F-06 |
 | KI-EQ-03 | Stacked-shadow darkening on EQ / Settings cards (dark + Reduce Transparency / Increase Contrast) — unverified | LOW | pool | US-R1F-06 |
+| KI-EQ-04 | The EQ plays flat below 44 kHz, the designer's floor — latent while the graph is pinned at 48 kHz; live the day it follows the device rate (a Bluetooth headset with its microphone on) | LOW today (latent); HIGH once live | Engine sprint (decided 2026-10-23) | EP-PLAYENGINE (US-PE-01, US-PE-03) |
 | KI-DEV-02 | HDMI / DisplayPort outputs read "(Unknown)" | LOW | pool | US-R1F-06 |
 | KI-SEC-01 | With FFmpeg turned on (it is off by default), a third-party C parser reads files Apple can't, inside the app | LOW | pool (an XPC helper, or deletion after the corpus check — FD-3) | US-R1F-16 |
 | KI-LIB-06 | Genres split on "/" ("Singer/Songwriter" → two tiles) | LOW | pool | US-R1F-04 |
@@ -232,6 +246,11 @@ track of the same rate and channel count — an album — is counted when the pl
 resampled track followed by one of another rate or width (the end-of-file roll, as above). Still everywhere: no
 presentation latency, so the title and scrubber lead what is heard by the device's latency.
 
+*(2026-10-23, card 1: Leveling's gain at a seam is applied "at the seam as the engine counts it" until the Engine
+sprint — at a resampled seam to another rate or width that is this issue's 0–186 ms early; a same-format seam is not
+early. The Engine sprint's acceptance carries "leveling at the seam" as a contract test: a gapless pair in Album mode
+shows one constant gain across the seam, and in Track mode the gain changes on the first audible frame of B.)*
+
 ### KI-GAP-03 — A narrow false seam on a Pure → Enhanced restart
 
 **Status:** OPEN · **Severity:** LOW · **Source:** freeze "Logged post-R1" · **Scheduled (2026-10-14):** Engine sprint · **Forward:** US-R1F-02.
@@ -256,8 +275,9 @@ The short-track advance is a fresh-start reconfigure **gap**, not a gapless seam
 
 **Status:** OPEN · **Severity:** HIGH (wrong audio: on most 5.1 music the centre carries the lead vocal) · **Source:**
 the council's architecture reconciliation (2026-10-13), re-verified here · **Scheduled (2026-10-14):** R1.1-B ·
-**Forward:** S18 replaces the interim
-truncation with the binaural fold ([S4 design](../sprints/05-sprint-5b-s4-binaural-design.md)); ~~an interim fix (the S4
+**Forward:** ~~S18 replaces the interim
+truncation with the binaural fold ([S4 design](../sprints/05-sprint-5b-s4-binaural-design.md))~~ *(2026-10-23: the S4
+design is superseded; S18 renders in the engine's stereo-out slot once the Engine sprint has moved the fold)*; ~~an interim fix (the S4
 design's Apple `AVAudioEnvironmentNode` fold pulled forward, or a standard fold-down) is a founder decision~~ → US-R1F-08.
 *(Decided 2026-10-14, FD-9: the interim is the standard **ITU-R BS.775** fold-down, at the device boundary, after the
 channel-order fix (KI-MC-02) and with a safety ceiling after it (the limiter sits before the spatial stage today —
@@ -271,10 +291,55 @@ With the MPEG 5.1 order L R C LFE Ls Rs (`MultichannelFormat.swift:53-54`), a st
 "no naive downmix" mandate is why it isn't a matrix fold — but silence for four channels is worse than a naive fold.
 The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" without this caveat.
 
+*(Decided 2026-10-23 — [roadmap reconciliation](roadmap-reconciliation-2026-10/README.md), cards 5 and 8.)*
+**The interim, R1.1-B:** the standard fold matrix (ITU-R BS.775-4 Table 2: L′ = L + 0.7071·C + 0.7071·Ls, and the
+mirror for R′) in the spatial unit where the truncation lives today, with a **per-track trim** from the folded true
+peak the analysis measures — so the net after the fold is a backstop the trim keeps asleep; the **folded loudness**
+measured in the same pass, so Leveling levels what the listener hears (the fold reads 1–2 LU under the six-channel
+figure when the surrounds carry a modest share); the **LFE decided per track** from the analysis — include at full
+level per side when it carries bass the mains do not, omit when it is a low-passed copy of the mains' bass (including
+a copy adds +6 dB below ~120 Hz), omit when unknown, the trim computed with that gain (the loudness measurement ignores
+LFE either way: BS.1770 weight 0, `Sources/AudioDSP/include/ChannelLayout.h:11-13`); a **"5.1 → stereo" badge**; and
+the bit-perfect reason reads "…so Enhanced plays it, folded to stereo". Crossfeed does nothing on a folded file until
+the fold moves, and the badge says so (KI-SND-06). FD-9's "with a ceiling after it" is **amended 2026-10-23: a backstop
+the trim keeps asleep; one limiter after the fold once the fold moves into the kernel.** **The final arrangement, the
+Engine sprint:** the fold inside the engine before the one safety net, crossfeed after it, one owner of the channel
+layout from the decoder onward; S18's render then lives in the engine's stereo-out slot. **Proof** (the
+[validation strategy](../architecture/validation-strategy.md#verifying-the-2026-10-23-sound-decisions)): the
+analyser's folded true peak against libebur128's true peak of the actually folded stereo; a C-only sine folds to
+−3.0 dB per side (L = R = C at equal level sums to +4.6 dB per side; the coherent worst case is +7.66 dB); with the
+trim, the limiter's gain reduction ≈ 0 dB over the founder's surround albums; a stereo-in-5.1 file (C / LFE / Ls / Rs
+silent) through the fold then crossfeed nulls against the plain stereo file through crossfeed — once crossfeed runs
+after the fold; the two-album LFE listen on the XM4 (one album whose LFE carries bass the mains don't, one whose LFE
+is a copy; a bass-heavy passage three ways, omit / −6 dB / full), pass / fail before it ships. *Prototype first:* the
+folded-peak analysis over the founder's surround albums — trims mostly within 0–3 dB say the per-track trim is clearly
+right; a cluster near 7 dB says a fixed trim is nearly as good.
+
 ## Settings and levels
 
 *(KI-SET-03 — a device volume lowered on Pure stayed lowered on Enhanced — closed in R1.1-A; see
 [Closed](#fixed-in-r11-a--pure-honesty-master-gain-on-pure-ffmpeg-as-an-opt-in-branch-r11apure-ffmpeg).)*
+
+**The old auto-leveller** — *decided 2026-10-23, card 1 of the
+[roadmap reconciliation](roadmap-reconciliation-2026-10/README.md): **removed in R1.1-B**, not switched off.* The
+kernel's session-integrated normaliser is on in the code — `LoudnessParams{makeupGainLinear = 1, lufsTarget = −16,
+enabled = 1}` (`Sources/AudioDSP/include/TargetState.h:60-66`; `kDefaultLufsTarget`, `AudioConstants.h:34`), with no
+writer anywhere in `Sources/` — and nudges the level toward its target by up to 0.1 dB per gated block (≈ 1 dB/s),
+anywhere from −20 to +12 dB (`Sources/AudioDSP/Loudness/LoudnessModule.cpp:276-299`; `LoudnessModule.h:55-57`). It is
+silent today only because Intensity is held at 0: P0 and P1 never run it (`Sources/AudioDSP/DSPKernel.cpp:251-262`);
+the day Intensity came back, so would it. **The fix, R1.1-B (US-R1F-10):** Leveling is Off / Auto / Album / Track at
+**−18 LUFS**, one fixed gain per track or album through the existing per-track gain (`TrackLoudnessGain` →
+`eq.outputGainDb`), capped at (ceiling − the track's true peak) — the analysis gains a true-peak field it has none of
+today (`Sources/AudioDSP/Loudness/TrackLoudnessProfile.h:88-108`); a fixed −5 dB cut for a track of unknown loudness;
+our own analysis first, a file tag only for a track not yet analysed; a gapless album takes the album gain even in
+Track mode; the target shown; the normaliser deleted. In Pure, Leveling is a cut on the device's own volume through
+the loan (the Master Gain row under [Known limitations](#known-limitations-by-design-or-not-yet-built)). Nothing in
+Intensity's return (S17) brings it back: Intensity scales only Clarity depth and the room amount, as settings.
+**Proof** ([validation strategy](../architecture/validation-strategy.md#verifying-the-2026-10-23-sound-decisions)):
+libebur128 on the published gain per track and album (`Loudness_Oracle_Integrated_vs_ebur128`'s 0.2 LU); the
+limiter's gain reduction 0 dB over the leveled corpus; an Intensity sweep 0 → 1 → 0 with Leveling Off leaves
+integrated LUFS within 0.1 dB (the AGC is gone, not hidden); a gapless pair in Album mode shows one constant gain
+across the seam.
 
 ---
 
@@ -287,6 +352,11 @@ The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" 
 `EQStore.unpin` sets `shared = slot.state` (`Sources/EQEditKit/EQStore.swift:112-115`; documented as intended at
 `:109-111`, ui-plan §3.3); `togglePin` offers no Bring back (`EQSession+Slots.swift:76`). Every other output silently
 loses its (possibly edited) EQ.
+
+*(Decided 2026-10-23, card 6: **S12** — fixed in the same change that extends the per-output memory with the
+parametric bands and the correction choice; unpinning stops writing the pin's state over the shared slot. Proof: a
+Swift Testing case in `EQEditKitTests` — pin an output, edit, unpin: the shared slot's state is what it was before the
+pin, and every other output plays what it played.)*
 
 ### KI-EQ-02 — Esc during a graph drag re-announces "Bring back edits"
 
@@ -618,9 +688,87 @@ the engine knows a pause from a stop (`stopAudio(epoch:pausing:)`), and Pure's h
 Pure is the device's path (`MasterGainOnPure`, `PureVolumeEvent`) — a pause keeps the level Pure set; only the rate
 and hog mode still go and come back.
 
+*(Decided 2026-10-23: stays parked on the USB-DAC check (FD-5), and the check list grows — "volume keys during Pure,
+then the end of the queue" (the loan's give-back), and Leveling's cut on the loan (card 1, R1.1-B — verifiable on the
+XM4 now). The Engine sprint's acceptance carries the output-side conversion measurement: a −0.1 dBTP signal through the
+48 → 44.1 kHz AUHAL path, its peak read at a HAL tap or loopback; an overshoot beyond the limiter's 0.27 dB working
+margin (`Sources/AudioDSP/Limiting/LimiterModule.h:103-105`) keeps the −0.1 dB ceiling's rate condition.)*
+
 *(KI-UI-02 — the spectrum analyser read about 4 dB high and two 20 Hz timers ran while idle — and KI-UI-03 — the
 analysis workers polled about 200 times a second while paused — were fixed in R1.1-A; see
 [Closed](#fixed-in-r11-a--live-readouts-branch-r11areadouts).)*
+
+---
+
+## Found by the 2026-10 roadmap reconciliation
+
+The [reconciliation](roadmap-reconciliation-2026-10/README.md)'s four reviewers read the plan and the source
+([technical synthesis](roadmap-reconciliation-2026-10/technical-synthesis.md)); three defects a listener can meet had
+no entry above. File:line references were re-checked in `main` on 2026-10-23.
+
+### KI-EQ-04 — The EQ plays flat below 44 kHz
+
+**Status:** OPEN, latent · **Severity:** LOW today (unreachable: the Enhanced graph runs at 48 kHz on every edge);
+HIGH the day the graph follows the device rate (wrong audio: the screen says the EQ is on and nothing plays it) ·
+**Source:** reconciliation card 9 (council C-49) · **Scheduled (2026-10-23):** the Engine sprint · **Forward:**
+[EP-PLAYENGINE](backlog.md#ep-playengine--the-engine-sprint) (US-PE-01's discovery list; US-PE-03's acceptance).
+
+The graphic-EQ designer's domain starts at 44 kHz: `kMinSampleRateHz = 44000.0`
+(`Sources/AudioDSP/EQ/GraphicEQDesigner.h:63`; the reason at `:59-62` — below ~44 kHz the top band's centre,
+19.95 kHz, is not safely under Nyquist). Outside it `design()` returns false and the Realizer publishes the identity —
+"no EQ design at … Hz — playing flat" (`Sources/AudioDSP/AudioEngine/Realizer.mm:403-412`). Today the graph is pinned
+at 48 kHz, so the case never arises. The Engine sprint moves processing to the device's own rate; a Bluetooth headset
+with its microphone on drops to 16 or 24 kHz, and the EQ would silently play flat while the graph draws a curve and
+the chip says it plays. **The fix (the Engine sprint's design, one of two):** a reduced band set below 44.1 kHz (the
+centres above Nyquist dropped, the rest solved), or a 44.1 kHz floor on the engine's rate with AUHAL's output-side
+conversion measured. **Proof:** with the band set, `EQ_Sweep31Bands_*` run at 16, 24 and 32 kHz — every band whose
+centre lies under Nyquist plays within ±1.0 dB of its target (the existing contract) and the read-back marks the bands
+that do not play; with the floor, the conversion measurement (a −0.1 dBTP signal through the AUHAL path, its overshoot
+read at a HAL tap, inside the limiter's 0.27 dB margin).
+
+### KI-SND-06 — Crossfeed does nothing on a 5.1 / 7.1 file, and the "XF" chip still shows
+
+**Status:** OPEN · **Severity:** MEDIUM (what the screen shows is not what plays; the workaround is the format badge) ·
+**Source:** reconciliation card 5 (the chain review's F13) · **Scheduled (2026-10-23):** R1.1-B — the chip and the
+switch read the kernel's bypass, and the fold badge says crossfeed is off; the Engine sprint — crossfeed after the
+fold · **Forward:** US-R1F-08, US-R1F-12.
+
+Crossfeed is stereo-only: at any other width `CrossfeedModule::process` is a bit-exact pass-through
+(`Sources/AudioDSP/Spatial/CrossfeedModule.cpp:47-54`; `isBypassed`, `:40-41`), and it runs in the effects unit at the
+file's width N, *before* the spatial unit that narrows to the device (`AudioEngineBridge+Graph.swift:65-73`). So on a
+5.1 album on headphones crossfeed never plays. The chip does not know: `SignalPathInfo.audibleCrossfeed` is the chosen
+strength whenever the path is Enhanced (`Sources/AdaptiveSound/SignalPathInfo.swift:104-109`), from `crossfeedPlays =
+crossfeedEnabled && deviceIsHeadphones` (`AudioViewModel.swift:233-235`) — the channel count is never consulted — and
+the hero shows "XF:Strong" (`UI/NowPlaying/HeroBand.swift:110-115`). R1.1-B's interim fold keeps the fold in the
+spatial unit, downstream of crossfeed, so the listener's switch still does nothing on a surround album until the
+Engine sprint. **The fix:** R1.1-B — the chip and the crossfeed switch (the Headphones control from S18) read the kernel's own bypass, so "XF" never
+shows when nothing plays and the "5.1 → stereo" badge says crossfeed is off here; the Engine sprint — the fold moves
+inside the engine before the one limiter and crossfeed runs after it, on the folded stereo. **Proof:** R1.1-B — a 5.1
+file on headphones with crossfeed on shows no "XF" chip and the switch says why (Swift Testing, `AdaptiveSoundTests`);
+`Crossfeed_NonStereo_PassThrough` keeps guarding the kernel. The Engine sprint — a stereo-in-5.1 file (C / LFE / Ls /
+Rs silent) through the fold then crossfeed nulls against the plain stereo file through crossfeed, sample for sample
+within 1.5e-7 (the bs2b reference's own tolerance, `Crossfeed_MatchesBs2bReference`).
+
+### KI-SND-07 — The EQ-only ceiling is chosen by the transport alone, not by the output's rate
+
+**Status:** OPEN, latent · **Severity:** LOW today (the founder's only wired output, the HDMI soundbar, is 48 kHz-locked —
+the engine's rate — so the case never arises); MEDIUM the day a wired DAC at 44.1 or 96 kHz is connected (a −0.1 dBTP
+peak sent into a conversion nobody has measured) · **Source:** the reconciliation's ceiling decision ([architecture §0,
+the decision-29 amendment](../architecture/architecture.md)) · **Scheduled (2026-10-23):** the Engine sprint ·
+**Forward:** [EP-PLAYENGINE](backlog.md#ep-playengine--the-engine-sprint) (US-PE-03), NFR-QUAL-05.
+
+`eqOnlyCeilingLinear(transportType)` returns the −0.1 dBTP EQ-only ceiling for every wired transport (built-in, USB,
+FireWire, Thunderbolt, PCI, HDMI, DisplayPort, AVB) and −1 dBTP for everything else
+(`Sources/AudioDSP/Limiting/OutputCeiling.h:19-40`); it never consults the device's sample rate. The 2026-10-23 decision
+scopes −0.1 dBTP to outputs that are lossless *and* run at the engine's 48 kHz; on a wired output at another rate AUHAL
+converts after the engine (unmeasured), so the decided ceiling there is −1 dBTP until the conversion is measured. Today
+a 44.1 kHz USB DAC with the EQ on would get −0.1 dBTP. **The fix (the Engine sprint):** the ceiling selection takes the
+transport *and* whether the device rate equals the graph rate; the sprint's conversion measurement (a −0.1 dBTP signal
+through the 48 → 44.1 kHz AUHAL path, its overshoot read at a HAL tap, inside the limiter's 0.27 dB working margin)
+then keeps the rate condition or lifts it. With the peak-safe turn-down (US-R1F-19) the limiter rarely acts on an
+EQ'd track anyway, which makes the ceiling's exact value matter less. **Proof:** a null-test case that a wired device
+whose rate differs from the graph rate gets −1 dBTP on the EQ-only path; the measurement above, recorded in the Engine
+sprint's report.
 
 ---
 
@@ -634,7 +782,8 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 — release readiness, deferred (FD-7, 2026-10-14) |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, 231a927; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
-| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure is left — a stop that ends playback, Enhanced starting, the output moving, quit — but **not at a pause** (founder 2026-10-16: playback resumes there, so the level stays and the Mac's volume indicator doesn't jump); a volume-key press in Pure, or while paused in it, is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain"). **Never louder than Master Gain says** (close-out H-1): a cut deeper than the device's own range waits ("Pure waits: device range"); Silent mutes a device that has a mute (given back with the volume), else waits. While Pure already plays, the slider moved below the device's floor mutes a device that has a mute; **one without holds its floor until the next start**, which waits | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). The loans are written ahead of every device change (`PureVolumeLoanJournal`, H-2); a device unplugged while lowered gets its level back when it is seen again (a transport event, a device-list change) or at the next launch | — (by design) |
+| **On Pure, Master Gain turns the output device's own volume down** (the macOS volume shows it): Pure engages at any level, lowered by the cut from the level found and put back when Pure is left — a stop that ends playback, Enhanced starting, the output moving, quit — but **not at a pause** (founder 2026-10-16: playback resumes there, so the level stays and the Mac's volume indicator doesn't jump); a volume-key press in Pure, or while paused in it, is kept, read as a change to the Mac's own volume with the cut on top, and Pure never sets the device above the level it found (a big raise in Pure comes back capped). **On a device with no volume the app can set** (many DACs, HDMI), Pure waits while Master Gain is turned down, and says so ("Pure waits: Master Gain"). **Never louder than Master Gain says** (close-out H-1): a cut deeper than the device's own range waits ("Pure waits: device range"); Silent mutes a device that has a mute (given back with the volume), else waits. While Pure already plays, the slider moved below the device's floor mutes a device that has a mute; **one without holds its floor until the next start**, which waits | R1.1-A (founder 2026-10-15, council C-29; replaces "Pure waits" where a volume exists). `MasterGainOnPure` (EQEditKit). The loans are written ahead of every device change (`PureVolumeLoanJournal`, H-2); a device unplugged while lowered gets its level back when it is seen again (a transport event, a device-list change) or at the next launch. **Decided 2026-10-23 (card 1, R1.1-B):** the loan also carries **Leveling's cut in Pure** — cut-only, set at the track change, in the device's own steps (under the ~1 dB a listener notices between tracks, never inside one), the loan taught to tell its own moves from the listener's (today any reading more than 0.05 dB from its last set re-anchors as the listener's — `MasterGainOnPure.swift:179, 226-227, 276-277` — so an untaught loan would creep down track after track); the soundbar (`.fixed`: no volume the app can set) gets none and the badge says so; the readout shows both numbers; a "Volume restored" toast when Pure hands the device volume back (R1.1-B, in US-R1F-10's Pure acceptance; it fires on a stop that ends playback, the end of the queue, Enhanced starting or the output moving — not on a pause or a device loss). Proof: ten Pure track changes on the XM4 leave the device at (the level found − the playing track's cut) within one device step, no creep; the give-back returns the level found exactly | — (by design); the Leveling cut: US-R1F-10 |
+| **Every processing stage is Enhanced-only** — the EQ and crossfeed today; Leveling, Loudness, correction, Clarity and Spatial as they arrive — and in Pure each control shows one shared **"Not in bit-perfect mode"** state (first instance R1.1-B with Leveling, reused by every later stage; the Pure badge lists what is skipped); the Pure card says in one sentence why there are two "untouched" states (Pure, and Enhanced with nothing on — over Bluetooth the same bits into the same encoder); Enhance in Pure reads "Not in bit-perfect mode — leave Pure?" with one tap | Decided 2026-10-23 ([roadmap reconciliation](roadmap-reconciliation-2026-10/README.md), cards 3 and 11, and the smaller items); Leveling is the one stage that reaches Pure, on the device's volume (the row above) | R1.1-B: US-R1F-20 (the shared row state; the Pure card's sentence); each later stage reuses it; Enhance's Pure line: US-UI-08 (S14-lite) |
 | **A loose song off the startup disk is never offered by Remove Missing**, only shown unavailable — even if it was really deleted | R1.1-A close-out AV-1 (option b): a loose song has no drive binding, so only on the startup disk can its folder being there prove it gone; elsewhere a same-named drive may stand in its drive's place (`FileAvailability`) | a volume column on loose rows (option a, v10) if it is ever wanted |
 | **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, 231a927; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (67e4a50 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
@@ -797,7 +946,11 @@ is not ('ispk' / 'espk'; the MacBook Pro's speakers read 'ispk'). Without one, o
 transport decides: Bluetooth and USB yes, AirPlay no (a receiver: a HomePod, a TV). Limits: a Bluetooth speaker that
 reports no data source still reads as headphones (crossfeed plays there only if the listener turned it on); a pre-2018
 Mac whose single built-in device switches its data source when headphones go in is read when the device list is, with
-no data-source listener. *The original entry:*
+no data-source listener. *(2026-10-23, cards 7 and 8: US-R1F-12's "can be enabled on any output" is aligned to this
+gate; the gate's rule becomes per-output memory, the output's class only as the default for a never-seen output, and a
+manual override — crossfeed remembered per output in **S13** (US-TON-02 Part B / US-DEVICE-03), the one "Headphones:
+Off / Crossfeed / Spatial" control replacing the switch in S18 — plus one per-output question, "What's plugged into
+this output?", so headphones on a USB DAC read as headphones — **S13**.)* *The original entry:*
 
 ~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** product council, code reading 2026-10-13 · **Scheduled (2026-10-14):** R1.1-A (headphones detected by data source, with the crossfeed fix — council C-42, C-30) · **Forward:** US-R1F-12, US-R1F-06 (and S13 device identification).~~
 
@@ -1111,7 +1264,10 @@ Gain is turned down". Each fix landed with its red test first: the regression te
 (`AudioViewModel.offersIntensity`) and held at 0 until S17 — never restored. At 0 the kernel runs P0 (bit-exact, with
 the EQ off) or P1 (EQ → limiter at the EQ-only ceiling): never the normaliser (leveling, C-38) nor the blend's +2 dB
 (C-40). A new install's EQ is Flat and Off (`EQMigration.freshInstall`); an existing EQ keeps its own memory. Leveling
-becomes its own setting, off by default, in R1.1-B (US-R1F-10). Consequence: KI-SND-05 (closed by the sound lane:
+becomes its own setting, off by default, in R1.1-B (US-R1F-10) *(2026-10-23: Off / Auto / Album / Track at −18 LUFS,
+one fixed gain per track or album, the old auto-leveller removed — see [Settings and levels](#settings-and-levels);
+Intensity's return, S17, scales only Clarity depth and the room amount, as settings, default 0 — never a leveller,
+never a hand-set switch)*. Consequence: KI-SND-05 (closed by the sound lane:
 crossfeed now plays on its own). *The original entry:*
 
 ~~**Status:** OPEN · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-A (FD-2) · **Forward:** US-R1F-09.~~
