@@ -5,7 +5,7 @@ This directory contains the sprint methodology, the forward sprint schedule, and
 ## The two authoritative docs
 
 - **[`sprint-plan.md`](sprint-plan.md) — the authoritative forward sprint schedule (S6–S18).** What we build next and in what order: Phase 1 (player maturity / competitive parity) → Phase 2 (the Adaptive Sound differentiation pivot). Encodes the founder's 2026-06-19 strategy. **Start here for "what's next."**
-- **[`00-sprint-model.md`](00-sprint-model.md) — the authoritative sprint / Kanban methodology** (5–10 SP sprints, done-done criteria, enabler-first ordering). The *how*, not the *what-next*.
+- **[`00-sprint-model.md`](00-sprint-model.md) — the development process every sprint runs** (roles; the full loop and the lighter routine; the gate tiers; break-it; the founder's check; done-done; releases). The *how*, not the *what-next*.
 
 > **Sprint-numbering note:** `sprint-plan.md` opens a fresh forward sequence at **S6**. The older per-sprint docs below use their own historical numbers (Sprint 4 / 5 / 5b / "Sprint 6"). These do **not** map onto the new S6+ scheme — in particular the old **`06-sprint-6-adaptive-clarity`** ("Sprint 6") is **not** the new plan's **S6** (the architecture-review gate; DSP-gate hardening is S7). The old docs are historical records, not current plans.
 
@@ -62,7 +62,7 @@ The naming has evolved across three eras. **All three are sanctioned** — do no
 **Era 3 — cross-sprint topical design docs:** `{feature}-{design|plan}.md`
 - For designs not owned by a single sprint (GUI layout, controls). Examples: `layout-architecture-design.md`, `eq-controls-redesign.md`.
 
-**Special files:** `sprint-plan.md` (authoritative forward schedule), `00-sprint-model.md` (methodology), `qw1-quick-win-differentiators-design.md` (the QW1 exception burst).
+**Special files:** `sprint-plan.md` (authoritative forward schedule), `00-sprint-model.md` (the development process), `qw1-quick-win-differentiators-design.md` (the QW1 exception burst).
 
 ---
 
@@ -83,7 +83,7 @@ See [Sprint 4 Test Strategy](../sprints/04-sprint-4-loudness-safety-test-plan.md
 ```markdown
 ## Active Sprint
 
-**Sprint 4:** [Loudness Safety](docs/sprints/04-sprint-4-loudness-safety-plan.md)
+**Sprint 4:** [Loudness Safety](04-sprint-4-loudness-safety-plan.md)
 ```
 
 ---
