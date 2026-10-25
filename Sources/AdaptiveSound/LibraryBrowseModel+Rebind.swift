@@ -6,11 +6,10 @@ import LibraryStore
 
 @MainActor
 extension LibraryBrowseModel {
-    /// What the app says after "Use this drive" (`MusicFolderStatus.rebindMessage`), and whether it is a
-    /// refusal — said in a dialog — or the rebind's outcome — said in the toast.
+    /// A refusal of "Use this drive" (`MusicFolderStatus.rebindMessage`), said in a dialog; a done rebind is
+    /// said in the toast instead.
     struct RebindNotice: Equatable, Identifiable {
         let message: String
-        let isRefusal: Bool
 
         var id: String {
             message
@@ -29,6 +28,6 @@ extension LibraryBrowseModel {
             showToast(message)
             return nil
         }
-        return RebindNotice(message: message, isRefusal: true)
+        return RebindNotice(message: message)
     }
 }

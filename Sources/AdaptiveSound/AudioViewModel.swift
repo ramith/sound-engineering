@@ -276,10 +276,9 @@ final class AudioViewModel {
     /// itself once nothing is (council C-52). Internal (not private) for `+TransportTick`.
     @ObservationIgnored var transportTicker: (any TransportTicker)?
 
-    /// Test seams, each defaulting to what the app uses: the tick's ticker (the main run loop's timer), the
-    /// clock the debounces sleep on, and the fire-and-forget work the view model spawns (`WorkTracker`).
+    /// Test seams, each defaulting to what the app uses: the tick's ticker (the main run loop's timer) and
+    /// the fire-and-forget work the view model spawns (`WorkTracker`).
     @ObservationIgnored let makeTicker: TransportTickerMaker
-    @ObservationIgnored let clock: any Clock<Duration>
     @ObservationIgnored let work = WorkTracker()
 
     /// Whether the transport tick may run: from engine-ready (`armTransportTick`) to shutdown. Off in
@@ -430,12 +429,10 @@ final class AudioViewModel {
     /// A view model over `defaults` that starts with the settings the listener left there — on a new
     /// install, the faithful default (FD-2).
     init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge(),
-         makeTicker: @escaping TransportTickerMaker = RunLoopTicker.make,
-         clock: any Clock<Duration> = ContinuousClock()) {
+         makeTicker: @escaping TransportTickerMaker = RunLoopTicker.make) {
         self.defaults = defaults
         self.engine = engine
         self.makeTicker = makeTicker
-        self.clock = clock
         settingsStore = SettingsStore(defaults: defaults)
         spectrum = SpectrumSampler(engine: engine)
         eqDesignRate = engine.snapshot().eqDesignRate
