@@ -283,9 +283,12 @@ public final class LibraryStore: Sendable {
     /// re-scan), not by wiping the file. Dev reset: add a migration, or delete the DB file by hand.
     ///
     /// ONE registration list, shared with the verify harness (S10.8 C2): `version` caps the steps
-    /// registered (the harness builds genuine older stores — a v1 store, the previous release's
-    /// v6 store — through it) and `timestamp` stamps `schema_info` (the harness pins it). So the
-    /// harness proves THIS list, never a hand-kept copy that could drift from it.
+    /// registered — each step reaches the version its identifier names (`Schema.MigrationID.version`) —
+    /// (the harness builds genuine older stores — a v1 store, the previous release's store — through
+    /// it) and `timestamp` stamps `schema_info` (the harness pins it). So the harness proves THIS list,
+    /// never a hand-kept copy that could drift from it. The versions rise in list order and the last is
+    /// `currentSchemaVersion`; one may be absent while two branches each add a step in parallel (R1.1-B's
+    /// v10 and v11, combined before the release).
     public static func makeMigrator(
         appBuild: String?, through version: Int = currentSchemaVersion,
         timestamp: (@Sendable () -> Int64)? = nil
@@ -304,12 +307,15 @@ public final class LibraryStore: Sendable {
             (Schema.MigrationID.v8, { try Schema.migrateV7toV8($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v9, { try Schema.migrateV8toV9($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v10, { try Schema.migrateV9toV10($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v11, { try Schema.migrateV10toV11($0, appBuild: appBuild, timestamp: $1) }),
         ]
-        assert(steps.count == currentSchemaVersion, "currentSchemaVersion must equal the registered step count")
+        let versions = steps.map { Schema.MigrationID.version(of: $0.id) ?? 0 }
+        assert(versions.last == currentSchemaVersion && zip(versions, versions.dropFirst()).allSatisfy(<),
+               "each step must name the version it reaches, rising, ending at currentSchemaVersion")
         let clock = timestamp ?? { nowSeconds() }
         var migrator = DatabaseMigrator()
         migrator.eraseDatabaseOnSchemaChange = false
-        for step in steps.prefix(version) {
+        for (step, stepVersion) in zip(steps, versions) where stepVersion <= version {
             if step.id == Schema.MigrationID.v7 {
                 // From v7 on, GRDB's WHOLE-database deferred foreign-key check is off (C2 fix round,
                 // A3): one unrelated stale reference anywhere (a `tracks.artwork_key` …) must not

@@ -37,8 +37,12 @@ func storeOpenSafetyCheckCases() -> [CheckCase] {
 
 // MARK: - Shared fixture
 
-/// The schema the previous release wrote — what an upgrade starts from.
-private let previousSchemaVersion = currentSchemaVersion - 1
+/// The schema the previous release wrote — what an upgrade starts from: the version the production list's
+/// last-but-one step reaches (each step names its version, `Schema.MigrationID.version`).
+private let previousSchemaVersion: Int = {
+    let versions = fullMigrator().migrations.compactMap(Schema.MigrationID.version(of:))
+    return versions.dropLast().last ?? 0
+}()
 
 /// The rows every fixture seeds, so "kept" can be counted.
 private let seededFolderCount = 3
@@ -67,7 +71,7 @@ func checkMigrationFailureRefused(number: Int, url: URL) async -> Bool {
         // The previous release's steps, then an upgrade step that writes and THEN fails — the shape
         // of a disk-full, I/O or foreign-key failure partway through a real migration.
         var failing = migrator(through: previousSchemaVersion)
-        failing.registerMigration("open01-failing-upgrade") { db in
+        failing.registerMigration("v\(currentSchemaVersion)-open01-failing-upgrade") { db in
             _ = try seedFolders(db, count: 2, prefix: "doomed")
             throw MigrationTestError()
         }
@@ -137,7 +141,7 @@ func checkBackupBeforeUpgrade(number: Int, url: URL) async -> Bool {
         // Two more upgrades (no-op steps past the current schema): the oldest backup is pruned.
         var ahead = fullMigrator()
         for step in 2 ... 3 {
-            ahead.registerMigration("open02-step-\(step)") { _ in }
+            ahead.registerMigration("v\(currentSchemaVersion + step - 1)-open02-ahead") { _ in }
             _ = try await LibraryStore(url: url, migrator: ahead, stamp: "OPEN02-\(step)")
         }
         let expected = (2 ... 3).map { step in

@@ -126,14 +126,19 @@ extension LibraryStore {
         }
         if !upToDate {
             do {
-                // One registered step per schema version (`makeMigrator` asserts it): the count is the target.
-                try StoreBackup.backUp(connection, storeURL: url, targetVersion: migrator.migrations.count,
+                try StoreBackup.backUp(connection, storeURL: url, targetVersion: targetVersion(of: migrator),
                                        stamp: stamp)
             } catch {
                 throw StoreOpenRefusal.backupFailed(error)
             }
             try migrator.migrate(connection)
         }
+    }
+
+    /// The schema version `migrator` brings a store to: the version its last step names
+    /// (`Schema.MigrationID.version`), or — for a harness's own step, which names none — its step count.
+    private static func targetVersion(of migrator: DatabaseMigrator) -> Int {
+        migrator.migrations.last.flatMap(Schema.MigrationID.version(of:)) ?? migrator.migrations.count
     }
 
     /// Open the store's `DatabasePool` and migrate — the whole schema for a new file, a no-op for an

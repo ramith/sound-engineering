@@ -217,7 +217,7 @@ func searchCheckCases() -> [CheckCase] {
         CheckCase(label: "fts-noop-rescan-zero-writes", run: checkFtsNoOpRescanZeroWrites),
         CheckCase(label: "fts-read-during-write", run: checkFtsReadDuringWrite),
         CheckCase(label: "fts-matching-ids", run: checkFtsMatchingIDsParity),
-    ] + searchTokensCheckCases()
+    ] + searchTokensCheckCases() + searchRuleCheckCases()
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
@@ -392,7 +392,9 @@ private func printRunSummary(passed: Int, total: Int) {
         + "[album once, cover once, art-less skipped, no-cover genre absent, two genres count], GC-03 empty, "
         + "GC-04 EXPLAIN no-SCAN-tracks, GC-05 300 genres [reference parity + 100 ms bound], GC-06 write path; "
         + "S10.8 G: WO1 overlapping walks never lower a stamp [the later sweep keeps what either saw], "
-        + "PL gate1-queue-not-kept [removeRoot keeps only user-playlist songs] + replace-skips-gone) ===")
+        + "PL gate1-queue-not-kept [removeRoot keeps only user-playlist songs] + replace-skips-gone; "
+        + "R1.1-B one search rule: SR-1 rule == SQLite tokenizer on every Unicode scalar, SR-2 v11 joiner "
+        + "re-index [user data kept], SR-3 the counter-examples) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
