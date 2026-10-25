@@ -79,6 +79,8 @@
         /// The rail's Music Folders with paused folders (R1.1-A, KI-LIB-02): one watched, one whose drive
         /// is unplugged and one the app may not open — each paused row's question-mark folder and reason.
         case folderPaused = "folder-paused"
+        /// The Library's Search page (R1.1-B, ⌘F) with results in every section it fills.
+        case search
         /// The Monitoring worlds (S10.8 G1) — the Monitoring tab only, dark and light at both sizes: mono
         /// (one lens filling the height), 5.1 and 7.1 (the lenses at their least height, the column
         /// scrolling with the next lens peeking at the bottom). Stereo is every other world's.
@@ -119,6 +121,7 @@
             case .albums: .albums
             case .artists: .artists
             case .genres, .gridStates: .genres
+            case .search: .search
             default: nil
             }
         }
@@ -143,7 +146,7 @@
         var sizes: [NSSize] {
             switch self {
             case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage,
-                 .monitorMono, .monitor51, .monitor71:
+                 .monitorMono, .monitor51, .monitor71, .search:
                 [Self.defaultSize, Self.minimumSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
@@ -181,7 +184,7 @@
             case .ringRail: [.library, .eq]
             case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates,
                  .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
-                 .playlistFailure, .folderRemove, .folderPaused: [.library]
+                 .playlistFailure, .folderRemove, .folderPaused, .search: [.library]
             case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure: [.settings]
             case .monitorMono, .monitor51, .monitor71: [.monitoring]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
