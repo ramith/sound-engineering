@@ -1,5 +1,7 @@
 # How other players structure the same stack — a review of AdaptiveSound's scheduled sound features
 
+> *Correction, 2026-10-25: Pure declines Bluetooth, so on the founder's XM4 the app always plays Enhanced; where this record calls Pure the founder's daily mode, that premise was wrong. Leveling in Pure was deferred until the USB DAC arrives ([sprint plan §11](../../../sprints/sprint-plan.md)).*
+
 *2026-10-23 · independent reviewer, lens = "how mature players actually do it". Every outside claim comes from a source opened in this session (URL or a local copy under the reviewer's local evidence copies (URLs listed below; copies not in the repo)). Every "ours" claim is cited to this checkout (`testrig/integration` @ e76edf6, worktree `/Users/ramith/code/sound-engineering/.claude/worktrees/testrig-integration`) as `Sources/…:line` when it is in code, or marked "docs only — not verified in our code" when it rests on a document sentence. Read-only; nothing built, nothing played.*
 
 ---
