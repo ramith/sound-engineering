@@ -102,7 +102,8 @@ func checkQueueStateAdditive(number: Int) -> Bool {
         }
         let fresh = try DatabaseQueue()
         try migrator(through: 10).migrate(fresh)
-        guard try fresh.read({ db in try schemaFingerprint(db) }) == previous.read({ db in try schemaFingerprint(db) }) else {
+        let freshSchema = try fresh.read { db in try schemaFingerprint(db) }
+        guard try previous.read({ db in try schemaFingerprint(db) }) == freshSchema else {
             printFail(number, "QS-2: a v9 store upgraded to v10 differs from a fresh v10 install")
             return false
         }

@@ -19,6 +19,12 @@
 import Foundation
 import GRDB
 
+public extension Schema.MigrationID {
+    /// v9 → v10: the queue's resume state, one record written in one transaction (R1.1-B, C-65). Declared
+    /// here, beside its migration: `Schema`'s own body is at its length limit.
+    static let v10 = "v10-queue-state"
+}
+
 public extension Schema {
     /// The v10 tables. One row each (`id = 1`), so "the" queue state is a primary-key read. The checks
     /// make a half-formed row impossible to store: a record revision is positive, a playhead is a place.

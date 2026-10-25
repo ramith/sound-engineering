@@ -86,9 +86,6 @@ public enum Schema {
         /// v8 → v9: the search index recreated so every mark is part of its word, and rebuilt in one
         /// normal form (R1.1-A, council C-61). See `Schema+SearchTokens.swift`.
         public static let v9 = "v9-search-tokens"
-        /// v9 → v10: the queue's resume state, one record written in one transaction (R1.1-B, C-65). See
-        /// `Schema+QueueState.swift`.
-        public static let v10 = "v10-queue-state"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
