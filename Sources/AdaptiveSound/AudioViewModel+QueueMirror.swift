@@ -63,8 +63,10 @@ extension AudioViewModel {
     /// The playhead moved. A pause, a scrub while paused or a stop (`cadenced: false`) is written at once; a
     /// playing song's playhead each time it has moved `playheadCadenceSeconds`.
     func queuePlayheadMoved(cadenced: Bool) {
+        // A playhead back at 0 is a stop or a new song: written at once, so a stop never resumes mid-song.
         let moved = abs(playbackPosition - queueStateBook.playheadAsked)
-        guard !cadenced || moved >= QueueResumeRecord.playheadCadenceSeconds else { return }
+        guard !cadenced || moved >= QueueResumeRecord.playheadCadenceSeconds || playbackPosition == 0
+        else { return }
         askForQueueStateWrite()
     }
 

@@ -8,7 +8,7 @@ import Testing
 
 //
 // The shipped `AudioViewModel` against `OnDeckEngineModel` (`Rig`): the transport buttons go through the
-// same rule as the auto-advance (`QueueAdvance`, `manualSkip: true`), and while a song plays they start
+// same rule as the auto-advance (`PlaybackOrder`, `manualSkip: true`), and while a song plays they start
 // the song they land on. A press with nowhere to go sends the engine nothing.
 
 @MainActor
@@ -66,18 +66,16 @@ struct ManualSkipTests {
         }
     }
 
-    @Test("VM-AA-16 (manual): under shuffle, Next and Previous each start another song")
-    func shuffleSkipsToAnotherSong() async throws {
+    @Test("VM-AA-16 (manual): under shuffle, Next starts another song and Previous goes back to the one before")
+    func shuffleSkipsThroughThePass() async throws {
         let rig = try await Rig.playing(tracks: 5, at: 2, pure: false, shuffle: true)
         try await press(rig) { $0.nextTrack() }
         let afterNext = try #require(rig.vm.selectedTrackIndex)
         #expect(afterNext != 2 && (0 ..< 5).contains(afterNext), "shuffle Next landed on \(afterNext)")
         #expect(rig.engine.current == rig.shown, "\(rig.state)")
         try await press(rig) { $0.previousTrack() }
-        let afterPrevious = try #require(rig.vm.selectedTrackIndex)
-        #expect(afterPrevious != afterNext && (0 ..< 5).contains(afterPrevious),
-                "shuffle Previous landed on \(afterPrevious)")
-        #expect(rig.engine.current == rig.shown, "\(rig.state)")
+        #expect(rig.vm.selectedTrackIndex == 2, "shuffle Previous went elsewhere than the song before (R1.1-B)")
+        #expect(rig.engine.current == track(2), "\(rig.state)")
         #expect(rig.engine.heard.count(where: \.isStart) == 3, "each press started a song: \(rig.engine.heard)")
     }
 }
