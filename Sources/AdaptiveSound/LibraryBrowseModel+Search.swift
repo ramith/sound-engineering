@@ -159,3 +159,15 @@ extension LibraryBrowseModel {
         }
     }
 }
+
+#if DEBUG
+    extension LibrarySearchModel {
+        /// Picture-sheet renderer only (`Debug/SheetFixture+Search.swift`): show `results` for `text`,
+        /// without a store.
+        func seedRenderFixture(text: String, results: LibrarySearchResults) {
+            self.text = text
+            self.results = results
+            state = .done
+        }
+    }
+#endif
