@@ -82,7 +82,7 @@ extension AudioViewModel {
     /// defaults' cursor make. Nil when neither holds a queue.
     private func storedRecord(in store: LibraryStore) async throws -> (record: QueueResumeRecord, legacy: Bool)? {
         if let stored = try await store.queueState() {
-            return try (QueueResumeRecord(storedQueue: stored.record, offset: stored.offset ?? 0), false)
+            return try await (Self.decoded(stored), false)
         }
         let entries = try await store.entries(inPlaylist: store.currentPlaylistID())
         guard !entries.isEmpty else { return nil }
@@ -93,6 +93,12 @@ extension AudioViewModel {
             offset: defaults.double(forKey: LegacyCursorKey.offset)
         )
         return (record, true)
+    }
+
+    /// A stored record decoded off the main actor (a whole-library queue is half a megabyte of JSON).
+    @concurrent
+    private nonisolated static func decoded(_ stored: StoredQueueState) async throws -> QueueResumeRecord {
+        try QueueResumeRecord(storedQueue: stored.record, offset: stored.offset ?? 0)
     }
 
     /// Each slot found again: library songs in ONE batched read (QA #4 — no per-song N+1), through the
