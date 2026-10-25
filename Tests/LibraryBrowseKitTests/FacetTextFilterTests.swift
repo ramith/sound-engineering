@@ -1,9 +1,9 @@
 import LibraryBrowseKit
 import Testing
 
-// MARK: - FacetTextFilter (S9.6 — per-section in-place filter)
+// MARK: - FacetTextFilter (S9.6 — per-section in-place filter; R1.1-B — the one word-start rule)
 
-@Suite("FacetTextFilter — case-insensitive substring narrow")
+@Suite("FacetTextFilter — the one search rule: every query word starts a word")
 struct FacetTextFilterTests {
     @Test("empty / whitespace query matches everything (filter off)")
     func emptyMatchesAll() {
@@ -12,11 +12,33 @@ struct FacetTextFilterTests {
         #expect(FacetTextFilter.matches(["Abbey Road", "The Beatles"], query: "\n"))
     }
 
-    @Test("case-insensitive substring on the single candidate")
-    func singleSubstring() {
+    @Test("case-insensitive word start on the single candidate")
+    func singleWordStart() {
         #expect(FacetTextFilter.matches("The Beatles", query: "beat"))
         #expect(FacetTextFilter.matches("Jazz", query: "JAZ"))
         #expect(!FacetTextFilter.matches("The Beatles", query: "zeppelin"))
+    }
+
+    /// The founder's decision (2026-10-25): the grids matched substrings until R1.1-B; now a word must start
+    /// with what is typed — "eyon" no longer finds "Beyoncé" (accepted).
+    @Test("the middle of a word no longer matches (“eyon” ≠ “Beyoncé”, “eatles” ≠ “The Beatles”)")
+    func noSubstring() {
+        #expect(!FacetTextFilter.matches("Beyoncé", query: "eyon"))
+        #expect(!FacetTextFilter.matches("The Beatles", query: "eatles"))
+        #expect(FacetTextFilter.matches("Beyoncé", query: "beyo"))
+    }
+
+    @Test("a filter of only punctuation is active and keeps nothing, as the Songs search finds nothing")
+    func punctuationOnly() {
+        #expect(FacetTextFilter.isActive("!!!"))
+        #expect(!FacetTextFilter.matches("Anything", query: "!!!"))
+    }
+
+    @Test("filter keeps the matches in the list's own order, the query read once")
+    func filterKeepsOrder() {
+        let names = ["Rock and Roll", "Jazz", "Punk Rock", "Rockabilly"]
+        #expect(FacetTextFilter.filter(names, query: "rock") { [$0] } == ["Rock and Roll", "Punk Rock", "Rockabilly"])
+        #expect(FacetTextFilter.filter(names, query: " ") { [$0] } == names)
     }
 
     @Test("matches when ANY candidate contains the query (e.g. album title OR artist)")
