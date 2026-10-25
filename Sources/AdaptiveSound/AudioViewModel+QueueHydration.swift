@@ -128,7 +128,7 @@ extension AudioViewModel {
         return record.resolved { slot in
             switch slot {
             case let .track(id): byID[id].map { AudioFile($0) }
-            case let .loose(path): AudioFile(restoringLoose: path)
+            case let .loose(path): AudioFile(looseFileAt: URL(fileURLWithPath: path))
             }
         }
     }

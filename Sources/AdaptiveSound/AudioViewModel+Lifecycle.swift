@@ -118,14 +118,13 @@ extension AudioViewModel {
     /// C handles). Being `async` also lets callers sequence teardown deterministically.
     func shutdown() async {
         logUX("shutdown — was playing=\(isPlaying), commands in flight=\(!work.isIdle)")
-        // S10.2 2c quit-flush: persist the now-playing cursor and write the FINAL queue snapshot
-        // BEFORE `performStop()` zeroes `playbackPosition` — so a clean quit restores exactly where
-        // you left off. Cancel any pending debounced mirror first (this write supersedes it). The
-        // library peer's own teardown has already run (AppDelegate ordering), but its `store` is
-        // still live here, so this last SQLite write lands.
+        // The quit-flush: ask for one last write of the queue's resume record and wait for it BEFORE
+        // `performStop()` zeroes `playbackPosition` — so a clean quit restores exactly where you left
+        // off. The one writer writes as asked (no debounce to cancel). The library peer's own teardown
+        // has already run (AppDelegate ordering), but its `store` is still live here, so this last
+        // SQLite write lands.
         persistQueueCursor()
         settingsStore.flush() // a change made in the quit's own turn is written too
-        queueMirrorTask?.cancel()
         await mirrorQueueNow()
         // Stop the transport tick FIRST so no further tick is scheduled (it polls the engine and could
         // otherwise touch handles we're about to tear down); disarmed, the stop below starts none.

@@ -113,7 +113,7 @@ extension AudioViewModel {
     /// (nil if they disagree) — and the playhead the record keeps beside it.
     func queueStateNow() -> (record: QueueResumeRecord?, offset: Double) {
         let offset = QueueResumeRecord.storedOffset(playbackPosition, selected: selectedSlotID != nil)
-        let record = QueueResumeRecord(queue: queue, id: \.id, ref: \.file.queueSlotRef, selected: selectedSlotID,
+        let record = QueueResumeRecord(queue: queue, id: \.id, ref: \.file.slotRef, selected: selectedSlotID,
                                        offset: offset, shuffle: shufflePass)
         return (record, offset)
     }
@@ -130,27 +130,5 @@ extension AudioViewModel {
     func mirrorQueueNow() async {
         await queueStateWriter.flush()
         queueStateBook.closed = true
-    }
-
-    /// `+Lifecycle.shutdown` cancels this before the last write: the one writer has no task of its own to
-    /// cancel (it writes as asked, not after a debounce), so there is none.
-    var queueMirrorTask: Task<Void, Never>? {
-        nil
-    }
-}
-
-extension AudioFile {
-    /// How this file's queue slot persists (seam S5): a library song by its id; any other file by its path,
-    /// with no `tracks` row (US-LIB-02, "no orphan row").
-    var queueSlotRef: QueueSlotRef {
-        trackID.map { .track(id: $0) } ?? .loose(path: absoluteURL.path)
-    }
-
-    /// A loose file's slot coming back by its path (`+QueueHydration`): named by its filename until its
-    /// tags are read, its length unknown (0) until it plays.
-    init(restoringLoose path: String) {
-        let url = URL(fileURLWithPath: path)
-        self.init(name: url.deletingPathExtension().lastPathComponent, relativePath: "", absoluteURL: url,
-                  format: url.pathExtension.uppercased(), durationSeconds: 0)
     }
 }
