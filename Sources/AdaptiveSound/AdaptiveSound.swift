@@ -144,6 +144,10 @@ struct AdaptiveSound: App {
         // natively; AppShell supplies the content-driven window minimum. (An earlier revision used
         // `.windowStyle(.hiddenTitleBar)`, but the buttons then overlapped the top-left and forced
         // an ~80pt indent on the chrome that misaligned it with the content — founder's call.)
+        // Files opened from Finder (Open With, a drop on the Dock icon) are the app delegate's to play
+        // (`application(_:open:)`, R1.1-B): the window never handles an external event, so opening a file
+        // never opens a second window.
+        .handlesExternalEvents(matching: [])
         .windowBackgroundDragBehavior(.enabled)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1000, height: 720) // open comfortably above the 880×640 hard minimum
