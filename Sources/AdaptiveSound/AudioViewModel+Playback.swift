@@ -47,9 +47,10 @@ extension AudioViewModel {
             resetPlayTracking()
         }
 
-        // Snapshot index and mode for use inside the Task (avoids capturing `self` for
-        // values that could change between now and when the Task body runs).
-        let startIndex = selectedTrackIndex
+        // Snapshot the start's SLOT and the mode for use inside the Task. The slot, not its row: a
+        // queue edit while the start runs (the launch restore joining, a removal above it) moves rows,
+        // and the prime must arm what plays after THIS song, wherever it sits by then.
+        let startSlot = selectedSlotID
         let pureModeSnapshot = pureModeEnabled // the engine decides how Master Gain plays on Pure
         // Numbered now, synchronously: until the engine begins this start, the ticks ignore the
         // samples of the playback it replaces (the old track's playhead and end flag). It owns the
@@ -66,7 +67,7 @@ extension AudioViewModel {
                 // queue with a pick for a replaced playback nor mark playing over what was asked since.
                 guard transportCommand == .start(epoch) else { return }
                 transportCommand = .prime(epoch)
-                await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
+                await primeGaplessPipeline(startSlot: startSlot, pureMode: pureModeSnapshot)
                 guard finish(.prime(epoch)) else { return }
                 isPlaying = true
                 errorMessage = nil
@@ -113,10 +114,10 @@ extension AudioViewModel {
     /// baseline and arm the on-deck track so the engine can pre-schedule it. Runs on the main
     /// actor (the VM's isolation): the baseline comes from the snapshot copy, and the request
     /// (`armOnDeck`) hops to the engine's own queues; it returns once the engine settled it.
-    private func primeGaplessPipeline(startIndex: Int?, pureMode: Bool) async {
+    private func primeGaplessPipeline(startSlot: UUID?, pureMode: Bool) async {
         lastTransitionCount = engine.snapshot().transport.transitionCount // fresh: startAudio sampled it
 
-        let currentIdx = startIndex ?? selectedTrackIndex
+        let currentIdx = startSlot.flatMap(queueRow(of:)) ?? selectedTrackIndex
         let nextIdx = computeNextIndex(current: currentIdx ?? 0, playlistCount: playlist.count)
         if let idx = nextIdx {
             logUX("startPlayback: priming next index=\(idx) pureMode=\(pureMode)")

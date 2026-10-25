@@ -93,7 +93,7 @@ func movePlayhead(_ player: FakePlayer, to seconds: Double) throws {
 /// The pass over the queue's slots, as what each slot plays: comparable across two view models.
 @MainActor
 func passRefs(_ vm: AudioViewModel) -> ShufflePass<QueueSlotRef>? {
-    vm.shufflePass?.relabeled { id in vm.queue.first { $0.id == id }?.file.queueSlotRef }
+    vm.shufflePass?.relabeled { id in vm.queue.first { $0.id == id }?.file.slotRef }
 }
 
 @MainActor
@@ -118,7 +118,7 @@ struct QueueRestoreTests {
         #expect(stored?.offset == 42)
 
         let second = try await world.launch(shuffle: true)
-        #expect(second.vm.queue.map(\.file.queueSlotRef) == first.vm.queue.map(\.file.queueSlotRef))
+        #expect(second.vm.queue.map(\.file.slotRef) == first.vm.queue.map(\.file.slotRef))
         #expect(second.vm.selectedSlotID.flatMap(second.vm.queueRow) == first.vm.selectedTrackIndex)
         #expect(second.vm.pausedResumePosition == 42 && second.vm.playbackPosition == 42 && !second.vm.isPlaying)
         let pass = try #require(passRefs(second.vm))

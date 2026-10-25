@@ -84,7 +84,7 @@ struct QueueRestoreJoinTests {
         player.vm.hydrateQueueOnLaunch()
         try await player.vm.settled()
         var pass = try #require(passRefs(player.vm))
-        let opened = files.map(\.queueSlotRef)
+        let opened = files.map(\.slotRef)
         #expect(pass.current == opened[0], "the opened file is not the pass's song")
         #expect(pass.previous(repeatMode: 0) == kept.current, "the restored song is not the one before it")
         #expect(pass.peekNext(repeatMode: 0) == opened[1], "the second opened file is not next")
@@ -130,11 +130,8 @@ struct QueueRestoreJoinTests {
         rig.engine.holdTransport(false)
         try await rig.quiesce()
         #expect(rig.vm.queue.map(\.file.name) == ["t0", "t1", "Opened", "t2", "t3"] && rig.vm.selectedTrackIndex == 2)
-        // `startPlayback` keeps the start's ROW (`startIndex`, AudioViewModel+Playback.swift — not this lane's) and
-        // its prime arms the row after it: t1, not t2. The fix: keep the slot (`selectedSlotID`) and find its row at
-        // the prime. When it lands, this known issue stops being recorded and the test fails: drop the wrapper.
-        withKnownIssue("the prime arms the row after the start's old row (+Playback's startIndex)") {
-            #expect(rig.vm.pendingNextIndex == 3, "\(rig.state)")
-        }
+        // The start keeps its SLOT, not its row, so the prime arms what follows the opened song after the restore
+        // moved it from row 0 to row 2: t2 (row 3), not t1.
+        #expect(rig.vm.pendingNextIndex == 3, "\(rig.state)")
     }
 }
