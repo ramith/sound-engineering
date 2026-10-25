@@ -184,6 +184,7 @@ func allCheckCases() -> [CheckCase] {
         + albumArtistCheckCases() + albumFixRoundCheckCases() + albumIdentityCheckCases()
         + storeOpenSafetyCheckCases()
         + genreCoverCheckCases()
+        + queueStateCheckCases()
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +

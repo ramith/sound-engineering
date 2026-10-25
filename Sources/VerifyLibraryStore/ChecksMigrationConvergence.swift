@@ -31,8 +31,9 @@ func migrationConvergenceCheckCases() -> [CheckCase] {
 /// `folders.volume_uuid`: the v7 golden was 1282ef7f4acef388, and the v8 fingerprint without that one
 /// column hashes to it exactly. v9 (R1.1-A, C-61) recreated `tracks_fts` with every mark a token
 /// character: the v8 golden was 470fa8ed1281e861, and the v9 fingerprint with that one table's v2 DDL
-/// hashes to it exactly.
-let goldenSchemaFingerprintHashV9 = "43e71785e404bffc"
+/// hashes to it exactly. v10 (R1.1-B, C-65) appended the two queue-state tables: the v9 golden was
+/// 43e71785e404bffc, and `ChecksQueueState` QS-2 proves v10 adds those two and changes nothing else.
+let goldenSchemaFingerprintHashV9 = "e1d05add49df928a"
 
 // MARK: - Fingerprint
 
