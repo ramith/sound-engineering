@@ -93,12 +93,19 @@ extension AudioViewModel {
                 logUX("queue state not written: the queue, the selected song and the shuffle pass disagree")
                 return
             }
-            let storeRevision = try await store.saveQueueState(record: record.encodedQueue(), offset: offset)
+            let storeRevision = try await store.saveQueueState(record: Self.encoded(record), offset: offset)
             queueStateBook.written = (revision, storeRevision)
         } catch {
             queueStateBook.written = nil
             logUX("queue state not written (written whole at the next change): \(error)")
         }
+    }
+
+    /// The record's text, encoded off the main actor: a whole-library queue is half a megabyte of JSON
+    /// (20,000 songs: ~26 ms in a debug build), which the main thread would otherwise spend at every song change.
+    @concurrent
+    private nonisolated static func encoded(_ record: QueueResumeRecord) async throws -> String {
+        try record.encodedQueue()
     }
 
     /// The queue as its resume record holds it now — its slots as they persist (a library song by its id,
