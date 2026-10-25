@@ -199,8 +199,9 @@ func checkFtsQuerySafety(number: Int, url: URL) async -> Bool {
                 return false
             }
         }
-        // Q2: empty / whitespace / all-special / non-token-alphanumeric (½ ①, category No/Nl
-        // that unicode61 drops) → empty results (never a full-table match, never a syntax error).
+        // Q2: empty / whitespace / all-special → empty results (never a full-table match, never a syntax
+        // error). ½ and ① read as digits by the one search rule (NFKC: "1⁄2", "1") — words no song here
+        // has, so they find nothing too.
         for raw in ["", "   ", "\t\n", "* : ( ) -", "\"\"", "()", "½", "①", "½ ①", "^"] {
             guard try await store.search(raw).tracks.isEmpty else {
                 printFail(number, "Q2: query '\(raw)' matched or threw instead of returning empty"); return false

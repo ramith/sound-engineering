@@ -9,11 +9,12 @@
 // the caller's `Database` and runs INSIDE the caller's write transaction (per-track
 // metadata txn, scan batch, sweep txn) — none opens its own.
 //
-// What the index holds is `searchText` of each field (NFKC, R1.1-A / council C-61): the tokenizer
-// compares code points and does not normalise, so a title stored decomposed (an NFD filename from an
-// older Mac drive or a zip) would never meet what the user types. The v9 rebuild writes every row
-// through the same projection and normalisation as a track write, so an upgraded index and a fresh
-// one can't disagree.
+// What the index holds is each field in the search rule's form (`SearchRule.normalized`: NFKC, R1.1-A /
+// council C-61, and the zero-width joiner and non-joiner folded away, R1.1-B): the tokenizer compares
+// code points and does not normalise, so a title stored decomposed (an NFD filename from an older Mac
+// drive or a zip) would never meet what the user types, and a Sinhala conjunct written with its joiner
+// would split in two. The v9 and v11 rebuilds write every row through the same projection and
+// normalisation as a track write, so an upgraded index and a fresh one can't disagree.
 //
 // HIDDEN PREMISE (guard at S10+): the `artist`/`album`/`genre` FTS columns are
 // DENORMALIZED copies of the facet names, correct today only because those names are
@@ -76,8 +77,8 @@ extension LibraryStore {
         }
     }
 
-    /// Rebuild the whole index from `tracks`, every row as `syncSearchRow` writes it — the v9
-    /// migration's backfill (`Schema.migrateV8toV9`), inside its transaction.
+    /// Rebuild the whole index from `tracks`, every row as `syncSearchRow` writes it — the v9 and v11
+    /// migrations' backfill (`Schema.migrateV8toV9`, `Schema.migrateV10toV11`), inside their transaction.
     static func rebuildSearchIndex(_ db: Database) throws {
         try db.execute(sql: deleteAllSearchRowsSQL)
         let rows = try Row.fetchCursor(db, sql: searchRowsSelect + ";")
@@ -86,12 +87,13 @@ extension LibraryStore {
         }
     }
 
-    /// Insert one projection row (`searchRowsSelect`) as its FTS row, every field as `searchText`.
+    /// Insert one projection row (`searchRowsSelect`) as its FTS row, every field in the search rule's
+    /// form (`SearchRule.normalized`).
     private static func insertSearchRow(_ db: Database, _ row: Row) throws {
         let id: Int64 = row[0]
         let fields: [String] = (1 ... 4).map { index in
             let field: String? = row[index]
-            return searchText(field ?? "")
+            return SearchRule.normalized(field ?? "")
         }
         try db.execute(sql: insertSearchRowSQL, arguments: [id, fields[0], fields[1], fields[2], fields[3]])
     }

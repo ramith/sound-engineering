@@ -29,10 +29,11 @@ import GRDB
 /// build does not know trips the downgrade guard (`hasBeenSuperseded` → quarantine + rebuild).
 ///
 /// v2 (S9.2) adds the `tracks_fts` FTS5 table + its v1→v2 backfill. Adding a future version
-/// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
-/// whose body writes `schema_info` at the new version, AND bump this constant — the migration
-/// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 10
+/// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`,
+/// named "v<N>-…" for the version N it reaches) whose body writes `schema_info` at the new version, AND
+/// bump this constant — the migration creates/backfills the schema; this constant is the value the
+/// harness expects to read back.
+public let currentSchemaVersion = 11
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -86,6 +87,21 @@ public enum Schema {
         /// v8 → v9: the search index recreated so every mark is part of its word, and rebuilt in one
         /// normal form (R1.1-A, council C-61). See `Schema+SearchTokens.swift`.
         public static let v9 = "v9-search-tokens"
+        /// v10 → v11: the search index rebuilt in the one search rule's form — the zero-width joiner and
+        /// non-joiner folded away (R1.1-B, US-R1F-14). See `Schema+SearchJoiners.swift`.
+        public static let v11 = "v11-search-joiners"
+
+        /// The schema version a migration reaches, read from its identifier ("v<N>-…" — every one this
+        /// store registers is named so), or nil for an identifier that is not (a harness's own step).
+        /// GRDB orders and records migrations by identifier alone; this is how the store knows which
+        /// version a step brings a file to — the version a step registers under (`makeMigrator`) and the
+        /// version an upgrade's backup is named for (`StoreBackup`).
+        public static func version(of identifier: String) -> Int? {
+            guard identifier.first == "v" else { return nil }
+            let digits = identifier.dropFirst().prefix { $0.isASCII && $0.isNumber }
+            guard !digits.isEmpty, identifier.dropFirst(1 + digits.count).first == "-" else { return nil }
+            return Int(digits)
+        }
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
