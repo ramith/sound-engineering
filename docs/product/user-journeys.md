@@ -16,7 +16,7 @@ This document defines the core user journeys (workflows) for Adaptive Sound. Eac
 - **Journeys 2.1–2.5:** Phase 0 & Phase 1 (own-player focus)
 - **Journey 2.6:** Phase 2 (system-wide, two implementation paths)
 - **Journeys 2.8–2.10** *(added 2026-10-13)*: the journeys R1 is actually built around — the library, playlists and bit-perfect Pure Mode — written down so they trace to the code like the rest.
-- **Journeys 2.11–2.13** *(added 2026-10-23, the sound-roadmap reconciliation)*: pressing Enhance, a surround album on stereo headphones, and leveling in both modes. All planned, none built.
+- **Journeys 2.11–2.13** *(added 2026-10-23, the sound-roadmap reconciliation)*: pressing Enhance, a surround album on stereo headphones, and leveling in both modes. All planned, none built. *(2.13 amended 2026-10-25: leveling in Enhanced in R1.1-B; in Pure deferred until the USB DAC.)*
 
 > **Implementation status (current build).** These journeys are product *specifications*, not descriptions of shipped behavior. ~~Verified against `Sources/` on `main`, the current app is a Phase-0 own-player: it launches straight into a four-tab window (Now Playing · EQ · Monitoring · Settings) with local-file playback, a 31-band EQ, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" (wet/dry) knob, a bit-perfect Pure Mode, gapless + multichannel playback, and automatic output-device switching.~~ **Re-verified 2026-10-13 (R1 / v1.0.0-alpha; re-checked after R1's blocker fixes, 2026-10-14):** the app launches straight into a **five-tab** Liquid Glass window (Now Playing · Library · EQ · Monitoring · Settings), dark and light, plus a menu-bar extra. It has a persistent library (music folders, live updates, Songs / Albums / Artists / Genres with filter and sort), playlists, a persistent queue with shuffle / repeat and Recently Played, media keys and Control Center, a 31-band graphic EQ with Tone controls, presets and per-output memory, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" knob (which no longer touches the EQ), a bit-perfect Pure Mode, gapless + multichannel (≤ 7.1) playback, and an output-device rule (pick or follow; pause on loss; return to the picked device when it reconnects). Each journey below carries a **Status** line marking how much is built. Onboarding, the automatic adaptivity engine, environment/mic sensing, and Phase-2 system-wide capture are **not yet built** — they remain valid *planned* journeys, not current behavior. Open defects are in [known-issues.md](known-issues.md).
 
@@ -516,13 +516,14 @@ Step 4 — The LFE (the subwoofer channel), decided per track
 **Actor:** A listener who shuffles a 1980s master and a modern loud one.  
 **Goal:** Everything at one level, whichever mode, and nothing ever moving inside a song.  
 **Phase:** Phase 0 (R1.1-B).  
-**Status:** NOT YET BUILT (planned — backlog US-R1F-10). Today the only leveller is the old auto-leveller, held silent only because Intensity is hidden.
+**Status:** NOT YET BUILT (planned — backlog US-R1F-10). Today the only leveller is the old auto-leveller, held silent only because Intensity is hidden.  
+**Amended 2026-10-25 (founder, R1.1-B's plan check):** Pure declines Bluetooth, so the XM4 always plays Enhanced — the premise that Pure is the founder's daily mode was wrong; leveling in Pure is deferred until the USB DAC arrives, verified there. R1.1-B builds Steps 1, 2 and 5; Steps 3 and 4 land with the USB DAC. The Leveling row lives in Settings (founder, 2026-10-25).
 
 **Steps:**
 
 ```
 Step 1 — Choose
-  "Even out track levels": Off / Auto / Album / Track. Off by default. The row shows the target,
+  Settings › "Even out track levels": Off / Auto / Album / Track. Off by default. The row shows the target,
   "Target −18 LUFS", and the playing track's gain and where it came from ("from analysis",
   "from file tags", "unknown: −5 dB"). Auto = the album gain when the neighbouring track — the one
   just played or the next — is from the same album, else the track gain; a gapless album takes
@@ -533,25 +534,29 @@ Step 2 — Enhanced
   loud chorus play as mastered; only the whole track sits at −18. A louder-than-target master is
   turned down; a quiet one is raised only as far as its true peak allows, so the safety net never
   works. A track with no analysis and no tag gets a fixed −5 dB for its whole length — never a
-  live guess.
+  live guess. Change the mode mid-song and it applies at once with a short glide — your own act;
+  nothing automatic moves the level inside a song. In Album mode, before the album is fully
+  analysed: its tags if every track has them, else the track's own gain until the next seam
+  across silence (decided 2026-10-25).
 
-Step 3 — Pure
-  Same choice, same result, on the device's own volume: loud tracks are turned down in the
+Step 3 — Pure (deferred until the USB DAC arrives — amended 2026-10-25)
+  In R1.1-B the row reads "Leveling off (bit-perfect)" and Pure plays the file untouched. Once
+  the DAC is here and its check passes: same choice, same result, on the device's own volume: loud tracks are turned down in the
   device's volume steps (never raised). The cut is set between tracks, never inside one. The Mac's
   volume indicator moves by itself at track changes, and the readout says why: "Leveled −4.2 dB on
   the device volume". The app's own moves are not mistaken for the listener's: ten track changes
   in a row never walk the level down. If the listener presses a volume key, that is theirs.
 
-Step 4 — Where it cannot
+Step 4 — Where it cannot (with Step 3, deferred)
   On the soundbar ("Set on device") the Mac cannot set the volume: no leveling in Pure, and the row
   says so. 
 
-Step 5 — Give-back
-  When Pure ends (Stop, end of the queue, Enhanced starting, another output), the device volume is
-  put back and a toast says "Volume restored".
+Step 5 — Give-back (R1.1-B — Master Gain's loan, not leveling)
+  When Pure ends (Stop, end of the queue, Enhanced starting, another output), the device volume
+  Master Gain lowered is put back and a toast says "Volume restored".
 ```
 
-**Success Condition:** Over the founder's loudest albums the limiter's gain reduction is 0.0 dB; ten track changes in Pure never re-anchor the listener's volume; with Leveling Off, an Intensity sweep leaves integrated loudness unchanged within 0.1 dB.
+**Success Condition:** Over the founder's loudest albums the limiter's gain reduction is 0.0 dB; ~~ten track changes in Pure never re-anchor the listener's volume~~ (moved with Step 3 to the DAC, 2026-10-25); by ear on the XM4, in Enhanced, a mixed-era shuffle on Auto keeps albums even with nothing moving inside a song; in Pure on the Mac's built-in output the row reads "Leveling off (bit-perfect)" and, after a Master Gain cut, "Volume restored" shows once at the end of the queue; with Leveling Off, an Intensity sweep leaves integrated loudness unchanged within 0.1 dB.
 
 ---
 

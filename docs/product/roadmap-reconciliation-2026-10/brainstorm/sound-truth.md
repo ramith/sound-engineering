@@ -39,7 +39,7 @@ Risk scale: **none** / **small** (you might notice in a careful A/B) / **real** 
 - *Faithfulness:* yes only if it is off by default. But as a leveller it is technically unsound: it decides from a running average of the whole session and can ask for +12 dB, which the net then has to undo. No mature player ships this as leveling.
 
 **Option C (added — from the players' report): on Pure, leveling as a cut on the device's own volume (the way MPD does it).**
-- *What you'd hear:* Pure stays bit-perfect and loud tracks are turned down on the headphones' own volume; quiet tracks cannot be turned up (the device volume can only be lowered safely). The steps on Bluetooth volume are coarse, so "−4.2 dB" might land as −3 or −4.5 **(unverified on the XM4)**. The soundbar has no volume the Mac can set, so it gets nothing.
+- *What you'd hear:* Pure stays bit-perfect and loud tracks are turned down on the headphones' own volume; quiet tracks cannot be turned up (the device volume can only be lowered safely). The steps on Bluetooth volume are coarse, so "−4.2 dB" might land as −3 or −4.5 **(unverified on the XM4)**. *(amended 2026-10-25: Pure declines Bluetooth, so the XM4 always plays Enhanced — the premise that Pure is the founder's daily mode was wrong; leveling in Pure is deferred until the USB DAC arrives, verified there.)* The soundbar has no volume the Mac can set, so it gets nothing.
 - *Sound risk:* **small** — coarse steps, cut-only.
 - *Faithfulness:* yes; the file is never touched.
 

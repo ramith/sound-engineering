@@ -1,5 +1,7 @@
 # Quality pass — the twelve cards re-ranked by what a music lover hears
 
+> *Correction, 2026-10-25: Pure declines Bluetooth, so on the founder's XM4 the app always plays Enhanced; where this record calls Pure the founder's daily mode, that premise was wrong. Leveling in Pure was deferred until the USB DAC arrives ([sprint plan §11](../../../sprints/sprint-plan.md)).*
+
 *2026-10-23 · product manager · read-only. Rule for this pass: rank by the end product as a listener meets it; cost, sprint fit and delivery time ignored. Sound facts are the sound engineer's, taken as given; where I go beyond the documents it is marked "my judgement". Pages opened: Apple's AirPods Pro page (apple.com/airpods-pro), Sony's help guide and Tom's Guide's write-up of Sony's "Find Your Equalizer", Spotify's volume-normalization page (support.spotify.com/us/article/volume-normalization).*
 
 ## The criteria, with three refinements
