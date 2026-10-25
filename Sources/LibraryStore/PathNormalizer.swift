@@ -48,6 +48,13 @@ public enum PathNormalizer {
         return absolute.precomposedStringWithCanonicalMapping
     }
 
+    /// One path component — a file or folder name — in the stored form: NFC-precomposed, so a name a drive
+    /// spells decomposed (HFS+, or a copy from one) meets the name the library stored ("Use this drive",
+    /// `RootRebinder`).
+    public static func normalizedComponent(_ name: String) -> String {
+        name.precomposedStringWithCanonicalMapping
+    }
+
     /// `path` terminated with exactly one trailing "/", so it can serve as a
     /// path-COMPONENT-boundary prefix. Centralized here so the one safety-critical
     /// boundary construction lives in a SINGLE place — shared by `RelativePathResolver`

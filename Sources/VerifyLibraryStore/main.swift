@@ -182,7 +182,7 @@ func allCheckCases() -> [CheckCase] {
         + playlistScanCheckCases()
         + migrationConvergenceCheckCases()
         + albumArtistCheckCases() + albumFixRoundCheckCases() + albumIdentityCheckCases()
-        + storeOpenSafetyCheckCases()
+        + storeOpenSafetyCheckCases() + rebindCheckCases()
         + genreCoverCheckCases()
         + queueStateCheckCases()
 }
@@ -287,6 +287,7 @@ func browseReadsCheckCases() -> [CheckCase] {
 
 func runAllChecks() async {
     await runRestartSubcommandIfRequested()
+    await runRebindChildIfRequested()
     await runFSEventsSmokeIfRequested()
 
     print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence "
