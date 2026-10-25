@@ -301,9 +301,6 @@ final class AudioViewModel {
             if queue.count != oldValue.count {
                 onNowPlayingRefresh?()
             }
-            if !hasUserEditedQueue, !queue.elementsEqual(oldValue, by: { $0.id == $1.id }) {
-                hasUserEditedQueue = true
-            }
             shufflePass?.follow(queue.map(\.id)) // an added song goes into the pass, a removed one leaves it
             queueStateChanged()
         }
@@ -330,12 +327,8 @@ final class AudioViewModel {
     /// one's untouched queue (`QueueRestorePoint.afterReplace`). Not UI-bound beyond the undo affordance.
     var queueRestorePoint: QueueRestorePoint<QueueItem>?
 
-    /// True once the queue's slots have changed this session — a play verb, a reorder, a removal, a clear:
-    /// the user's, since nothing else changes them before the launch's restore. Guards that restore: if the
-    /// user acted BEFORE the store became ready, their queue wins and the stored one is NOT restored over
-    /// it (the hydration "superseded" state). Not UI-bound.
-    @ObservationIgnored var hasUserEditedQueue = false
-    /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. Not UI-bound.
+    /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. What the user queued before
+    /// it joins the restored queue. Not UI-bound.
     var queueHydrated = false
 
     /// The ≥60%-heard play-through detector (S10.6). Pure state (PlaybackQueueKit); the transport

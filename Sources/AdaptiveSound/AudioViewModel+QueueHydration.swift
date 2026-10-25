@@ -7,9 +7,13 @@ import PlaybackQueueKit
 //
 // The read side of the queue's resume record (`+QueueMirror`): on launch, when the store signals ready, the
 // queue comes back RESTORE-PAUSED — the same songs, loose files included, the selected one at its place, and
-// with shuffle on the same pass (its order, place and history) — never auto-play (founder brainstorm §0.2). A
-// user edit BEFORE the store is ready SUPERSEDES the restore: their queue wins (the `hasUserEditedQueue`
-// guard), and is written over the stored one.
+// with shuffle on the same pass (its order, place and history) — never auto-play (founder brainstorm §0.2).
+//
+// What the user queued BEFORE the restore — a file opened at launch (Open With, a drop on the Dock icon), any
+// play verb — is never thrown away, and neither is the stored queue: it JOINS the restored queue right after
+// the restored song, where it goes when the restore comes first (`playTrackNextNow` puts an opened file
+// right after the song selected), so the two orders end in the same queue. A song the user started plays on;
+// otherwise the restored song is selected at its place. Either way the result is written.
 //
 // What can't be found any more is dropped the tolerant way (`QueueResumeRecord.resolved`, QA break-it #2/#3):
 // a song deleted while the app was closed leaves the queue, and when it was the selected one the queue starts
@@ -22,6 +26,12 @@ import PlaybackQueueKit
 //
 // Shuffle and repeat are listening settings, not the record (R1.1-A): they come back at every launch from the
 // listener's settings (`+ListeningSettings`). A kept pass is used only when shuffle is on.
+//
+// From the restore on, the live queue follows the library: each time its content changes
+// (`LibraryModel.libraryRevision` — a metadata pass, or "Use this drive" re-rooting a folder's songs to new
+// paths), the queue's library songs are read again by id, and a song whose file moved plays from its new path
+// — the armed next song re-armed there — without a relaunch. A slot whose song left the library keeps its old
+// file, as before; the record drops it at the next restore.
 
 @MainActor
 extension AudioViewModel {
@@ -32,30 +42,31 @@ extension AudioViewModel {
         static let offset = "queue.cursor.offset"
     }
 
-    /// Restore the queue from the store, ONCE, on launch — RESTORE-PAUSED — then open its writer. The queue
-    /// the user already built (superseded), or a store that isn't ready, restores nothing. Wired by the
-    /// composition root to `LibraryModel.onStoreReady`.
+    /// Restore the queue from the store, ONCE, on launch — RESTORE-PAUSED, joined by anything queued before —
+    /// then open its writer, and follow the library's changes from then on. A store that isn't ready restores
+    /// nothing. Wired by the composition root to `LibraryModel.onStoreReady`.
     func hydrateQueueOnLaunch() {
         guard !queueHydrated, let store = library?.store else { return }
         queueHydrated = true
         work.spawn { @MainActor [weak self] in
             await self?.restoreQueue(from: store)
+            self?.followLibraryRevisions()
         }
     }
 
     private func restoreQueue(from store: LibraryStore) async {
-        var restored = false
         var fromLegacy = false
         do {
-            if !hasUserEditedQueue, queue.isEmpty, let stored = try await storedRecord(in: store) {
+            if let stored = try await storedRecord(in: store) {
                 fromLegacy = stored.legacy
                 let resolved = try await resolve(stored.record, in: store)
-                // The user may have acted during the awaits — their queue wins.
-                if !hasUserEditedQueue, queue.isEmpty, !resolved.items.isEmpty {
+                // Read after the awaits: what the user queued meanwhile joins too.
+                if !resolved.items.isEmpty {
+                    let joining = queue.count
                     install(resolved)
-                    restored = true
                     let place = resolved.cursor.map { "song \($0 + 1) at \(secs(resolved.offset))s" } ?? "none selected"
                     logUX("queue restored (paused): \(resolved.items.count) song(s), \(place)"
+                        + (joining > 0 ? ", \(joining) queued before it joining after that song" : "")
                         + (shufflePass != nil ? ", in a shuffle pass" : ""))
                 }
             }
@@ -65,10 +76,10 @@ extension AudioViewModel {
             queueStateBook.restored = true
             return
         }
-        // The stored state is now the queue as restored (a gone song dropped), or the user's own queue.
-        let superseded = !restored && hasUserEditedQueue
+        // The stored state becomes the queue as it now is: restored (a gone song dropped), joined, or the
+        // user's own when nothing was stored.
         queueStateBook.restored = true
-        guard restored || superseded else { return }
+        guard !queue.isEmpty else { return }
         queueStateChanged()
         if fromLegacy {
             await queueStateWriter.flush()
@@ -122,22 +133,38 @@ extension AudioViewModel {
         }
     }
 
-    /// Put the restored queue in place, PAUSED: `isPlaying` stays false. The pass first, so the selection
-    /// finds it on its own song. The offset is clamped to the song's length, stashed in `resumePoint` (that
-    /// slot's) so the FIRST Play resumes there, and mirrored into `playbackPosition` so the scrubber shows it
-    /// rather than 0:00 (QA #5b/#5c).
+    /// Put the restored queue in place, with what was queued before it (`joining`) right after the restored
+    /// song — or at the end when none was selected — in the pass too: next, in order, counted as played
+    /// (`ShufflePass.insertNext`, Play Next's rule). A song the user started before the restore plays on, in
+    /// its new row, and what plays after it follows the joined queue (`keepOnDeck`).
+    ///
+    /// Otherwise the restored song is selected PAUSED: `isPlaying` stays false. The pass first, so the
+    /// selection finds it on its own song. The offset is clamped to the song's length, stashed in
+    /// `resumePoint` (that slot's) so the FIRST Play resumes there, and mirrored into `playbackPosition` so the
+    /// scrubber shows it rather than 0:00 (QA #5b/#5c).
     private func install(_ resolved: QueueResumeRecord.Resolved<AudioFile>) {
-        let items = resolved.items.map { QueueItem(file: $0) }
-        queue = items
+        let joining = queue
+        let started = selectedSlotID
+        let armed = onDeckSlotID
+        let restored = resolved.items.map { QueueItem(file: $0) }
+        let joinAt = resolved.cursor.map { $0 + 1 } ?? restored.count
+        queue = Array(restored[..<joinAt]) + joining + Array(restored[joinAt...])
         if shuffleEnabled {
-            shufflePass = resolved.shuffle?.relabeled { items.indices.contains($0) ? items[$0].id : nil }
+            var pass = resolved.shuffle?.relabeled { restored.indices.contains($0) ? restored[$0].id : nil }
+            pass?.insertNext(joining.map(\.id))
+            shufflePass = pass
+        }
+        if let started {
+            selectedTrackIndex = queueRow(of: started)
+            keepOnDeck(armed: armed)
+            return
         }
         guard let index = resolved.cursor else { return }
         selectedTrackIndex = index // didSet clears the (nil) resume point first — order matters
-        let duration = items[index].file.durationSeconds
+        let duration = restored[index].file.durationSeconds
         let offset = duration > 0 ? min(resolved.offset, duration) : resolved.offset
         if offset > 0 {
-            resumePoint = ResumePoint(slot: items[index].id, seconds: offset)
+            resumePoint = ResumePoint(slot: restored[index].id, seconds: offset)
             playbackPosition = offset
         }
     }
@@ -146,6 +173,53 @@ extension AudioViewModel {
     private func forgetLegacyCursor() {
         for key in [LegacyCursorKey.position, LegacyCursorKey.positionTrackID, LegacyCursorKey.offset] {
             defaults.removeObject(forKey: key)
+        }
+    }
+
+    // MARK: - Following the library
+
+    /// Re-read the queue's library songs each time the library's content changes (see the file's header).
+    /// Observation fires once per registration, so each change registers the next.
+    func followLibraryRevisions() {
+        guard let library else { return }
+        withObservationTracking {
+            _ = library.libraryRevision
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.relinkLibrarySongs()
+                self?.followLibraryRevisions()
+            }
+        }
+    }
+
+    /// Read the queue's library songs from the store by id, and give each whose file moved its new path.
+    func relinkLibrarySongs() {
+        guard let store = library?.store else { return }
+        let ids = Array(Set(queue.compactMap(\.file.trackID)))
+        guard !ids.isEmpty else { return }
+        work.spawn { @MainActor [weak self] in
+            guard let songs = try? await store.tracksDisplay(ids: ids) else { return }
+            self?.relink(songs)
+        }
+    }
+
+    /// The queue with each library song whose stored file differs from its slot's read again (same slot).
+    /// When the armed next song moved, it is armed again at its new path.
+    private func relink(_ songs: [Int64: LibraryTrackDisplay]) {
+        let armed = onDeckSlotID
+        var moved: Set<UUID> = []
+        let relinked = queue.map { item -> QueueItem in
+            guard let id = item.file.trackID, let song = songs[id], song.url != item.file.absoluteURL else {
+                return item
+            }
+            moved.insert(item.id)
+            return QueueItem(file: AudioFile(song), id: item.id)
+        }
+        guard !moved.isEmpty else { return }
+        logUX("queue: \(moved.count) song(s) moved in the library — playing from their new paths")
+        queue = relinked
+        if let armed, moved.contains(armed), onDeckIsLive {
+            armOnDeck(index: queueRow(of: armed))
         }
     }
 }
