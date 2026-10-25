@@ -86,9 +86,10 @@ struct ChildLog {
 
 // MARK: - The child
 
-/// The harness's child: enabled only in a process the parent spawned (`AS_QUEUE_KILL_STORE` set).
+/// The harness's child: enabled only in a process the parent spawned (`AS_QUEUE_KILL_STORE` set). Killed by the
+/// parent within seconds; its time limit only ends a child whose parent never did.
 @MainActor
-@Suite("The queue kill harness's child (runs only when VM-KILL-01 spawns it)",
+@Suite("The queue kill harness's child (VM-KILL-01 spawns it)", .timeLimit(.minutes(3)),
        .enabled(if: ProcessInfo.processInfo.environment[KillHarness.storeKey] != nil))
 struct QueueStateKillChild {
     /// Launch the real view model over the store, restore, log the restored state, then change the queue at
