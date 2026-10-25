@@ -74,9 +74,9 @@ struct SearchScriptsTests {
 
     /// One query, one answer, wherever it is typed: the Songs search, the Albums / Artists / Genres
     /// Filter and type-to-select read a word the same way — case and a Latin letter's accents don't
-    /// count; every other script's marks are part of the word. (Where the three differ is the SHAPE of a
-    /// match — a word's start, a substring, the title's start — which the one search rule settles,
-    /// R1.1-B; every query here starts its title's first word, so all three shapes see it alike.)
+    /// count; every other script's marks are part of the word. (The shapes: the Songs search and the Filter
+    /// match a word's start — R1.1-B's one search rule, `OneSearchRuleTests` — and type-to-select the
+    /// title's start; every query here starts its title's first word, so both shapes see it alike.)
     @Test("N81 / SRCH-5: the grids' Filter and type-to-select agree with Songs, word for word")
     func oneRuleForWords() async throws {
         let hangulNFD = "\u{1102}\u{1169}\u{1105}\u{1162}"
