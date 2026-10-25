@@ -114,9 +114,14 @@ final class LibrarySearchModel {
 
 @MainActor
 extension LibraryBrowseModel {
-    /// How many rows ⌘F shows of a section before "Show All".
+    /// How many rows ⌘F shows of a section before "Show All": Songs 8, Albums, Artists and Genres 5 —
+    /// Playlists have no tab to show the rest, so all of them.
     static func searchRowLimit(_ section: LibrarySearchSection) -> Int {
-        section == .songs ? 8 : 5
+        switch section {
+        case .songs: 8
+        case .albums, .artists, .genres: 5
+        case .playlists: .max
+        }
     }
 
     /// ⌘F, from any tab: the Library's Search page, its field focused — keeping what it holds.

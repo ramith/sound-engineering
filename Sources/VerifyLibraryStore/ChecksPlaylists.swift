@@ -4,6 +4,7 @@
 // playlistSpineCheckCases() in main.swift's allCheckCases().
 
 import Foundation
+import LibraryScan
 import LibraryStore
 
 // MARK: - Registration
@@ -28,6 +29,7 @@ func playlistSpineCheckCases() -> [CheckCase] {
         CheckCase(label: "pl-untitled-lowest-unused", run: checkPlaylistUntitledNaming),
         CheckCase(label: "pl-dup-name-rejected", run: checkPlaylistDuplicateNameRejected),
         CheckCase(label: "pl-loose-add", run: checkPlaylistLooseAdd),
+        CheckCase(label: "pl-loose-relaunch-missing", run: checkPlaylistLooseRelaunchMissing),
         CheckCase(label: "pl-gate1-referenced-kept", run: checkPlaylistGate1ReferencedKept),
         CheckCase(label: "pl-gate1-unreferenced-swept", run: checkPlaylistGate1UnreferencedSwept),
         CheckCase(label: "pl-gate1-queue-not-kept", run: checkPlaylistGate1QueueNotKept),
@@ -378,4 +380,53 @@ func checkPlaylistPersistAcrossReopen(number: Int, url: URL) async -> Bool {
         printPass(number, "persistence: playlist + ordered entries survive a store reopen (no schema change)")
         return true
     } catch { printFail(number, "pl-persist-reopen threw: \(error)"); return false }
+}
+
+// MARK: - pl-loose-relaunch-missing (R1.1-B, US-LIB-02 / US-PLIST-02)
+
+/// pl-loose-relaunch-missing: a real file outside every music folder, added to a playlist through the
+/// loose-file seam (a Finder drop, Add Files…, a queue row's Add to Playlist), is a song in no music folder
+/// (`folder_id` NULL); the playlist still holds it after the store is closed and opened again (a relaunch);
+/// a walk of a music folder elsewhere never sweeps it; and once its file is deleted it reads MISSING — its
+/// folder is there on the startup disk — which is the playlist row's dead-file badge.
+func checkPlaylistLooseRelaunchMissing(number: Int, url: URL) async -> Bool {
+    do {
+        let base = try ScanFixtureBuilder.makeCaseRoot("pl-loose-relaunch")
+        let music = try ScanFixtureBuilder.makeDirectory(at: base, ["Music"])
+        try ScanFixtureBuilder.writeFile(at: music, fileName: "library.flac")
+        let loose = try ScanFixtureBuilder.writeFile(at: base, subdirs: ["Downloads"], fileName: "demo.flac")
+        let added: Int64
+        let playlistID: Int64
+        do {
+            let store = try await LibraryStore(url: url, appBuild: "verify")
+            let root = try await store.addRoot(music)
+            _ = try await LibraryScanner().scan(root: music, folderID: root, into: store)
+            playlistID = try await store.createPlaylist(name: "Demos")
+            guard let file = LibraryScanner.makeScannedFile(fileURL: loose, root: loose.deletingLastPathComponent())
+            else { printFail(number, "pl-loose-relaunch: the fixture file is unreadable"); return false }
+            added = try await store.addLooseFileToPlaylist(file, playlistID: playlistID).trackID
+            guard try await store.track(id: added)?.folderID == nil else {
+                printFail(number, "pl-loose-relaunch: the loose song has a music folder"); return false
+            }
+            let walk = try await LibraryScanner().scan(root: music, folderID: root, into: store)
+            guard walk.orphansSwept == 0, try await store.track(id: added) != nil else {
+                printFail(number, "pl-loose-relaunch: a walk of another music folder swept the loose song")
+                return false
+            }
+        }
+        let reopened = try await LibraryStore(url: url, appBuild: "verify") // the relaunch
+        guard try await reopened.entries(inPlaylist: playlistID).map(\.trackID) == [added] else {
+            printFail(number, "pl-loose-relaunch: the playlist lost the loose song across a relaunch"); return false
+        }
+        try FileManager.default.removeItem(at: loose)
+        let availability = try await LibraryScanner().availability(of: [loose], in: reopened)
+        guard availability[loose] == .missing else {
+            printFail(number, "pl-loose-relaunch: a deleted loose file reads "
+                + "\(String(describing: availability[loose])), not missing"); return false
+        }
+        printPass(number, "pl-loose-relaunch-missing: a file outside every music folder added to a playlist is a song "
+            + "in no music folder, there after a relaunch, never swept by a walk; deleted, it reads missing (the "
+            + "dead-file badge)")
+        return true
+    } catch { printFail(number, "pl-loose-relaunch-missing threw: \(error)"); return false }
 }
