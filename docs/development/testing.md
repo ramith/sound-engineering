@@ -80,8 +80,8 @@ these**; the semgrep rule `test-no-raw-time` bans `Thread.sleep`, `Task.sleep`, 
   `RunLoop.main` timer). A test passes `TickerBench().maker` and calls `ticker.fire()`.
 - **Fire-and-forget work**: every view-model `Task` is spawned through `WorkTracker`. Wait with
   `try await viewModel.settled()` (work idle and the settings write landed). Never yield N times.
-- **Clocks**: `clock: any Clock<Duration> = ContinuousClock()` on `AudioViewModel`, `LibraryModel`,
-  `ShellToastSlot`, `EQBringBackMessage` and `SongsView`. Tests use swift-clocks (test targets only):
+- **Clocks**: `clock: any Clock<Duration> = ContinuousClock()` on `LibraryModel`, `ShellToastSlot`,
+  `EQBringBackMessage` and `SongsView`. Tests use swift-clocks (test targets only):
   `ImmediateClock()` makes a debounce a no-op (then await the task it started); `TestClock` only when the
   coalescing itself is under test, after `until` shows the sleep is pending.
 - **Settings write**: `SettingsStore.pendingWrite`; `await store.pendingWrite?.value`.
