@@ -412,8 +412,9 @@ public extension LibraryStore {
 
     /// Delete the given track rows by id (inside the caller's write transaction). One DELETE
     /// per id (GRDB caches the prepared statement) rather than a dynamic `IN(...)`: the id set
-    /// is caller-supplied and potentially large, so it must never be spliced into SQL.
-    private func deleteTrackRows(_ db: Database, ids: [Int64]) throws {
+    /// is caller-supplied and potentially large, so it must never be spliced into SQL. Internal: a
+    /// rebind (`rebindRoot`) removes the songs a new drive lacks through it too.
+    internal func deleteTrackRows(_ db: Database, ids: [Int64]) throws {
         guard !ids.isEmpty else { return }
         try deleteSearchRows(db, ids: ids) // FTS is not an FK — clear their rows too
         for id in ids {

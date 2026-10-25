@@ -1,4 +1,5 @@
 import LibraryScan
+import LibraryStore
 
 // MusicFolderStatus — what a Music Folders row says under its path (R1.1-A, KI-LIB-02; founder
 // 2026-10-15).
@@ -36,6 +37,40 @@ public enum MusicFolderStatus: Equatable, Sendable {
         switch self {
         case .scanning: "Scanning…"
         case let .paused(reason): Self.caption(for: reason)
+        }
+    }
+
+    /// Whether the row offers "Use This Drive…" (R1.1-B, US-R1F-03 LIB-VOL-1): a folder paused because its
+    /// drive is gone, another drive is at its path, or its drive can't be confirmed — the folder may be on
+    /// another drive now. Never for a folder the app can't open or that walked empty: its drive is there,
+    /// and pointing it elsewhere would not bring its songs back.
+    public var offersUseThisDrive: Bool {
+        switch self {
+        case .paused(.rootVanished), .paused(.differentVolume), .paused(.unrecognizedFolder): true
+        case .paused(.incompleteWalk), .paused(.emptyWalk), .scanning: false
+        }
+    }
+
+    /// The words the app says after "Use This Drive…": what the rebind kept and removed, or why it did
+    /// nothing. nil for a refusal the app does not say (a folder removed meanwhile).
+    public static func rebindMessage(_ outcome: RebindOutcome, folderName: String) -> String? {
+        switch outcome {
+        case let .rebound(kept, removed):
+            guard removed > 0 else {
+                let all = kept == 1 ? "its song" : "all \(kept.formatted()) songs"
+                return "“\(folderName)” now uses this drive — \(all) found."
+            }
+            let found = kept == 1 ? "1 song" : "\(kept.formatted()) songs"
+            let gone = removed == 1 ? "1 that isn’t on it was" : "\(removed.formatted()) that aren’t on it were"
+            return "“\(folderName)” now uses this drive — \(found) found; \(gone) removed."
+        case .refused(.noSongsFound):
+            return "That’s not the drive for “\(folderName)” — none of its songs are on it. Nothing was changed."
+        case .refused(.overlapsFolder):
+            return "That folder is already in your library, or inside or around one that is. Nothing was changed."
+        case .refused(.songsChanged):
+            return "“\(folderName)” changed while the drive was checked. Try again."
+        case .refused(.notAFolder):
+            return nil
         }
     }
 
