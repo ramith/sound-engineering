@@ -64,36 +64,39 @@ extension AudioViewModel {
     }
 }
 
-// MARK: - Next-Index Computation (thin delegates to PlaybackQueueKit.QueueAdvance)
+// MARK: - Next-Index Computation (thin delegates to PlaybackQueueKit.PlaybackOrder)
 
 extension AudioViewModel {
-    /// Compute the playlist index that should play after `current`, honouring
-    /// `shuffleEnabled` and `repeatMode`.
+    /// Compute the playlist index that should play after `current`, honouring `shuffleEnabled` (the
+    /// pass's next song, R1.1-B) and `repeatMode`.
     ///
     /// - Parameter manualSkip: `true` when the user pressed Next (vs an automatic end-of-track
     ///   advance). Under repeat-one a manual skip STEPS to the next track rather than repeating the
-    ///   current one; an automatic advance repeats it. Shuffle and repeat-all behave identically
-    ///   either way.
+    ///   current one; an automatic advance repeats it.
     /// - Returns: the next index, or `nil` when playback should stop / stay after `current`.
     func computeNextIndex(current: Int, playlistCount: Int, manualSkip: Bool = false) -> Int? {
-        QueueAdvance.nextIndex(
-            current: current, count: playlistCount, shuffle: shuffleEnabled,
-            repeatMode: repeatMode, manualSkip: manualSkip,
-            randomPick: QueueAdvance.uniformRandomExcluding
-        )
+        playbackOrder.next(after: current, count: playlistCount, manualSkip: manualSkip, pass: shufflePass,
+                           row: queueRow(of:))
     }
 
-    /// Compute the playlist index that should play BEFORE `current` (the Previous button).
-    /// Honours `shuffleEnabled` (a random other track, since no shuffle history is kept) and
-    /// `repeatMode` (repeat-all wraps to the last track). Previous is always a manual action, so
-    /// repeat-one steps back rather than repeating.
+    /// Compute the playlist index that should play BEFORE `current` (the Previous button). Honours
+    /// `shuffleEnabled` (the song that played before, in the pass — at its first song the last pass's
+    /// last with Repeat All, else this song again) and `repeatMode` (in order, repeat-all wraps to the
+    /// last track). Previous is always a manual action, so repeat-one steps back rather than repeating.
     ///
     /// - Returns: the previous index, or `nil` when there is nowhere to go back to (first track,
     ///   no repeat) so the caller should stay put.
     func computePreviousIndex(current: Int, playlistCount: Int) -> Int? {
-        QueueAdvance.previousIndex(
-            current: current, count: playlistCount, shuffle: shuffleEnabled,
-            repeatMode: repeatMode, randomPick: QueueAdvance.uniformRandomExcluding
-        )
+        playbackOrder.previous(before: current, count: playlistCount, pass: shufflePass, row: queueRow(of:))
+    }
+
+    /// Shuffle and repeat as one value, for `PlaybackOrder`'s rule.
+    var playbackOrder: PlaybackOrder {
+        PlaybackOrder(shuffle: shuffleEnabled, repeatMode: repeatMode)
+    }
+
+    /// The queue row of `slot`, or nil when the queue no longer holds it.
+    func queueRow(of slot: UUID) -> Int? {
+        queue.firstIndex { $0.id == slot }
     }
 }

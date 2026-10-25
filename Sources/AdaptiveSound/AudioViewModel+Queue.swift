@@ -5,7 +5,8 @@ import PlaybackQueueKit
 
 //
 // The browse UI's play verbs, layered on the existing index-addressed engine
-// (queue: [QueueItem] + selectedTrackIndex + the gapless on-deck pendingNextIndex).
+// (queue: [QueueItem] + selectedTrackIndex + the gapless on-deck pendingNextIndex). Every edit reaches
+// the shuffle pass and the queue's resume record through `queue`'s didSet (AudioViewModel.swift).
 // Callers convert LibraryTrackDisplay → AudioFile (see AudioFile+LibraryTrackDisplay).
 // `playTrackNextNow` is the Songs-list single-track "insert after current + jump to play NOW".
 //
@@ -32,8 +33,8 @@ extension AudioViewModel {
     }
 
     /// A page's "Shuffle": shuffle on, then replace the queue with `tracks` and play from a random
-    /// one, so what follows shuffles through the engine's on-deck pick. `undoable` holds the restore
-    /// point `playNowWithUndo` holds — which remembers that shuffle was off.
+    /// one — a new pass begins there, and every other song follows once in random order. `undoable` holds
+    /// the restore point `playNowWithUndo` holds — which remembers that shuffle was off.
     func shufflePlay(_ tracks: [AudioFile], undoable: Bool) {
         guard !tracks.isEmpty else { return }
         let replace = {
@@ -68,8 +69,8 @@ extension AudioViewModel {
     /// Restore what the last undoable replace took away (one-level): the shuffle setting, then the
     /// queue. An empty previous queue clears; otherwise the slots are restored and playback resumes at
     /// the previously selected track (a pragmatic one-level undo — position within the track is not
-    /// preserved). A previous queue with NO selection is restored with the engine stopped (never left
-    /// playing a gone track).
+    /// preserved, and under shuffle a new pass begins there). A previous queue with NO selection is
+    /// restored with the engine stopped (never left playing a gone track).
     func restorePreviousQueue() {
         guard let point = queueRestorePoint else { return }
         queueRestorePoint = nil
@@ -78,8 +79,8 @@ extension AudioViewModel {
             clearPlaylist()
             return
         }
+        shufflePass = nil // the pass was the replaced queue's
         queue = point.slots
-        scheduleQueueMirror()
         if let index = point.index, index < queue.count {
             playTrack(at: index) // resume at the previously-selected track
         } else {
@@ -90,21 +91,20 @@ extension AudioViewModel {
 
     /// Replace the queue with `tracks` and start playing from `startAt` (clamped).
     /// The destructive "play this album/these results now" action. `startPlayback`
-    /// (via `playTrack`) re-primes the gapless on-deck.
+    /// (via `playTrack`) re-primes the gapless on-deck; under shuffle a new pass begins at `startAt`.
     func playNow(_ tracks: [AudioFile], startAt index: Int = 0) {
         guard !tracks.isEmpty else { return }
         let start = min(max(0, index), tracks.count - 1)
         logUX("playNow: \(tracks.count) track(s), startAt=\(start)")
+        shufflePass = nil // the pass was the replaced queue's
         queue = tracks.map { QueueItem(file: $0) }
-        scheduleQueueMirror()
         playTrack(at: start)
     }
 
     /// Insert `tracks` immediately after the current track and arm the first of them as
-    /// the on-deck — a single-slot override honored EVEN under shuffle (Music.app's
-    /// "Play Next"), because it sets `pendingNextIndex` directly rather than routing
-    /// through `computeNextIndex` (design §6; the multi-item forced-next FIFO is later).
-    /// With nothing playing there is no "current" to insert after, so it appends.
+    /// the on-deck — honored under shuffle too (Music.app's "Play Next"): the pass plays them next, in
+    /// order, and counts them as played (R1.1-B §6 shuffle 6). With nothing playing there is no
+    /// "current" to insert after, so it appends.
     /// Returns the number of tracks added so the caller can raise a truthful "Added N…" toast.
     @discardableResult
     func playNext(_ tracks: [AudioFile]) -> Int {
@@ -114,8 +114,9 @@ extension AudioViewModel {
         }
         let insertAt = min(current + 1, queue.count)
         logUX("playNext: \(tracks.count) track(s) after index \(current) (playing=\(isPlaying))")
-        queue.insert(contentsOf: tracks.map { QueueItem(file: $0) }, at: insertAt)
-        scheduleQueueMirror()
+        let items = tracks.map { QueueItem(file: $0) }
+        shufflePass?.insertNext(items.map(\.id)) // first: the queue's edit then finds them in the pass
+        queue.insert(contentsOf: items, at: insertAt)
         // Playing — or a start priming its on-deck (`onDeckIsLive`; `isPlaying` turns true only after
         // the engine settled the prime's pick, council F-P4-1) → arm the inserted slot as the on-deck
         // (single-slot override, honors shuffle); the newest request supersedes the prime's. Paused,
@@ -156,7 +157,6 @@ extension AudioViewModel {
                 queue.remove(at: removeAt)
             }
             queue.insert(QueueItem(file: track), at: insertAt)
-            scheduleQueueMirror()
             logUX("playTrackNextNow: '\(track.name)' → index \(insertAt)"
                 + (removeAt.map { " (moved from \($0))" } ?? "") + " (playing=\(isPlaying))")
             // playTrack overwrites selectedTrackIndex and re-primes the on-deck, so the stale
@@ -168,14 +168,14 @@ extension AudioViewModel {
     /// Append `tracks` to the end of the queue. While a song plays (or primes), what plays after it
     /// follows the edit (`keepOnDeck`, council C-17): playing the last song, the first appended song
     /// is next — under Repeat All too, and in a one-song shuffle; a mid-list next song, a shuffle pick
-    /// and a Play Next stay. Returns the number of tracks appended.
+    /// and a Play Next stay. Under shuffle each goes to a random place in the pass after the song armed
+    /// next, so it plays once in this pass. Returns the number of tracks appended.
     @discardableResult
     func appendToQueue(_ tracks: [AudioFile]) -> Int {
         guard !tracks.isEmpty else { return 0 }
         logUX("appendToQueue: \(tracks.count) track(s) (was \(queue.count))")
         let armed = onDeckSlotID
         queue.append(contentsOf: tracks.map { QueueItem(file: $0) })
-        scheduleQueueMirror()
         keepOnDeck(armed: armed)
         return tracks.count
     }

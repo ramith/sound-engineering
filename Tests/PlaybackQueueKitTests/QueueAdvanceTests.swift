@@ -7,68 +7,42 @@ import Testing
 // These import the shipped `PlaybackQueueKit` target, so a regression in
 // `nextIndex`/`previousIndex` is caught against the code that actually ships (the view
 // model's use of it: `AutoAdvanceTests` and `ManualSkipTests` in AdaptiveSoundTests).
-// Exact-value cases use a deterministic injected picker; the production
-// `uniformRandomExcluding` is verified by property.
+// The queue's own order only: shuffle is `ShufflePass` (`ShufflePassTests`).
 
 @Suite("PlaybackQueueKit — QueueAdvance decision core (VM-QA)")
 struct QueueAdvanceTests {
-    /// The shared deterministic shuffle stand-in (`DeterministicPick.swift`).
-    let det = deterministicPick
-
     @Test("VM-QA-01: linear advance steps to current+1 mid-queue")
     func linearStep() {
-        #expect(QueueAdvance.nextIndex(current: 0, count: 3, shuffle: false, repeatMode: 0, randomPick: det) == 1)
-        #expect(QueueAdvance.nextIndex(current: 1, count: 3, shuffle: false, repeatMode: 0, randomPick: det) == 2)
+        #expect(QueueAdvance.nextIndex(current: 0, count: 3, repeatMode: 0) == 1)
+        #expect(QueueAdvance.nextIndex(current: 1, count: 3, repeatMode: 0) == 2)
     }
 
     @Test("VM-QA-02: last track, no-repeat → nil (stop)")
     func lastNoRepeatStops() {
-        #expect(QueueAdvance.nextIndex(current: 2, count: 3, shuffle: false, repeatMode: 0, randomPick: det) == nil)
+        #expect(QueueAdvance.nextIndex(current: 2, count: 3, repeatMode: 0) == nil)
     }
 
     @Test("VM-QA-03: last track, repeat-all → wraps to 0")
     func lastRepeatAllWraps() {
-        #expect(QueueAdvance.nextIndex(current: 2, count: 3, shuffle: false, repeatMode: 1, randomPick: det) == 0)
+        #expect(QueueAdvance.nextIndex(current: 2, count: 3, repeatMode: 1) == 0)
     }
 
     @Test("VM-QA-04: repeat-one auto-repeats current; manual Next steps forward")
     func repeatOneAutoVsManual() {
-        #expect(QueueAdvance.nextIndex(current: 1, count: 3, shuffle: false, repeatMode: 2, randomPick: det) == 1)
-        #expect(QueueAdvance.nextIndex(current: 1, count: 3, shuffle: false, repeatMode: 2,
-                                       manualSkip: true, randomPick: det) == 2)
-        // repeat-one is checked BEFORE shuffle: an auto-advance repeats `current` even with
-        // shuffle on (swapping those branches would silently randomize repeat-one).
-        #expect(QueueAdvance.nextIndex(current: 1, count: 3, shuffle: true, repeatMode: 2, randomPick: det) == 1)
+        #expect(QueueAdvance.nextIndex(current: 1, count: 3, repeatMode: 2) == 1)
+        #expect(QueueAdvance.nextIndex(current: 1, count: 3, repeatMode: 2, manualSkip: true) == 2)
     }
 
     @Test("VM-QA-05: empty queue → nil (next and previous)")
     func emptyQueue() {
-        #expect(QueueAdvance.nextIndex(current: 0, count: 0, shuffle: false, repeatMode: 1, randomPick: det) == nil)
-        #expect(QueueAdvance.previousIndex(current: 0, count: 0, shuffle: false, repeatMode: 1, randomPick: det) == nil)
+        #expect(QueueAdvance.nextIndex(current: 0, count: 0, repeatMode: 1) == nil)
+        #expect(QueueAdvance.previousIndex(current: 0, count: 0, repeatMode: 1) == nil)
     }
 
     @Test("VM-QA-06: previous steps back; first-track no-repeat → nil; repeat-all wraps to last")
     func previousBehaviour() {
-        #expect(QueueAdvance.previousIndex(current: 2, count: 3, shuffle: false, repeatMode: 0, randomPick: det) == 1)
-        #expect(QueueAdvance.previousIndex(current: 0, count: 3, shuffle: false, repeatMode: 0, randomPick: det) == nil)
-        #expect(QueueAdvance.previousIndex(current: 0, count: 3, shuffle: false, repeatMode: 1, randomPick: det) == 2)
-    }
-
-    @Test("VM-QA-07: shuffle calls the injected picker; single-track shuffle takes the linear branch")
-    func shuffleUsesInjectedPicker() {
-        #expect(QueueAdvance.nextIndex(current: 2, count: 5, shuffle: true, repeatMode: 0, randomPick: det) == 3)
-        #expect(QueueAdvance.previousIndex(current: 2, count: 5, shuffle: true, repeatMode: 0, randomPick: det) == 3)
-        // count == 1 → the `shuffle && count > 1` guard is false, so no picker call.
-        #expect(QueueAdvance.nextIndex(current: 0, count: 1, shuffle: true, repeatMode: 1, randomPick: det) == 0)
-    }
-
-    @Test("VM-QA-08: uniformRandomExcluding stays in range and never returns current")
-    func productionPickerProperty() {
-        for current in 0 ..< 6 {
-            for _ in 0 ..< 200 {
-                let pick = QueueAdvance.uniformRandomExcluding(current, 6)
-                #expect(pick >= 0 && pick < 6 && pick != current)
-            }
-        }
+        #expect(QueueAdvance.previousIndex(current: 2, count: 3, repeatMode: 0) == 1)
+        #expect(QueueAdvance.previousIndex(current: 0, count: 3, repeatMode: 0) == nil)
+        #expect(QueueAdvance.previousIndex(current: 0, count: 3, repeatMode: 1) == 2)
     }
 }

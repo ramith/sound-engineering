@@ -2,119 +2,144 @@ import Foundation
 import LibraryStore
 import PlaybackQueueKit
 
-// MARK: - AudioViewModel queue hydration + cursor persistence (S10.2, sub-step 2c)
+// MARK: - AudioViewModel: the queue comes back at launch (S10.2 2c; R1.1-B, council C-65)
 
 //
-// Read-side of the persistent queue: on launch (when the store signals ready) restore the queue
-// from the built-in "current" playlist, RESTORE-PAUSED at the saved track + offset — never
-// auto-play (founder brainstorm §0.2). The now-playing cursor lives in the injected `defaults` (the
-// launch's `AppDataLocation`), NOT a schema column, so S10.2 adds no migration (the queue rows
-// survive in the DB as-is; DUR-1 still applies to a future schema change). A user edit BEFORE the
-// store is ready SUPERSEDES hydration — their queue wins (the `hasUserEditedQueue` guard).
+// The read side of the queue's resume record (`+QueueMirror`): on launch, when the store signals ready, the
+// queue comes back RESTORE-PAUSED — the same songs, loose files included, the selected one at its place, and
+// with shuffle on the same pass (its order, place and history) — never auto-play (founder brainstorm §0.2). A
+// user edit BEFORE the store is ready SUPERSEDES the restore: their queue wins (the `hasUserEditedQueue`
+// guard), and is written over the stored one.
 //
-// Cursor durability (QA break-it #2/#3): the cursor is stored as (position, trackID-at-position)
-// and RESOLVED tolerantly on restore — an exact (position, id) match, else the id found anywhere,
-// else start-at-top. So a between-session queue shift (a track deleted while the app was closed
-// holes the entries) or a stale cursor after a non-clean exit degrades to "start at top", NEVER a
-// silent wrong-track/wrong-offset resume. Periodic (not quit-only) cursor persistence to shrink
-// the crash-divergence window is deferred durability polish = DUR-1.
+// What can't be found any more is dropped the tolerant way (`QueueResumeRecord.resolved`, QA break-it #2/#3):
+// a song deleted while the app was closed leaves the queue, and when it was the selected one the queue starts
+// at the top — or, under shuffle, at the pass's next song — never another song at the old offset. A loose file
+// comes back by its path, found or not; the dead-file badge says the rest.
 //
-// Shuffle and repeat are listening settings, not the cursor (R1.1-A): they come back at every launch,
-// queue or not, from the listener's settings (`+ListeningSettings`), which read R1's
-// `queue.cursor.shuffle` / `queue.cursor.repeatMode` once.
+// A library a build before the record left (R1.1-A and earlier) holds no record: its queue is the "current"
+// playlist's songs, its cursor three keys in the defaults (written only at a clean quit). They are read once,
+// the tolerant way they always were, written as the record, and the keys removed.
+//
+// Shuffle and repeat are listening settings, not the record (R1.1-A): they come back at every launch from the
+// listener's settings (`+ListeningSettings`). A kept pass is used only when shuffle is on.
 
 @MainActor
 extension AudioViewModel {
-    private enum QueueCursorKey {
+    /// The cursor a build before the record kept in the defaults.
+    private enum LegacyCursorKey {
         static let position = "queue.cursor.position"
         static let positionTrackID = "queue.cursor.positionTrackID"
         static let offset = "queue.cursor.offset"
     }
 
-    /// Restore the queue from the persistent "current" playlist, ONCE, on launch — RESTORE-PAUSED.
-    /// No-op if the user already edited the queue (superseded), if already hydrated, or if the
-    /// store isn't ready. Wired by the composition root to `LibraryModel.onStoreReady`.
+    /// Restore the queue from the store, ONCE, on launch — RESTORE-PAUSED — then open its writer. The queue
+    /// the user already built (superseded), or a store that isn't ready, restores nothing. Wired by the
+    /// composition root to `LibraryModel.onStoreReady`.
     func hydrateQueueOnLaunch() {
-        guard !queueHydrated, !hasUserEditedQueue, queue.isEmpty, let store = library?.store else { return }
+        guard !queueHydrated, let store = library?.store else { return }
         queueHydrated = true
         work.spawn { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let playlistID = try await store.currentPlaylistID()
-                let entries = try await store.entries(inPlaylist: playlistID)
-                // ONE batched read for the whole queue (QA #4 — no per-entry N+1), reusing the
-                // display adapter so restored AudioFiles carry the SAME metadata + duration the
-                // live queue was built with (QA #5a — no "--:--" relaunch regression).
-                let byID = try await store.tracksDisplay(ids: entries.map(\.trackID))
-                let items = entries.compactMap { entry in
-                    byID[entry.trackID].map { QueueItem(file: AudioFile($0)) }
-                }
+            await self?.restoreQueue(from: store)
+        }
+    }
+
+    private func restoreQueue(from store: LibraryStore) async {
+        var restored = false
+        var fromLegacy = false
+        do {
+            if !hasUserEditedQueue, queue.isEmpty, let stored = try await storedRecord(in: store) {
+                fromLegacy = stored.legacy
+                let resolved = try await resolve(stored.record, in: store)
                 // The user may have acted during the awaits — their queue wins.
-                guard !hasUserEditedQueue, queue.isEmpty, !items.isEmpty else { return }
-                queue = items // direct set — do NOT scheduleQueueMirror (never re-write what we read)
-                restoreCursor(itemCount: items.count)
-                logUX("queue hydrated: \(items.count) track(s) restored (paused)")
-            } catch {
-                logUX("queue hydrate failed: \(error)")
-            }
-        }
-    }
-
-    /// Restore selection + offset, PAUSED: `isPlaying` stays false. The offset is
-    /// clamped to the resolved track's duration, stashed in `resumePoint` (that slot's) so the FIRST
-    /// Play resumes there (reusing the position-preserving resume seek), and mirrored into
-    /// `playbackPosition` so the scrubber shows the resume point rather than 0:00 (QA #5b/#5c).
-    private func restoreCursor(itemCount: Int) {
-        if let index = resolveCursorPosition(itemCount: itemCount) {
-            selectedTrackIndex = index // didSet clears the (nil) resume point first — order matters
-            let saved = max(0, defaults.double(forKey: QueueCursorKey.offset))
-            let duration = queue[index].file.durationSeconds
-            let offset = duration > 0 ? min(saved, duration) : saved
-            if offset > 0 {
-                resumePoint = ResumePoint(slot: queue[index].id, seconds: offset)
-                playbackPosition = offset
-            }
-        }
-    }
-
-    /// Resolve the saved cursor to a CURRENT queue index, tolerating a between-session shift (QA
-    /// #2). Prefer an EXACT (position, trackID) match; else find the saved trackID anywhere
-    /// (dup-safe: first match); else nil (start at top). A cursor from before `positionTrackID`
-    /// existed has no saved id → best-effort by range only.
-    private func resolveCursorPosition(itemCount: Int) -> Int? {
-        guard let position = defaults.object(forKey: QueueCursorKey.position) as? Int else { return nil }
-        let savedTrackID = (defaults.object(forKey: QueueCursorKey.positionTrackID) as? Int).map(Int64.init)
-        if position >= 0, position < itemCount {
-            if let savedTrackID {
-                if queue[position].file.trackID == savedTrackID {
-                    return position
+                if !hasUserEditedQueue, queue.isEmpty, !resolved.items.isEmpty {
+                    install(resolved)
+                    restored = true
+                    let place = resolved.cursor.map { "song \($0 + 1) at \(secs(resolved.offset))s" } ?? "none selected"
+                    logUX("queue restored (paused): \(resolved.items.count) song(s), \(place)"
+                        + (shufflePass != nil ? ", in a shuffle pass" : ""))
                 }
-            } else {
-                return position
+            }
+        } catch {
+            // Left as stored: the first change of this session writes the queue then.
+            logUX("queue restore failed: \(error)")
+            queueStateBook.restored = true
+            return
+        }
+        // The stored state is now the queue as restored (a gone song dropped), or the user's own queue.
+        let superseded = !restored && hasUserEditedQueue
+        queueStateBook.restored = true
+        guard restored || superseded else { return }
+        queueStateChanged()
+        if fromLegacy {
+            await queueStateWriter.flush()
+            if queueStateBook.written != nil {
+                forgetLegacyCursor()
             }
         }
-        if let savedTrackID {
-            return queue.firstIndex { $0.file.trackID == savedTrackID }
-        }
-        return nil
     }
 
-    /// Persist the now-playing cursor (position + trackID-at-position, offset).
-    /// Called on quit-flush (`+Lifecycle.shutdown`), so a clean quit restores exactly where you
-    /// left off. (Periodic persistence for crash resilience = DUR-1; the tolerant resolve above
-    /// keeps a stale cursor safe.)
-    func persistQueueCursor() {
-        if let index = selectedTrackIndex, index >= 0, index < queue.count {
-            defaults.set(index, forKey: QueueCursorKey.position)
-            if let trackID = queue[index].file.trackID {
-                defaults.set(Int(trackID), forKey: QueueCursorKey.positionTrackID)
-            } else {
-                defaults.removeObject(forKey: QueueCursorKey.positionTrackID)
-            }
-        } else {
-            defaults.removeObject(forKey: QueueCursorKey.position)
-            defaults.removeObject(forKey: QueueCursorKey.positionTrackID)
+    /// The stored record — or, in a library a build before it left, the record its "current" playlist and the
+    /// defaults' cursor make. Nil when neither holds a queue.
+    private func storedRecord(in store: LibraryStore) async throws -> (record: QueueResumeRecord, legacy: Bool)? {
+        if let stored = try await store.queueState() {
+            return try (QueueResumeRecord(storedQueue: stored.record, offset: stored.offset ?? 0), false)
         }
-        defaults.set(playbackPosition, forKey: QueueCursorKey.offset)
+        let entries = try await store.entries(inPlaylist: store.currentPlaylistID())
+        guard !entries.isEmpty else { return nil }
+        let record = QueueResumeRecord.legacy(
+            trackIDs: entries.map(\.trackID),
+            cursorRow: defaults.object(forKey: LegacyCursorKey.position) as? Int,
+            cursorTrackID: (defaults.object(forKey: LegacyCursorKey.positionTrackID) as? Int).map(Int64.init),
+            offset: defaults.double(forKey: LegacyCursorKey.offset)
+        )
+        return (record, true)
+    }
+
+    /// Each slot found again: library songs in ONE batched read (QA #4 — no per-song N+1), through the
+    /// display adapter, so they carry the same metadata and length the live queue was built with (QA #5a —
+    /// no "--:--"); loose files by their paths.
+    private func resolve(_ record: QueueResumeRecord, in store: LibraryStore) async throws
+        -> QueueResumeRecord.Resolved<AudioFile> {
+        let ids = record.slots.compactMap { slot -> Int64? in
+            if case let .track(id) = slot {
+                id
+            } else {
+                nil
+            }
+        }
+        let byID = try await store.tracksDisplay(ids: ids)
+        return record.resolved { slot in
+            switch slot {
+            case let .track(id): byID[id].map { AudioFile($0) }
+            case let .loose(path): AudioFile(restoringLoose: path)
+            }
+        }
+    }
+
+    /// Put the restored queue in place, PAUSED: `isPlaying` stays false. The pass first, so the selection
+    /// finds it on its own song. The offset is clamped to the song's length, stashed in `resumePoint` (that
+    /// slot's) so the FIRST Play resumes there, and mirrored into `playbackPosition` so the scrubber shows it
+    /// rather than 0:00 (QA #5b/#5c).
+    private func install(_ resolved: QueueResumeRecord.Resolved<AudioFile>) {
+        let items = resolved.items.map { QueueItem(file: $0) }
+        queue = items
+        if shuffleEnabled {
+            shufflePass = resolved.shuffle?.relabeled { items.indices.contains($0) ? items[$0].id : nil }
+        }
+        guard let index = resolved.cursor else { return }
+        selectedTrackIndex = index // didSet clears the (nil) resume point first — order matters
+        let duration = items[index].file.durationSeconds
+        let offset = duration > 0 ? min(resolved.offset, duration) : resolved.offset
+        if offset > 0 {
+            resumePoint = ResumePoint(slot: items[index].id, seconds: offset)
+            playbackPosition = offset
+        }
+    }
+
+    /// The legacy cursor keys, once their queue is written as the record.
+    private func forgetLegacyCursor() {
+        for key in [LegacyCursorKey.position, LegacyCursorKey.positionTrackID, LegacyCursorKey.offset] {
+            defaults.removeObject(forKey: key)
+        }
     }
 }
