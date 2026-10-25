@@ -35,24 +35,41 @@ public enum LibrarySearch {
 
     // MARK: Results
 
-    /// ⌘F's results for `query`: `songs` are the songs the Songs search found (the index decides their
-    /// membership); the other lists are whole, and each keeps what its tab's Filter keeps. Every section is
-    /// ranked by `SearchRelevance`. A query with no word in it finds nothing.
-    public static func results(
-        for query: String, songs: [LibraryTrackDisplay], albums: [AlbumFacet], artists: [ArtistFacet],
-        genres: [GenreFacet], playlists: [Playlist]
-    ) -> LibrarySearchResults {
+    /// What ⌘F searches: the songs the Songs search found for the query (the index decides their
+    /// membership), and the other lists whole, as their tabs list them.
+    public struct Lists: Sendable {
+        public var songs: [LibraryTrackDisplay]
+        public var albums: [AlbumFacet]
+        public var artists: [ArtistFacet]
+        public var genres: [GenreFacet]
+        public var playlists: [Playlist]
+
+        public init(songs: [LibraryTrackDisplay] = [], albums: [AlbumFacet] = [], artists: [ArtistFacet] = [],
+                    genres: [GenreFacet] = [], playlists: [Playlist] = []) {
+            self.songs = songs
+            self.albums = albums
+            self.artists = artists
+            self.genres = genres
+            self.playlists = playlists
+        }
+    }
+
+    /// ⌘F's results for `query` over `lists`: each list keeps what its tab's Filter keeps, and every
+    /// section is ranked by `SearchRelevance`. A query with no word in it finds nothing.
+    public static func results(for query: String, in lists: Lists) -> LibrarySearchResults {
         let compiled = SearchRule.Query(query)
         guard !compiled.isEmpty else { return .empty }
         let none: (Any) -> [String] = { _ in [] }
         return LibrarySearchResults(
-            songs: ranked(songs, by: compiled, name: \.title, others: songOthers),
-            albums: ranked(kept(albums, by: compiled, keys: albumKeys), by: compiled, name: \.title) {
+            songs: ranked(lists.songs, by: compiled, name: \.title, others: songOthers),
+            albums: ranked(kept(lists.albums, by: compiled, keys: albumKeys), by: compiled, name: \.title) {
                 [$0.albumArtist]
             },
-            artists: ranked(kept(artists, by: compiled, keys: artistKeys), by: compiled, name: \.name, others: none),
-            genres: ranked(kept(genres, by: compiled, keys: genreKeys), by: compiled, name: \.name, others: none),
-            playlists: ranked(kept(playlists, by: compiled, keys: playlistKeys), by: compiled, name: \.name,
+            artists: ranked(kept(lists.artists, by: compiled, keys: artistKeys), by: compiled, name: \.name,
+                            others: none),
+            genres: ranked(kept(lists.genres, by: compiled, keys: genreKeys), by: compiled, name: \.name,
+                           others: none),
+            playlists: ranked(kept(lists.playlists, by: compiled, keys: playlistKeys), by: compiled, name: \.name,
                               others: none)
         )
     }

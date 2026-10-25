@@ -15,6 +15,12 @@
 import Foundation
 import GRDB
 
+public extension Schema.MigrationID {
+    /// v10 → v11: the search index rebuilt in the one search rule's form — the zero-width joiner and
+    /// non-joiner folded away (R1.1-B, US-R1F-14).
+    static let v11 = "v11-search-joiners"
+}
+
 public extension Schema {
     /// Migrate v10 → v11: rebuild `tracks_fts` from `tracks`, every row in the search rule's form.
     static func migrateV10toV11(_ db: Database, appBuild: String?, timestamp: Int64) throws {
