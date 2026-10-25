@@ -2,11 +2,13 @@ import Foundation
 
 // MARK: - Library sidebar categories (S9.4)
 
-/// The top-level browse categories shown in the Library sidebar (Songs · Albums · Artists ·
-/// Genres). S10 extends the sidebar with Playlists.
+/// The top-level categories shown in the Library sidebar (Search · Songs · Albums · Artists · Genres).
+/// S10 extends the sidebar with Playlists.
 enum LibraryCategory: String, CaseIterable, Identifiable {
-    // Declaration order = sidebar order (CaseIterable). Songs leads: the library skews toward
-    // loose singles (album-less tracks appear only in Songs), so it's the most useful entry point.
+    // Declaration order = sidebar order (CaseIterable). Search leads, as in Music: ⌘F lands on it from
+    // any tab (R1.1-B, US-R1F-14). Songs follows: the library skews toward loose singles (album-less
+    // tracks appear only in Songs), so it's the most useful browse entry point — and the default.
+    case search
     case songs
     case albums
     case artists
@@ -18,6 +20,7 @@ enum LibraryCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .search: "Search"
         case .songs: "Songs"
         case .albums: "Albums"
         case .artists: "Artists"
@@ -27,6 +30,7 @@ enum LibraryCategory: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .search: "magnifyingglass"
         case .songs: "music.note"
         case .albums: "square.grid.2x2"
         case .artists: "music.mic"
@@ -39,7 +43,7 @@ enum LibraryCategory: String, CaseIterable, Identifiable {
     var tilePlaceholderSymbol: String {
         switch self {
         case .songs, .albums: "music.note"
-        case .artists, .genres: icon
+        case .search, .artists, .genres: icon
         }
     }
 }

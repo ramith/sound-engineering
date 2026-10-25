@@ -27,7 +27,7 @@ struct GenresListView: View {
                 systemImage: "guitars",
                 hint: "Songs without a genre tag won't appear here."
             ),
-            filterKeys: { [$0.name] },
+            filterKeys: LibrarySearch.genreKeys,
             title: \.name,
             load: { await model.loadGenres() },
             tile: { genre in

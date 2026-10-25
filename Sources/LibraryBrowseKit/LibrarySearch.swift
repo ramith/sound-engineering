@@ -54,21 +54,23 @@ public enum LibrarySearch {
         }
     }
 
-    /// ⌘F's results for `query` over `lists`: each list keeps what its tab's Filter keeps, and every
-    /// section is ranked by `SearchRelevance`. A query with no word in it finds nothing.
+    /// ⌘F's results for `query` over `lists`: each list keeps what its tab's Filter keeps — of what the tab
+    /// lists (a 0-song album, artist or genre is in no tab, `FacetListVisibility`) — and every section is
+    /// ranked by `SearchRelevance`. A query with no word in it finds nothing.
     public static func results(for query: String, in lists: Lists) -> LibrarySearchResults {
         let compiled = SearchRule.Query(query)
         guard !compiled.isEmpty else { return .empty }
         let none: (Any) -> [String] = { _ in [] }
+        let albums = lists.albums.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) }
+        let artists = lists.artists.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) }
+        let genres = lists.genres.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) }
         return LibrarySearchResults(
             songs: ranked(lists.songs, by: compiled, name: \.title, others: songOthers),
-            albums: ranked(kept(lists.albums, by: compiled, keys: albumKeys), by: compiled, name: \.title) {
+            albums: ranked(kept(albums, by: compiled, keys: albumKeys), by: compiled, name: \.title) {
                 [$0.albumArtist]
             },
-            artists: ranked(kept(lists.artists, by: compiled, keys: artistKeys), by: compiled, name: \.name,
-                            others: none),
-            genres: ranked(kept(lists.genres, by: compiled, keys: genreKeys), by: compiled, name: \.name,
-                           others: none),
+            artists: ranked(kept(artists, by: compiled, keys: artistKeys), by: compiled, name: \.name, others: none),
+            genres: ranked(kept(genres, by: compiled, keys: genreKeys), by: compiled, name: \.name, others: none),
             playlists: ranked(kept(lists.playlists, by: compiled, keys: playlistKeys), by: compiled, name: \.name,
                               others: none)
         )
@@ -129,6 +131,53 @@ public struct LibrarySearchResults: Sendable, Equatable {
     public var isEmpty: Bool {
         songs.isEmpty && albums.isEmpty && artists.isEmpty && genres.isEmpty && playlists.isEmpty
     }
+
+    /// How many items `section` holds.
+    public func count(of section: LibrarySearchSection) -> Int {
+        switch section {
+        case .songs: songs.count
+        case .albums: albums.count
+        case .artists: artists.count
+        case .genres: genres.count
+        case .playlists: playlists.count
+        }
+    }
+
+    /// The first `limit` items of `section`, in rank order — the rows ⌘F shows of it.
+    public func items(of section: LibrarySearchSection, limit: Int) -> [LibrarySearchItem] {
+        switch section {
+        case .songs: songs.prefix(limit).map { .song($0.id) }
+        case .albums: albums.prefix(limit).map { .album($0.id) }
+        case .artists: artists.prefix(limit).map { .artist($0.id) }
+        case .genres: genres.prefix(limit).map { .genre($0.id) }
+        case .playlists: playlists.prefix(limit).map { .playlist($0.id) }
+        }
+    }
+
+    /// Every row ⌘F shows, section by section in `LibrarySearchSection` order — the order its keyboard
+    /// cursor walks.
+    public func shownItems(limit: (LibrarySearchSection) -> Int) -> [LibrarySearchItem] {
+        LibrarySearchSection.allCases.flatMap { items(of: $0, limit: limit($0)) }
+    }
+}
+
+/// ⌘F's sections, in the order they show: the rail's order (Songs, Albums, Artists, Genres), then
+/// Playlists.
+public enum LibrarySearchSection: CaseIterable, Sendable {
+    case songs
+    case albums
+    case artists
+    case genres
+    case playlists
+}
+
+/// One row of ⌘F's results: the item it opens or plays.
+public enum LibrarySearchItem: Hashable, Sendable {
+    case song(Int64)
+    case album(Int64)
+    case artist(Int64)
+    case genre(Int64)
+    case playlist(Int64)
 }
 
 // MARK: - SearchRelevance — the one ranking rule

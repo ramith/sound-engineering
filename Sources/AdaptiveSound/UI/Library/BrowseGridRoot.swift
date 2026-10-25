@@ -21,7 +21,8 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View>: View where Item.ID == In
     let noun: String
     /// Shown when the category is empty while the library is not (`.loaded` / `.empty`).
     let empty: Empty
-    /// The strings the Filter matches (an album: its title and its artist).
+    /// The strings the Filter matches (an album: its title and its artist) — `LibrarySearch`'s keys, the
+    /// ones ⌘F's sections share, so a tab and ⌘F keep the same items (R1.1-B).
     let filterKeys: (Item) -> [String]
     /// The title type-to-select matches — a plain read, so a key press never builds every tile's
     /// content.
@@ -51,7 +52,7 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View>: View where Item.ID == In
         @Bindable var model = model
         let query = model.browseFilter
         let isFiltering = FacetTextFilter.isActive(query)
-        let shown = isFiltering ? items.filter { FacetTextFilter.matches(filterKeys($0), query: query) } : items
+        let shown = FacetTextFilter.filter(items, query: query, candidates: filterKeys)
         return VStack(spacing: 0) {
             LibraryCardHeader(title: category.title,
                               count: FacetCountLabel.count(shown.count, noun: noun, filtered: isFiltering),

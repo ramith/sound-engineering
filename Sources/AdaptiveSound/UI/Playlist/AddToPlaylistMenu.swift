@@ -11,10 +11,24 @@ import SwiftUI
 /// first few playlists; the searchable-picker overflow shows only when `onChooseMore` is provided (a
 /// context menu can't own a sheet — the host presents it; tile menus pass nil).
 struct AddToPlaylistMenu: View {
-    let resolveTrackIDs: () async -> [Int64]
+    /// What the add holds, resolved when an item is chosen: library songs by id and — from the queue —
+    /// files from outside the library (R1.1-B, US-PLIST-02).
+    let resolveItems: () async -> [PlaylistAddItem]
     /// Called with the resolved ids when the user picks "Add to Playlist…"; nil (default, for tile
     /// menus with no sheet host) hides that item — inline playlists + New Playlist only.
-    var onChooseMore: (([Int64]) -> Void)? = nil
+    var onChooseMore: (([Int64]) -> Void)?
+
+    /// The menu for library songs, by id.
+    init(resolveTrackIDs: @escaping () async -> [Int64], onChooseMore: (([Int64]) -> Void)? = nil) {
+        resolveItems = { await resolveTrackIDs().map(PlaylistAddItem.track) }
+        self.onChooseMore = onChooseMore
+    }
+
+    /// The menu for library songs and loose files (the queue's rows); no "Add to Playlist…" picker.
+    init(resolveItems: @escaping () async -> [PlaylistAddItem]) {
+        self.resolveItems = resolveItems
+    }
+
     @Environment(PlaylistsModel.self) private var playlists
     @Environment(LibraryBrowseModel.self) private var library
 
@@ -31,27 +45,40 @@ struct AddToPlaylistMenu: View {
                 }
                 if let onChooseMore, playlists.playlists.count > inlineLimit {
                     Divider()
-                    Button("Add to Playlist…") { Task { onChooseMore(await resolveTrackIDs()) } }
+                    Button("Add to Playlist…") { Task { onChooseMore(await Self.trackIDs(resolveItems())) } }
                 }
             }
         }
     }
 
     private func add(to playlist: Playlist) async {
-        let ids = await resolveTrackIDs()
-        let added = await playlists.addTracks(ids, toPlaylist: playlist.id)
+        let items = await resolveItems()
+        let added = await playlists.add(items, toPlaylist: playlist.id)
         if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: playlist.name) {
             library.showToast(message)
         }
     }
 
     private func createAndAdd() async {
-        let ids = await resolveTrackIDs()
-        guard let id = await playlists.createPlaylist(withTracks: ids) else { return }
+        let items = await resolveItems()
+        guard let id = await playlists.createPlaylist(with: items) else { return }
         let name = playlists.playlists.first { $0.id == id }?.name ?? "New Playlist"
-        let added = PlaylistAddDecision.trackIDsToAdd(ids).count
+        let added = PlaylistAddDecision.itemsToAdd(items).count
         if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: name) {
             library.showToast(message)
+        }
+    }
+}
+
+private extension AddToPlaylistMenu {
+    /// The library songs' ids among `items` (the picker sheet adds songs by id).
+    static func trackIDs(_ items: [PlaylistAddItem]) -> [Int64] {
+        items.compactMap { item in
+            if case let .track(id) = item {
+                id
+            } else {
+                nil
+            }
         }
     }
 }
@@ -78,10 +105,9 @@ struct PlaylistPickerSheet: View {
     /// the playlist list `.content` — where Esc in the pill sends key focus.
     @FocusState private var focus: CardFocus?
 
+    /// The playlists the filter keeps — by the Library's one search rule (R1.1-B), as ⌘F's Playlists.
     private var filtered: [Playlist] {
-        let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return playlists.playlists }
-        return playlists.playlists.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        FacetTextFilter.filter(playlists.playlists, query: filter, candidates: LibrarySearch.playlistKeys)
     }
 
     var body: some View {

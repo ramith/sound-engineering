@@ -30,7 +30,7 @@ struct ArtistsGridView: View {
                 systemImage: "music.mic",
                 hint: "Songs without artist tags won't appear here."
             ),
-            filterKeys: { [$0.name] },
+            filterKeys: LibrarySearch.artistKeys,
             title: \.name,
             load: { await model.loadArtists() },
             tile: { artist in

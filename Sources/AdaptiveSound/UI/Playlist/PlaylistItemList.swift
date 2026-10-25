@@ -5,6 +5,8 @@ import SwiftUI
 
 struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
+    /// The Library's browse model: it resolves files dropped from Finder before they join the queue.
+    @Environment(LibraryBrowseModel.self) private var library
     /// Read-only scroll request (the OWNER sequences filter-clear before bumping it);
     /// observed via `onChange` to scroll the current track into view.
     let jumpToCurrentRequestID: Int
@@ -151,9 +153,15 @@ struct PlaylistItemList: View {
         .id(item.id)
         // Reorder: the grip is the `.draggable` source, each row a `.dropDestination` that lands
         // the dragged item at its position. This is why the queue is a LazyVStack, not a List.
-        .dropDestination(for: QueueDragItem.self) { payloads, _ in
+        .dropDestination(for: FileOrRowDrop<QueueDragItem>.self) { drops, _ in
             dropTargetIndex = nil
-            guard reorderEnabled, let fromID = payloads.first?.id else { return false }
+            // Files from Finder join the queue's end (R1.1-B, US-LIB-02), as on the panel around it.
+            let files = FileOrRowDrop.files(drops)
+            guard files.isEmpty else {
+                library.appendFiles(files)
+                return true
+            }
+            guard reorderEnabled, let fromID = FileOrRowDrop.rows(drops).first?.id else { return false }
             return viewModel.moveByDrop(fromID: fromID, toIndex: index)
         } isTargeted: { targeted in
             // No reorderEnabled guard here (break-it NIT-1): typing a filter mid-drag flips
@@ -213,6 +221,11 @@ struct PlaylistItemList: View {
         }
         .disabled(index >= viewModel.queue.count - 1)
         Divider()
+        // A library song by id; a loose file (opened from outside the library) by its path — the add
+        // makes it a song in no music folder (R1.1-B, US-PLIST-02).
+        AddToPlaylistMenu(resolveItems: {
+            [item.file.trackID.map(PlaylistAddItem.track) ?? .file(item.file.absoluteURL)]
+        })
         Button("Info", systemImage: "info.circle") {
             infoTarget = item
         }

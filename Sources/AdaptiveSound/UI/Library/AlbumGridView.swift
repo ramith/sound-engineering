@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
@@ -19,7 +20,7 @@ struct AlbumGridView: View {
             state: model.albumsState,
             noun: "album",
             empty: LibraryEmptyStateView(kind: .emptyLibrary),
-            filterKeys: { [$0.title, $0.albumArtist] },
+            filterKeys: LibrarySearch.albumKeys,
             title: \.title,
             load: { await model.loadAlbums() },
             tile: { album in

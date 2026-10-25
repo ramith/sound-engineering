@@ -131,6 +131,7 @@ struct AdaptiveSound: App {
                     appDelegate.nowPlaying = nowPlaying
                     appDelegate.playlists = playlistsModel // saves its waiting orders at quit (E4)
                     appDelegate.eqViewModel = eqViewModel // lets a held Compare go when the window closes
+                    appDelegate.browseModel = libraryModel // plays files opened from outside the library
                     // Register the remote-command handlers once (marks the app a media app so the
                     // media keys + Control Center transport route here). Idempotent.
                     nowPlaying.registerCommands()
@@ -147,8 +148,18 @@ struct AdaptiveSound: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1000, height: 720) // open comfortably above the 880×640 hard minimum
         .commands {
-            // No document model — drop the default New/Open items.
-            CommandGroup(replacing: .newItem) {}
+            // No document model — no New; Open… plays files from outside the library without adding
+            // them (R1.1-B, US-LIB-02).
+            CommandGroup(replacing: .newItem) {
+                Button("Open…") { appDelegate.showOpenPanel() }
+                    .keyboardShortcut("o")
+            }
+            // Find (⌘F) is the Library's search, from any tab (R1.1-B, US-R1F-14): it replaces the text
+            // Find items — the app has no document text to find in — so one ⌘F means one thing.
+            CommandGroup(replacing: .textEditing) {
+                Button("Search Library") { libraryModel.beginSearch() }
+                    .keyboardShortcut("f")
+            }
 
             CommandMenu("Controls") {
                 // Use the SAME transport semantics as the footer bar (L3): position-preserving

@@ -7,7 +7,7 @@ import LibraryStore
 //
 // The enrichment half, chained after a folder walk (design §6): once the structural scan
 // has upserted rows, this fills tags + cover art for the ones that still need it (and, at
-// launch, `resumePendingMetadata` runs it alone for songs left pending — S10.8 C2). Mirrors
+// launch, `readPendingTags` runs it alone for songs left pending — S10.8 C2). Mirrors
 // the scan seam — `runMetadataPass` is `@MainActor` (extension inheritance) and only
 // publishes `metadataProgress` there; the heavy per-file extraction + thumbnailing run OFF
 // the main actor inside `MetadataScanner`'s bounded task group, and store WRITES serialize

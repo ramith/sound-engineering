@@ -2,12 +2,13 @@ import SwiftUI
 
 // MARK: - Library card header (S10.8 D4 — Songs, Albums, Artists, Genres; E4 — a playlist)
 
-/// The header of the Library card, one for the four categories so it stays put as the rail
-/// switches between them (`png/03`): the title, the mono count line under it, the Filter pill
-/// (⌘F focuses it; Esc clears it and hands key focus to the list or grid below, K1) and the
-/// category's own pills after it — Songs' Sort and Columns; none on the grids for R1. A hairline
-/// under it, inset with the text. A playlist's page wears it too, with no Filter (S10.8 E4): its own
-/// pills alone.
+/// The header of the Library card, one for the categories so it stays put as the rail switches
+/// between them (`png/03`): the title, the mono count line under it, the Filter pill (⌥⌘F focuses
+/// it; Esc clears it and hands key focus to the list or grid below, K1) and the category's own pills
+/// after it — Songs' Sort and Columns; none on the grids for R1. A hairline under it, inset with the
+/// text. A playlist's page wears it too, with no Filter (S10.8 E4): its own pills alone. The Search
+/// page wears it with its search field, which ⌘F focuses from any tab (the app's Find command, R1.1-B
+/// — so a card's Filter takes ⌥⌘F, as Music's "Filter" does beside its "Find").
 struct LibraryCardHeader<Controls: View>: View {
     let title: String
     /// "857 albums", "379 songs · 41 hrs", or "N results" while filtering. VoiceOver reads it whole.
@@ -19,13 +20,16 @@ struct LibraryCardHeader<Controls: View>: View {
     let controls: Controls
 
     /// A category's header: the Filter pill, then the category's own pills. `focus` is the card's one
-    /// focus value (`CardFocus`), owned by the category root: the pill is `.filter`.
+    /// focus value (`CardFocus`), owned by the category root: the pill is `.filter`. `focusShortcut`
+    /// focuses the pill from anywhere in the window — ⌥⌘F for a Filter; nil for the Search page, whose
+    /// field the app's Find command (⌘F) focuses.
     init(title: String, count: String, compactCount: String? = nil, filter: Binding<String>, filterPrompt: String,
-         focus: FocusState<CardFocus?>.Binding, @ViewBuilder controls: () -> Controls) {
+         focus: FocusState<CardFocus?>.Binding, focusShortcut: KeyboardShortcut? = LibraryFilterShortcut.filter,
+         @ViewBuilder controls: () -> Controls) {
         self.title = title
         self.count = count
         self.compactCount = compactCount
-        filterPill = FilterPill(text: filter, prompt: filterPrompt, focus: focus, focusShortcut: KeyboardShortcut("f"))
+        filterPill = FilterPill(text: filter, prompt: filterPrompt, focus: focus, focusShortcut: focusShortcut)
         self.controls = controls()
     }
 
@@ -84,11 +88,19 @@ struct LibraryCardHeader<Controls: View>: View {
 }
 
 extension LibraryCardHeader where Controls == EmptyView {
-    /// A header with the Filter pill alone (the browse grids).
+    /// A header with the Filter pill alone (the browse grids; the Search page, with no shortcut).
     init(title: String, count: String, filter: Binding<String>, filterPrompt: String,
-         focus: FocusState<CardFocus?>.Binding) {
-        self.init(title: title, count: count, filter: filter, filterPrompt: filterPrompt, focus: focus) {
+         focus: FocusState<CardFocus?>.Binding, focusShortcut: KeyboardShortcut? = LibraryFilterShortcut.filter) {
+        self.init(title: title, count: count, filter: filter, filterPrompt: filterPrompt, focus: focus,
+                  focusShortcut: focusShortcut) {
             EmptyView()
         }
+    }
+}
+
+/// The Library card Filter's shortcut: ⌥⌘F — ⌘F is the app's Find, the Library's search (R1.1-B).
+enum LibraryFilterShortcut {
+    static var filter: KeyboardShortcut {
+        KeyboardShortcut("f", modifiers: [.command, .option])
     }
 }
