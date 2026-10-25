@@ -75,3 +75,25 @@ struct SearchRelevanceTests {
         )
     }
 }
+
+// MARK: - The rows ⌘F shows
+
+@Suite("LibrarySearchResults — the rows ⌘F shows, section by section")
+struct LibrarySearchShownTests {
+    @Test("each section shows its first rows, in the rail's order, then Playlists")
+    func shownItems() {
+        let genres = (1 ... 7).map { GenreFacet(id: Int64($0), name: "Rock \($0)", trackCount: 1) }
+        let playlists = [Playlist(id: 9, name: "Rock", isBuiltin: false, createdAt: 1, entryCount: 1)]
+        let results = LibrarySearch.results(for: "rock", in: LibrarySearch.Lists(genres: genres, playlists: playlists))
+        let shown = results.shownItems { $0 == .genres ? 3 : 5 }
+        #expect(shown == [.genre(1), .genre(2), .genre(3), .playlist(9)])
+        #expect(results.count(of: .genres) == 7)
+    }
+
+    @Test("an album, artist or genre with no songs is in no tab, so not in ⌘F")
+    func zeroSongFacetsHidden() {
+        let genres = [GenreFacet(id: 1, name: "Rock", trackCount: 0), GenreFacet(id: 2, name: "Rockabilly", trackCount: 2)]
+        let results = LibrarySearch.results(for: "rock", in: LibrarySearch.Lists(genres: genres))
+        #expect(results.genres.map(\.id) == [2])
+    }
+}

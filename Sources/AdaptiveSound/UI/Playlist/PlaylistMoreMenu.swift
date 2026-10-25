@@ -5,9 +5,13 @@ import SwiftUI
 
 /// The playlist header's ⋯ (`LibraryPageMoreMenu`, every Library page's ⋯ pill): Play Next and Add to
 /// Queue for the whole playlist — each confirmed by the queue toast, as on the album, artist and genre
-/// pages — and, while some of its files are missing, Remove Missing… (confirmed first, in the Library
-/// tab's dialog; off during a scan, when files flicker "missing").
+/// pages — Add Files… (files from anywhere, R1.1-B) and, while some of its files are missing, Remove
+/// Missing… (confirmed first, in the Library tab's dialog; off during a scan, when files flicker
+/// "missing").
 struct PlaylistMoreMenu: View {
+    /// Add Files…: choose files from anywhere to add to the playlist (R1.1-B, US-PLIST-02).
+    let addFiles: () -> Void
+
     @Environment(PlaylistsModel.self) private var model
     @Environment(LibraryBrowseModel.self) private var library
 
@@ -15,6 +19,8 @@ struct PlaylistMoreMenu: View {
         LibraryPageMoreMenu {
             Button("Play Next", action: playNext)
             Button("Add to Queue", action: addToQueue)
+            Divider()
+            Button("Add Files…", action: addFiles)
             if model.missingEntryCount > 0 {
                 Divider()
                 Button("Remove \(model.missingEntryCount.formatted(.number)) Missing…", role: .destructive,

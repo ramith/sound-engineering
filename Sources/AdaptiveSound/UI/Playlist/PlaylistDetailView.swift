@@ -37,6 +37,8 @@ struct PlaylistDetailView: View {
     /// The entry being re-pointed via Locate… (drives the file importer); nil when closed (F).
     /// `internal` so the `+Actions` extension's `missingRowActions` can set it.
     @State var locatingEntryID: Int64?
+    /// Add Files… is choosing files to add (R1.1-B, US-PLIST-02) — its panel hangs on the header.
+    @State private var isAddingFiles = false
 
     /// Track-number column sized to the widest index, so a 3-digit position never wraps (queue idiom).
     private var numberColumnWidth: CGFloat {
@@ -46,8 +48,14 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PlaylistDetailHeader(play: { playNow() }, shuffle: shuffleNow)
+            PlaylistDetailHeader(play: { playNow() }, shuffle: shuffleNow, isAddingFiles: $isAddingFiles,
+                                 addFiles: { addFiles($0) })
             content
+        }
+        // Audio files dragged in from Finder join this playlist as songs in no music folder (R1.1-B,
+        // US-PLIST-02) — a reference-add: nothing on disk moves. A row takes the same drop.
+        .dropDestination(for: URL.self) { urls, _ in
+            addFiles(urls.filter(\.isFileURL))
         }
         // No background of its own: it sits on the Library card (S10.8 D1 — the opaque window fill
         // it painted was the hard edge against the glow).
@@ -88,7 +96,9 @@ struct PlaylistDetailView: View {
             ContentUnavailableView {
                 Label("No Tracks Yet", systemImage: "music.note.list")
             } description: {
-                Text("Add songs from your Library to build this playlist.")
+                Text("Add songs from your Library to build this playlist — or files from anywhere on your Mac.")
+            } actions: {
+                Button("Add Files…") { isAddingFiles = true }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .loaded:
@@ -232,9 +242,11 @@ private extension PlaylistDetailView {
                 isDropTarget: dropTargetEntryID == row.id,
                 isKeyboardCursor: isKeyboardCursor
             )
-            .dropDestination(for: PlaylistEntryDragItem.self) { payloads, _ in
+            .dropDestination(for: FileOrRowDrop<PlaylistEntryDragItem>.self) { drops, _ in
                 dropTargetEntryID = nil
-                guard let fromID = payloads.first?.entryID else { return false }
+                let files = FileOrRowDrop.files(drops)
+                guard files.isEmpty else { return addFiles(files) }
+                guard let fromID = FileOrRowDrop.rows(drops).first?.entryID else { return false }
                 return moveEntry(fromID: fromID, toEntryID: row.id)
             } isTargeted: { targeted in
                 dropTargetEntryID = targeted ? row.id : (dropTargetEntryID == row.id ? nil : dropTargetEntryID)

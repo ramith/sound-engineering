@@ -61,6 +61,14 @@ struct PlaylistView: View {
                 filterText = ""
             }
         }
+        // Audio files dragged in from Finder join the queue's end — without joining the library
+        // (R1.1-B, US-LIB-02). A queue row takes the same drop (`FileOrRowDrop`).
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter(\.isFileURL)
+            guard !files.isEmpty else { return false }
+            library.appendFiles(files)
+            return true
+        }
     }
 
     // MARK: Header (S10.8 PR C — the realigned SINGLE 32pt row, `png/03`)
@@ -148,10 +156,7 @@ struct PlaylistView: View {
     /// `relativePath` is empty for library-queued tracks (the queue adapter never fills it —
     /// break-it MINOR-5), so it was a dead candidate; artist isn't carried by `AudioFile`.
     private var filteredIndices: [Int] {
-        guard filterActive else { return Array(viewModel.queue.indices) }
-        return viewModel.queue.indices.filter { index in
-            FacetTextFilter.matches(viewModel.queue[index].file.name, query: filterText)
-        }
+        FacetTextFilter.filter(viewModel.queue.indices, query: filterText) { [viewModel.queue[$0].file.name] }
     }
 
     private var noMatches: some View {

@@ -66,7 +66,22 @@ extension LibraryModel {
         #endif
         await catchUpLibraryFolders()
         if let store {
-            await resumePendingMetadata(store)
+            let reason = store.derivedDataRefreshed
+                ? "full re-read for derived data v\(LibraryStore.derivedDataVersion)" : "resuming an interrupted pass"
+            await readPendingTags(store, reason: reason)
+        }
+    }
+
+    /// Read the tags of songs added to a playlist from outside the library (R1.1-B, US-PLIST-02): their
+    /// rows wait for them (`tracks.metadata_scanned = 0`) like any new song. A library-wide pass reads
+    /// every pending song, so it supersedes the one running, as a folder add's does
+    /// (`startFullMetadataPass`); with nothing else pending it reads just these.
+    func readPendingTags() {
+        guard let store else { return }
+        Task {
+            guard let generation = try? await store.beginScanGeneration() else { return }
+            logUX("libraryStore: reading the tags of songs added from outside the library")
+            startFullMetadataPass(store, generation: generation)
         }
     }
 
@@ -79,16 +94,14 @@ extension LibraryModel {
     /// `scanTask`, so a folder add's pass (which reads every pending song) supersedes it, and
     /// quitting cancels it. The sidebar shows "Reading tags…" while it runs; the Albums grid
     /// reloads when it ends.
-    private func resumePendingMetadata(_ store: LibraryStore) async {
+    private func readPendingTags(_ store: LibraryStore, reason: String) async {
         let pending = (try? await store.tracksNeedingMetadata(limit: 1)) ?? []
         let regroupOwed = (try? await store.isAlbumRegroupOwed()) ?? false
         guard !pending.isEmpty || regroupOwed, let generation = try? await store.beginScanGeneration() else { return }
         // A folder added meanwhile owns `scanTask` now, and its pass reads every pending song and
         // regroups — never overwrite (and so orphan, uncancellable) it (B3).
         guard scanTask == nil else { return }
-        let reason = store.derivedDataRefreshed
-            ? "full re-read for derived data v\(LibraryStore.derivedDataVersion)" : "resuming an interrupted pass"
-        logUX("libraryStore: reading pending tags at launch (\(reason))")
+        logUX("libraryStore: reading pending tags (\(reason))")
         scanTask = Task(priority: .utility) { [weak self] in
             await self?.runMetadataPass(store, generation: generation)
         }

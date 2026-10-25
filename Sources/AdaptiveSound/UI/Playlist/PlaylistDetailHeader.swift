@@ -14,17 +14,28 @@ import SwiftUI
 struct PlaylistDetailHeader: View {
     let play: () -> Void
     let shuffle: () -> Void
+    /// Add Files… (the ⋯ menu, and the empty page's button) is choosing files to add — the panel hangs
+    /// here, on a view the page always shows (its rows' Locate… panel hangs on the page itself).
+    @Binding var isAddingFiles: Bool
+    /// Adds the chosen files to the playlist.
+    let addFiles: ([URL]) -> Void
 
     @Environment(PlaylistsModel.self) private var model
 
     var body: some View {
         LibraryCardHeader(title: model.openPlaylist?.name ?? "Playlist", count: countLine, compactCount: compactCount) {
             LibraryPageActions(play: play, shuffle: shuffle) {
-                PlaylistMoreMenu()
+                PlaylistMoreMenu(addFiles: { isAddingFiles = true })
             }
             // The pills keep their size; a long name truncates instead.
             .fixedSize()
             .disabled(model.detailState != .loaded)
+        }
+        .fileImporter(isPresented: $isAddingFiles, allowedContentTypes: LooseFiles.contentTypes,
+                      allowsMultipleSelection: true) { result in
+            if case let .success(urls) = result {
+                addFiles(urls)
+            }
         }
     }
 

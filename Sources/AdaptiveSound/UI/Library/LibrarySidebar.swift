@@ -194,11 +194,11 @@ struct LibrarySidebar: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
-            // Drop a dragged library track (US-PLIST-03) → reference-ADD by id (PlaylistDropRouter is
-            // add-only by construction; no file move/copy). A file-URL/audio drag can't match the
-            // `LibraryTrackDragItem` type, so it never reaches here.
-            .dropDestination(for: LibraryTrackDragItem.self) { items, _ in
-                handleTrackDrop(items, onto: playlist)
+            // Drop dragged library tracks (US-PLIST-03) → reference-ADD by id; drop audio files from
+            // Finder (R1.1-B, US-PLIST-02) → each added as a song in no music folder. PlaylistDropRouter
+            // is add-only by construction: nothing on disk moves or is copied (US-PLIST-04).
+            .dropDestination(for: FileOrRowDrop<LibraryTrackDragItem>.self) { drops, _ in
+                handleDrop(drops, onto: playlist)
             } isTargeted: { targeted in
                 dropTargetPlaylistID = targeted ? playlist.id
                     : (dropTargetPlaylistID == playlist.id ? nil : dropTargetPlaylistID)
@@ -251,14 +251,22 @@ struct LibrarySidebar: View {
 
     // MARK: - Actions
 
-    /// Reference-add dropped library tracks to `playlist` (US-PLIST-03/04). Routes through the
-    /// add-only `PlaylistDropRouter` (no file op is representable), then confirms with a toast.
-    private func handleTrackDrop(_ items: [LibraryTrackDragItem], onto playlist: Playlist) -> Bool {
+    /// Reference-add a drop to `playlist` (US-PLIST-03/04; R1.1-B US-PLIST-02): dragged library tracks
+    /// by id, or Finder's audio files. Routes through the add-only `PlaylistDropRouter` (no file op is
+    /// representable), then confirms with a toast.
+    private func handleDrop(_ drops: [FileOrRowDrop<LibraryTrackDragItem>], onto playlist: Playlist) -> Bool {
         dropTargetPlaylistID = nil
-        guard case let .addTracks(ids) = PlaylistDropRouter.route(droppedTrackIDs: items.map(\.trackID)),
-              !ids.isEmpty else { return false }
+        let files = FileOrRowDrop.files(drops)
+        let outcome = files.isEmpty
+            ? PlaylistDropRouter.route(droppedTrackIDs: FileOrRowDrop.rows(drops).map(\.trackID))
+            : PlaylistDropRouter.route(droppedFiles: files)
+        let items: [PlaylistAddItem] = switch outcome {
+        case let .addTracks(ids): ids.map(PlaylistAddItem.track)
+        case let .addFiles(urls): urls.map(PlaylistAddItem.file)
+        }
+        guard !items.isEmpty else { return false }
         Task {
-            let added = await playlists.addTracks(ids, toPlaylist: playlist.id)
+            let added = await playlists.add(items, toPlaylist: playlist.id)
             if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: playlist.name) {
                 model.showToast(message)
             }

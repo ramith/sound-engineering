@@ -21,6 +21,12 @@ struct MusicFoldersSection: View {
     @Environment(LibraryBrowseModel.self) private var model
     @Environment(LibraryModel.self) private var library
     @State private var removeTarget: LibraryFolder?
+    /// The paused folder "Use This Drive…" is choosing a new home for (R1.1-B, LIB-VOL-1).
+    @State private var rebindTarget: LibraryFolder?
+    /// A refused rebind's notice ("That’s not the drive for …"), in the app's themed dialog.
+    @State private var rebindNotice: LibraryBrowseModel.RebindNotice?
+    /// "Use This Drive…" starts under the path: past the folder glyph and its gap.
+    @ScaledMetric(relativeTo: .body) private var useThisDriveIndent: CGFloat = 24
 
     var body: some View {
         Group {
@@ -55,6 +61,25 @@ struct MusicFoldersSection: View {
             MusicFolderRemoveDialog(path: abbreviatedPath(root.path), remove: { confirmRemove(root) },
                                     cancel: cancelRemove)
         }
+        // "Use This Drive…": choose the folder on the drive that now holds the songs. Silent — no preview
+        // (founder, 2026-10-25): the rebind runs at once, and the app says what it kept and removed, or
+        // that it is the wrong drive.
+        .fileImporter(isPresented: isChoosingDrive, allowedContentTypes: [.folder]) { result in
+            guard case let .success(url) = result, let folder = rebindTarget else { return }
+            Task { rebindNotice = await model.useDrive(url, for: folder) }
+        }
+        .sheet(item: $rebindNotice) { notice in
+            AppDialog(notice: "Couldn’t Use That Folder", message: notice.message) { rebindNotice = nil }
+        }
+    }
+
+    /// Whether "Use This Drive…"'s folder panel is open (while it has a folder to rebind).
+    private var isChoosingDrive: Binding<Bool> {
+        Binding(get: { rebindTarget != nil }, set: { isOpen in
+            if !isOpen {
+                rebindTarget = nil
+            }
+        })
     }
 
     /// Remove: close the dialog, then let the folder go — its files stay on disk.
@@ -70,6 +95,29 @@ struct MusicFoldersSection: View {
     private func rootRow(_ root: LibraryFolder) -> some View {
         let status = MusicFolderStatus(isScanning: model.scanningRootID == root.id,
                                        pausedBy: library.reconcileState[root.id]?.pauseReason)
+        return VStack(alignment: .leading, spacing: 0) {
+            folderLine(root, status: status)
+            if status?.offersUseThisDrive == true {
+                useThisDrive(root)
+            }
+        }
+    }
+
+    /// "Use This Drive…" under a folder whose drive is gone, replaced or unconfirmed (R1.1-B, LIB-VOL-1):
+    /// point it at the folder on the drive that holds its songs now. Its own VoiceOver element, a button
+    /// named for its folder; indented to the path's start.
+    private func useThisDrive(_ root: LibraryFolder) -> some View {
+        Button("Use This Drive…") { rebindTarget = root }
+            .buttonStyle(.plain)
+            .font(DesignSystem.Font.caption.weight(.semibold))
+            .foregroundStyle(DesignSystem.Color.accentText)
+            .padding(.leading, useThisDriveIndent)
+            .padding(.bottom, DesignSystem.Spacing.xSmall)
+            .help("Choose this folder on the drive that holds its songs now")
+            .accessibilityLabel("Use this drive for \(abbreviatedPath(root.path))")
+    }
+
+    private func folderLine(_ root: LibraryFolder, status: MusicFolderStatus?) -> some View {
         let isPaused = status?.isPaused == true
         return HStack(spacing: DesignSystem.Spacing.small) {
             // The glyph, the path and the status line are ONE VoiceOver element — "~/Music, Not found

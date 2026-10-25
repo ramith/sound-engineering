@@ -19,6 +19,13 @@ public enum PlaylistAddDecision {
         return ordered
     }
 
+    /// The items to add (R1.1-B — library songs and loose files): the selection de-duplicated, first-seen
+    /// order preserved, as `trackIDsToAdd` does for ids.
+    public static func itemsToAdd(_ selected: [PlaylistAddItem]) -> [PlaylistAddItem] {
+        var seen = Set<PlaylistAddItem>()
+        return selected.filter { seen.insert($0).inserted }
+    }
+
     /// The confirmation-toast copy for adding `count` tracks to `playlistName`; nil when nothing was
     /// added (no toast for a no-op).
     public static func toastMessage(added count: Int, playlistName: String) -> String? {

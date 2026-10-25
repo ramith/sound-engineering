@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import SwiftUI
 
 // MARK: - PlaylistDetailView + actions (split out for type-body length)
@@ -39,6 +40,22 @@ extension PlaylistDetailView {
         let added = model.playEntryNext(entryID)
         guard added > 0 else { return } // the entry is gone or unplayable: nothing went in, no toast
         library.showQueueToast(.playNext, added: added)
+    }
+
+    /// Add files from outside the library to this playlist (R1.1-B, US-PLIST-02) — a Finder drop on the
+    /// page or a row, or Add Files…: the audio files among `urls`, each once, as songs in no music folder
+    /// (a reference-add — nothing on disk moves), confirmed by the toast. False when none could be added.
+    @discardableResult
+    func addFiles(_ urls: [URL]) -> Bool {
+        guard case let .addFiles(files) = PlaylistDropRouter.route(droppedFiles: urls), !files.isEmpty,
+              let name = model.openPlaylist?.name else { return false }
+        Task {
+            let added = await model.add(files.map(PlaylistAddItem.file), toPlaylist: playlistID)
+            if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: name) {
+                library.showToast(message)
+            }
+        }
+        return true
     }
 
     /// Move `fromID` to land AT `toEntryID`'s row and persist the new order — matching the queue's

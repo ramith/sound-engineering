@@ -2,12 +2,14 @@ import SwiftUI
 
 // MARK: - Category root + drill-down route views (S9.4)
 
-/// The detail-stack root for the selected sidebar category (Songs · Albums · Artists · Genres).
+/// The detail-stack root for the selected sidebar category (Search · Songs · Albums · Artists · Genres).
 struct LibraryCategoryRoot: View {
     let category: LibraryCategory?
 
     var body: some View {
         switch category {
+        case .search:
+            LibrarySearchView()
         case .albums:
             AlbumGridView()
         case .songs:

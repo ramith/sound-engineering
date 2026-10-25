@@ -1,4 +1,5 @@
 import AppKit
+import LibraryBrowseKit
 
 // MARK: - App lifecycle delegate
 
@@ -29,6 +30,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Sprint EQ: a latched Compare (VoiceOver) lets go when the window closes, so the EQ never stays
     /// bypassed behind a window that is gone.
     weak var eqViewModel: EQViewModel?
+    /// R1.1-B (US-LIB-02): the browse model, which plays files opened from outside the library. Set when
+    /// the window appears; files opened before then (Open With launching the app) wait in `pendingOpen`.
+    @MainActor weak var browseModel: LibraryBrowseModel? {
+        didSet {
+            guard let browseModel, !pendingOpen.isEmpty else { return }
+            let urls = pendingOpen
+            pendingOpen = []
+            browseModel.openFiles(urls)
+        }
+    }
+
+    /// Files opened before the window was up.
+    @MainActor private var pendingOpen: [URL] = []
+
+    // MARK: - Files from outside the library (R1.1-B, US-LIB-02)
+
+    /// Open With, and a drop on the Dock icon (`CFBundleDocumentTypes` in Info.plist): play the files —
+    /// without adding them to the library.
+    @MainActor
+    func application(_: NSApplication, open urls: [URL]) {
+        open(urls)
+    }
+
+    /// File ▸ Open… (⌘O): the system panel, for audio files of the kinds the app plays.
+    @MainActor
+    func showOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = LooseFiles.contentTypes
+        panel.prompt = "Play"
+        panel.message = "Play files without adding them to your library."
+        panel.begin { [weak self] response in
+            guard response == .OK else { return }
+            let urls = panel.urls
+            Task { @MainActor in self?.open(urls) }
+        }
+    }
+
+    /// Hand `urls` to the browse model, or keep them until it is wired.
+    @MainActor
+    private func open(_ urls: [URL]) {
+        NSApp.setActivationPolicy(.regular) // opened from the menu bar or Finder: bring the window's app back
+        if let browseModel {
+            browseModel.openFiles(urls)
+        } else {
+            pendingOpen += urls
+        }
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         // Last window closed (the red traffic-light button): retreat to the menu bar — hide the

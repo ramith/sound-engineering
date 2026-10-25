@@ -1,4 +1,5 @@
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioFile Model
 
@@ -32,6 +33,33 @@ struct AudioFile: Identifiable {
     /// Does NOT affect `id` (still the URL) — purely metadata; defaulted so existing callers
     /// that build an `AudioFile` without a library row are unaffected.
     var trackID: Int64? = nil
+}
+
+// MARK: - Loose files (R1.1-B, US-LIB-02) and the persisted slot (seam S5)
+
+extension AudioFile {
+    /// A file outside every music folder — opened by Open…, a drop or Open With — as the queue plays it:
+    /// named by its file name (its tags are read for Now Playing, `EmbeddedMetadataReader`), with no
+    /// library row (`trackID` nil): playing it alone never adds it to the library (US-LIB-02).
+    init(looseFileAt url: URL) {
+        self.init(
+            name: url.deletingPathExtension().lastPathComponent,
+            relativePath: "",
+            absoluteURL: url,
+            format: url.pathExtension.uppercased(),
+            durationSeconds: 0
+        )
+    }
+
+    /// How a persisted queue names this slot (PlaybackQueueKit `QueueSlotRef`, seam S5): a library song by
+    /// its `tracks.id` — so it re-resolves after its folder moves drive ("Use this drive") — and a loose
+    /// file by its path, with no `tracks` row.
+    var slotRef: QueueSlotRef {
+        if let trackID {
+            return .track(id: trackID)
+        }
+        return .loose(path: absoluteURL.path)
+    }
 }
 
 // MARK: - Comparable (locale-aware name sort)

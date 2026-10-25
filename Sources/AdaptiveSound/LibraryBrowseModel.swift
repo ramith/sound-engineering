@@ -148,6 +148,9 @@ final class LibraryBrowseModel {
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
 
+    /// ⌘F's library search (R1.1-B, US-R1F-14) — the Search page's text and results (`+Search`).
+    let search: LibrarySearchModel
+
     /// `audio` / `library` / `store` / `showQueueToast` are `internal` (not `private`) so the
     /// same-type `LibraryBrowseModel+Facets` extension (a separate file, for file length) can reach
     /// them — an extension of this type IS this type, and the app is a single module.
@@ -175,6 +178,7 @@ final class LibraryBrowseModel {
     init(audio: AudioViewModel, library: LibraryModel) {
         self.audio = audio
         self.library = library
+        search = LibrarySearchModel(library: library)
     }
 
     // MARK: - Store access
@@ -394,6 +398,7 @@ final class LibraryBrowseModel {
         if matchedIDs != nil {
             await runFilter()
         }
+        await search.rerunIfSearching() // ⌘F's results follow the library too
     }
 
     // Play actions (play / playNext / append / playTrackNextNow) live in `LibraryBrowseModel+Play`;

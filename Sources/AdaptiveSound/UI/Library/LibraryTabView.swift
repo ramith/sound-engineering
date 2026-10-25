@@ -43,6 +43,14 @@ struct LibraryTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // No backdrop here: the two floating cards sit over the app glow the shell mounts behind
         // every tab but Now Playing (`TabContentView`, S10.8 F1).
+        // Files dropped on the Library from Finder play now, without joining the library (R1.1-B,
+        // US-LIB-02). A playlist — its rail row or its page — takes a drop of files as an add instead.
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter(\.isFileURL)
+            guard !files.isEmpty else { return false }
+            model.openFiles(files)
+            return true
+        }
         // The playlist dialogs, hosted ONCE for the tab (S10.8 E fix round): a failure is the model's,
         // whichever page raised it — the rail, an Add to Playlist on any page, the playlist page.
         .playlistDialogSheet()

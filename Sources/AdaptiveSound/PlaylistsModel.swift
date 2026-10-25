@@ -203,39 +203,14 @@ final class PlaylistsModel {
     /// Returns the number appended so the caller can raise a truthful toast.
     @discardableResult
     func addTracks(_ trackIDs: [Int64], toPlaylist playlistID: Int64) async -> Int {
-        let ids = PlaylistAddDecision.trackIDsToAdd(trackIDs)
-        guard let store, !ids.isEmpty else { return 0 }
-        do {
-            let entryIDs = try await store.appendEntries(playlistID: playlistID, trackIDs: ids)
-            await loadTree()
-            if openPlaylistID == playlistID {
-                await loadDetail(id: playlistID)
-            }
-            return entryIDs.count
-        } catch {
-            fail("Couldn’t add to \(quotedName(of: playlistID)): \(error.localizedDescription)")
-            return 0
-        }
+        await add(trackIDs.map(PlaylistAddItem.track), toPlaylist: playlistID)
     }
 
     /// Create a new untitled playlist containing `trackIDs` (the "New Playlist" add path) and reload.
     /// Returns the new id so the sidebar can select it (+ drop into rename). De-dupes the selection.
     @discardableResult
     func createPlaylist(withTracks trackIDs: [Int64]) async -> Int64? {
-        guard let store else { return nil }
-        let ids = PlaylistAddDecision.trackIDsToAdd(trackIDs)
-        do {
-            let id = try await store.createUntitledPlaylist()
-            if !ids.isEmpty {
-                _ = try await store.appendEntries(playlistID: id, trackIDs: ids)
-            }
-            await loadTree()
-            return id
-        } catch {
-            await loadTree() // a playlist created before its add failed still shows
-            fail("Couldn’t create the playlist: \(error.localizedDescription)")
-            return nil
-        }
+        await createPlaylist(with: trackIDs.map(PlaylistAddItem.track))
     }
 
     // MARK: - Detail loading
@@ -323,8 +298,9 @@ final class PlaylistsModel {
         dialogs.dialog
     }
 
-    /// A playlist action failed: its notice takes the sheet (dropping an open confirmation).
-    private func fail(_ message: String) {
+    /// A playlist action failed: its notice takes the sheet (dropping an open confirmation). Internal for
+    /// the same-type `+Add` extension.
+    func fail(_ message: String) {
         dialogs.fail(message)
     }
 
@@ -374,7 +350,7 @@ final class PlaylistsModel {
     }
 
     /// "“Road Trip”" for a failure's message, or "the playlist" once its row is gone.
-    private func quotedName(of playlistID: Int64) -> String {
+    func quotedName(of playlistID: Int64) -> String {
         playlists.first { $0.id == playlistID }.map { "“\($0.name)”" } ?? "the playlist"
     }
 
