@@ -92,7 +92,8 @@ struct LibrarySearchShownTests {
 
     @Test("an album, artist or genre with no songs is in no tab, so not in ⌘F")
     func zeroSongFacetsHidden() {
-        let genres = [GenreFacet(id: 1, name: "Rock", trackCount: 0), GenreFacet(id: 2, name: "Rockabilly", trackCount: 2)]
+        let genres = [GenreFacet(id: 1, name: "Rock", trackCount: 0),
+                      GenreFacet(id: 2, name: "Rockabilly", trackCount: 2)]
         let results = LibrarySearch.results(for: "rock", in: LibrarySearch.Lists(genres: genres))
         #expect(results.genres.map(\.id) == [2])
     }

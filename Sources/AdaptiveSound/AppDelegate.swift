@@ -73,7 +73,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Hand `urls` to the browse model, or keep them until it is wired.
     @MainActor
     private func open(_ urls: [URL]) {
-        NSApp.setActivationPolicy(.regular) // opened from the menu bar or Finder: bring the window's app back
         if let browseModel {
             browseModel.openFiles(urls)
         } else {
