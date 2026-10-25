@@ -41,18 +41,18 @@ final class QueueStateWorld {
     func launch(shuffle: Bool = false) async throws -> FakePlayer {
         let player = try await FakePlayer.launched(tracks: 0)
         player.vm.shuffleEnabled = shuffle
-        attach(player)
+        attach(player.vm)
         player.vm.hydrateQueueOnLaunch()
         try await player.vm.settled()
         return player
     }
 
-    /// Give `player` the store, as `LibraryModel.onStoreReady` would, without the restore.
-    func attach(_ player: FakePlayer) {
+    /// Give `viewModel` the store, as `LibraryModel.onStoreReady` would, without the restore.
+    func attach(_ viewModel: AudioViewModel) {
         let library = LibraryModel(storeless: ())
         library.store = store
         libraries.append(library)
-        player.vm.library = library
+        viewModel.library = library
     }
 
     /// What is stored now, once everything `player` asked its writer for has landed.
@@ -66,32 +66,39 @@ final class QueueStateWorld {
     }
 }
 
+// MARK: - What the queue-state suites share
+
+extension QueueStateWorld {
+    /// A file outside the library, in this world's folder: no `tracks` row, ever.
+    func looseFile(_ name: String) -> AudioFile {
+        let url = directory.appendingPathComponent("\(name).flac")
+        return AudioFile(name: name, relativePath: "", absoluteURL: url, format: "FLAC", durationSeconds: 0)
+    }
+}
+
+/// The song `player`'s view model started plays: its start and its on-deck request landed.
+@MainActor
+func playing(_ player: FakePlayer) async throws {
+    try await player.vm.settled()
+    try await until("the song to play") { player.vm.isPlaying && player.vm.transportCommand == nil }
+}
+
+/// The engine's playhead at `seconds`, and the tick that reads it.
+@MainActor
+func movePlayhead(_ player: FakePlayer, to seconds: Double) throws {
+    player.engineReports(position: seconds)
+    try player.tick()
+}
+
+/// The pass over the queue's slots, as what each slot plays: comparable across two view models.
+@MainActor
+func passRefs(_ vm: AudioViewModel) -> ShufflePass<QueueSlotRef>? {
+    vm.shufflePass?.relabeled { id in vm.queue.first { $0.id == id }?.file.queueSlotRef }
+}
+
 @MainActor
 @Suite("The queue's resume record on the real view model (VM-QS)", .timeLimit(.minutes(3)), .attachingLogTail)
 struct QueueRestoreTests {
-    /// A file outside the library: no `tracks` row, ever.
-    private func looseFile(_ name: String, in world: QueueStateWorld) -> AudioFile {
-        let url = world.directory.appendingPathComponent("\(name).flac")
-        return AudioFile(name: name, relativePath: "", absoluteURL: url, format: "FLAC", durationSeconds: 0)
-    }
-
-    /// The song the view model started plays: its start and its on-deck request landed.
-    private func playing(_ player: FakePlayer) async throws {
-        try await player.vm.settled()
-        try await until("the song to play") { player.vm.isPlaying && player.vm.transportCommand == nil }
-    }
-
-    /// The engine's playhead at `seconds`, and the tick that reads it.
-    private func playhead(_ player: FakePlayer, at seconds: Double) throws {
-        player.engineReports(position: seconds)
-        try player.tick()
-    }
-
-    /// The pass over the queue's slots, as what each slot plays: comparable across two view models.
-    private func passRefs(_ vm: AudioViewModel) -> ShufflePass<QueueSlotRef>? {
-        vm.shufflePass?.relabeled { id in vm.queue.first { $0.id == id }?.file.queueSlotRef }
-    }
-
     @Test("VM-QS-01 (§6 shuffle 8): the queue, the song, its place and the shuffle pass come back after a relaunch")
     func everythingComesBack() async throws {
         let world = try await QueueStateWorld(songs: 12)
@@ -104,7 +111,7 @@ struct QueueRestoreTests {
             try first.tick()
             try await first.vm.settled()
         }
-        try playhead(first, at: 42)
+        try movePlayhead(first, to: 42)
         first.vm.pause()
         try await first.vm.settled()
         let stored = try await world.stored(after: first)
@@ -124,10 +131,10 @@ struct QueueRestoreTests {
         let world = try await QueueStateWorld(songs: 3)
         defer { world.discard() }
         let first = try await world.launch()
-        let loose = looseFile("Field Recording", in: world)
+        let loose = world.looseFile("Field Recording")
         first.vm.playNow([audioFile(0), loose, audioFile(2)], startAt: 1)
         try await first.vm.settled()
-        try playhead(first, at: 7)
+        try movePlayhead(first, to: 7)
         first.vm.pause()
         try await first.vm.settled()
         _ = try await world.stored(after: first)
@@ -147,12 +154,12 @@ struct QueueRestoreTests {
         player.vm.playNow((0 ..< 3).map(audioFile), startAt: 0)
         try await playing(player)
         let start = try #require(try await world.stored(after: player))
-        try playhead(player, at: 4.9) // under the cadence: no write asked for
+        try movePlayhead(player, to: 4.9) // under the cadence: no write asked for
         #expect(try await world.stored(after: player) == start)
-        try playhead(player, at: 5.0)
+        try movePlayhead(player, to: 5.0)
         let moved = StoredQueueState(revision: start.revision, record: start.record, offset: 5.0)
         #expect(try await world.stored(after: player) == moved, "a playhead move rewrote the queue, or was not written")
-        try playhead(player, at: 9.5)
+        try movePlayhead(player, to: 9.5)
         #expect(try await world.stored(after: player)?.offset == 5.0, "written before the next 5 s")
         player.vm.pause()
         try await player.vm.settled()
@@ -160,8 +167,8 @@ struct QueueRestoreTests {
         #expect(paused?.offset == 9.5 && paused?.revision == start.revision, "a pause is written at once, alone")
     }
 
-    @Test("VM-QS-04: a queue built before the store was ready wins over the stored one, and is written")
-    func aQueueBuiltBeforeTheStoreWins() async throws {
+    @Test("VM-QS-04: a queue built before the restore joins the stored one after its song, and is written")
+    func aQueueBuiltBeforeTheRestoreJoins() async throws {
         let world = try await QueueStateWorld(songs: 4)
         defer { world.discard() }
         let earlier = try await world.launch()
@@ -171,14 +178,17 @@ struct QueueRestoreTests {
 
         let player = try await FakePlayer.launched(tracks: 0)
         player.vm.playNow([audioFile(3)], startAt: 0) // before the store is ready
-        try await player.vm.settled()
-        world.attach(player)
+        try await playing(player)
+        world.attach(player.vm)
         player.vm.hydrateQueueOnLaunch()
         try await player.vm.settled()
-        #expect(player.vm.queue.map(\.file.absoluteURL) == [track(3)], "the stored queue replaced the user's")
+        #expect(player.vm.queue.map(\.file.absoluteURL) == [track(0), track(3), track(1)],
+                "the stored queue or the user's was lost")
+        #expect(player.vm.selectedTrackIndex == 1 && player.vm.isPlaying, "the song the user started stopped")
         let stored = try #require(try await world.stored(after: player))
         let record = try QueueResumeRecord(storedQueue: stored.record, offset: 0)
-        #expect(record.slots == [.track(id: 4)], "the user's queue was not written")
+        #expect(record.slots == [1, 4, 2].map { .track(id: $0) } && record.cursor == 1,
+                "the joined queue was not written")
     }
 
     @Test("VM-QS-05: a library from before the record — the queue and its cursor come back once, then the keys go")
@@ -191,7 +201,7 @@ struct QueueRestoreTests {
         defaults.set(1, forKey: "queue.cursor.position")
         defaults.set(1, forKey: "queue.cursor.positionTrackID")
         defaults.set(33.0, forKey: "queue.cursor.offset")
-        world.attach(player)
+        world.attach(player.vm)
         player.vm.hydrateQueueOnLaunch()
         try await player.vm.settled()
         #expect(player.vm.queue.map(\.file.absoluteURL) == [track(2), track(0), track(1)])
@@ -210,7 +220,7 @@ struct QueueRestoreTests {
         let first = try await world.launch()
         first.vm.playNow((0 ..< 3).map(audioFile), startAt: 2)
         try await playing(first)
-        try playhead(first, at: 61)
+        try movePlayhead(first, to: 61)
         // The quit, as `+Lifecycle.shutdown` runs it: the playhead, the last write, then the stop.
         first.vm.persistQueueCursor()
         await first.vm.mirrorQueueNow()
@@ -223,7 +233,7 @@ struct QueueRestoreTests {
 
         // A view model whose store is ready but whose restore has not run: a queue built writes nothing.
         let second = try await FakePlayer.launched(tracks: 0)
-        world.attach(second)
+        world.attach(second.vm)
         second.vm.shuffleEnabled = true
         second.vm.playNow([audioFile(1)], startAt: 0)
         try await playing(second)
@@ -237,7 +247,7 @@ struct QueueRestoreTests {
         let first = try await world.launch()
         first.vm.playNow((0 ..< 3).map(audioFile), startAt: 1)
         try await first.vm.settled()
-        try playhead(first, at: 50)
+        try movePlayhead(first, to: 50)
         first.vm.pause()
         try await first.vm.settled()
         _ = try await world.stored(after: first)
