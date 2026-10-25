@@ -83,18 +83,17 @@ extension AudioViewModel {
     func writeQueueState() async {
         guard let store = library?.store else { return }
         let revision = queueStateBook.revision
-        let selected = selectedSlotID != nil
-        let offset = QueueResumeRecord.storedOffset(playbackPosition, selected: selected)
+        let (record, offset) = queueStateNow()
         do {
             if let written = queueStateBook.written, written.revision == revision,
                try await store.saveQueuePlayhead(offset, revision: written.storeRevision) {
                 return
             }
-            guard let record = queueResumeRecord(offset: offset) else {
+            guard let record else {
                 logUX("queue state not written: the queue, the selected song and the shuffle pass disagree")
                 return
             }
-            let storeRevision = try await store.saveQueueState(record: record.encodedQueue(), offset: record.offset)
+            let storeRevision = try await store.saveQueueState(record: record.encodedQueue(), offset: offset)
             queueStateBook.written = (revision, storeRevision)
         } catch {
             queueStateBook.written = nil
@@ -102,12 +101,14 @@ extension AudioViewModel {
         }
     }
 
-    /// The queue as a resume record, `offset` seconds into the selected song: its slots as they persist —
-    /// a library song by its id, any other file by its path (seam S5, no `tracks` row needed) — the selected
-    /// one, and the shuffle pass.
-    func queueResumeRecord(offset: Double) -> QueueResumeRecord? {
-        QueueResumeRecord(queue: queue, id: \.id, ref: \.file.queueSlotRef, selected: selectedSlotID, offset: offset,
-                          shuffle: shufflePass)
+    /// The queue as its resume record holds it now — its slots as they persist (a library song by its id,
+    /// any other file by its path: seam S5, no `tracks` row needed), the selected one and the shuffle pass
+    /// (nil if they disagree) — and the playhead the record keeps beside it.
+    func queueStateNow() -> (record: QueueResumeRecord?, offset: Double) {
+        let offset = QueueResumeRecord.storedOffset(playbackPosition, selected: selectedSlotID != nil)
+        let record = QueueResumeRecord(queue: queue, id: \.id, ref: \.file.queueSlotRef, selected: selectedSlotID,
+                                       offset: offset, shuffle: shufflePass)
+        return (record, offset)
     }
 
     // MARK: - The quit (`+Lifecycle.shutdown`)
