@@ -5,6 +5,40 @@ import PlaybackQueueKit
 
 @MainActor
 extension AudioViewModel {
+    /// Read-only view of the queue as plain `AudioFile`s, for cold display consumers that don't
+    /// need slot identity (menu-bar, now-playing widget, transport). Queue *edits* go through the
+    /// `queue`-mutating verbs; this shim just keeps the many read sites working unchanged.
+    var playlist: [AudioFile] {
+        queue.map(\.file)
+    }
+
+    /// The queue slot of the selected song (`nil` = none, or an index out of range).
+    var selectedSlotID: UUID? {
+        selectedTrackIndex.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].id : nil }
+    }
+
+    /// Where Play resumes the selected song: the resume point when it belongs to the selected slot.
+    /// `nil` means "not paused" (the scrubber and Now Playing read it as such).
+    var pausedResumePosition: Double? {
+        resumePoint?.seconds(resuming: selectedSlotID)
+    }
+
+    /// Whether a manual Next would advance (honors shuffle / repeat / end-of-queue) — the single
+    /// source of truth with `nextTrack()`, used for the remote command's `.isEnabled` (S10.4).
+    var canGoNext: Bool {
+        // No selection → `nextTrack()` no-ops, so Next must read as disabled too (single source of
+        // truth with the verb — S10.4 CG-4; matches `canGoPrevious`).
+        guard let current = selectedTrackIndex else { return false }
+        return computeNextIndex(current: current, playlistCount: queue.count, manualSkip: true) != nil
+    }
+
+    /// Whether a manual Previous would move — mirrors `previousTrack()`. Under shuffle at a pass's first
+    /// song a press restarts the song, so it is enabled.
+    var canGoPrevious: Bool {
+        guard let current = selectedTrackIndex else { return false }
+        return computePreviousIndex(current: current, playlistCount: queue.count) != nil
+    }
+
     /// Play the track at the given playlist index. An explicit track pick, so it clears any
     /// position-preserving Pause resume point (D2) — the new track starts from 0.
     func playTrack(at index: Int) {
@@ -74,8 +108,9 @@ extension AudioViewModel {
 
     /// Skip to the next track, honouring shuffle + repeat (VM-2). Routes through the same
     /// `computeNextIndex` the auto-advance path uses, with `manualSkip: true` so repeat-one steps
-    /// to the next track instead of repeating the current one. When shuffle is on the next track is
-    /// random; repeat-all wraps at the end; with no repeat, Next on the last track is a no-op.
+    /// to the next track instead of repeating the current one. Under shuffle it is the pass's next song
+    /// (R1.1-B) — at the pass's end a new pass with Repeat All, nothing with Repeat off; in order,
+    /// repeat-all wraps at the end; with no repeat, Next on the last track is a no-op.
     /// If currently playing — or starting (council C-15) — switches the ENGINE to the new track
     /// (startPlayback re-arms the gapless on-deck); if paused, just re-selects. (Previously Next/Prev
     /// were LINEAR and ignored shuffle/repeat, and only moved `selectedTrackIndex` while the audio kept
@@ -91,13 +126,16 @@ extension AudioViewModel {
         }
     }
 
-    /// Skip to the previous track, honouring shuffle + repeat (VM-2). Under shuffle this is a random
-    /// other track (no shuffle history is kept); repeat-all wraps to the last track; with no repeat,
+    /// Skip to the previous track, honouring shuffle + repeat (VM-2). Under shuffle it walks back through
+    /// what played (R1.1-B): at the pass's first song, into the last pass with Repeat All, else the song
+    /// restarts (founder, 2026-10-25). In order, repeat-all wraps to the last track; with no repeat,
     /// Previous on the first track is a no-op. Same play-if-playing semantics as `nextTrack()`.
     func previousTrack() {
         guard let current = selectedTrackIndex else { return }
         guard let previous = computePreviousIndex(current: current,
                                                   playlistCount: playlist.count) else { return }
+        // A step back in the pass, not a pick: a pick would count the song as played again (+Playlist).
+        shufflePass?.stepBack(repeatMode: repeatMode)
         resumePoint = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = previous
         if playIntent {

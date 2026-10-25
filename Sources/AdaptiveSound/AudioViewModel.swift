@@ -1,5 +1,6 @@
 import EQEditKit
 import Foundation
+import LibraryBrowseKit
 import LibraryScan
 import PlaybackQueueKit
 import SettingsKit
@@ -64,6 +65,7 @@ final class AudioViewModel {
             if whole != elapsedSeconds {
                 elapsedSeconds = whole
             }
+            queuePlayheadMoved(cadenced: true) // kept every few seconds of the song (+QueueMirror)
         }
     }
 
@@ -79,7 +81,10 @@ final class AudioViewModel {
     /// moves or goes while nothing plays, the scrubber follows at once (`placePlayhead`): no tick runs
     /// then to carry it over (council C-52).
     var resumePoint: ResumePoint<UUID>? {
-        didSet { placePlayhead(nil) }
+        didSet {
+            placePlayhead(nil)
+            queuePlayheadMoved(cadenced: false) // a pause, a scrub while paused, a stop: kept at once
+        }
     }
 
     /// The number of the latest transport request (start, seek, stop) sent to the engine. The tick
@@ -296,15 +301,26 @@ final class AudioViewModel {
             if queue.count != oldValue.count {
                 onNowPlayingRefresh?()
             }
+            hasUserEditedQueue = true
+            shufflePass?.follow(queue.map(\.id)) // an added song goes into the pass, a removed one leaves it
+            queueStateChanged()
         }
     }
 
-    /// Read-only view of the queue as plain `AudioFile`s, for cold display consumers that don't
-    /// need slot identity (menu-bar, now-playing widget, transport). Queue *edits* go through the
-    /// `queue`-mutating verbs; this shim just keeps the many read sites working unchanged.
-    var playlist: [AudioFile] {
-        queue.map(\.file)
+    /// Shuffle's pass through the queue (R1.1-B, council C-16): every song once, what played, where the
+    /// listener is (`ShufflePass`). Present exactly while shuffle is on and a song is selected, its song
+    /// playing always the selected one (`followSelectionInShufflePass`, +Playlist); it decides Next,
+    /// Previous and the on-deck pick under shuffle. Not shown: Up Next keeps the queue's own order
+    /// (founder, 2026-10-25). Kept with the queue's resume record (+QueueMirror). Not UI-bound.
+    @ObservationIgnored var shufflePass: ShufflePass<UUID>? {
+        didSet { queueStateChanged() }
     }
+
+    /// The queue's ONE writer (R1.1-B, council C-65): the queue, the selected song, the shuffle pass and the
+    /// playhead are written through it, each write one store transaction (+QueueMirror). Not UI-bound.
+    @ObservationIgnored let queueStateWriter: CoalescingWriter<QueueStateKey, Void>
+    /// What the writer has written and may write (+QueueMirror). Not UI-bound.
+    @ObservationIgnored var queueStateBook = QueueStateBook()
 
     /// One-level snapshot of the queue captured just before a destructive "Play (replace queue)"
     /// (S10.3 D-play), so the UI can offer a transient "Restore previous queue" undo. Cleared once
@@ -312,16 +328,11 @@ final class AudioViewModel {
     /// one's untouched queue (`QueueRestorePoint.afterReplace`). Not UI-bound beyond the undo affordance.
     var queueRestorePoint: QueueRestorePoint<QueueItem>?
 
-    /// Debounce handle for the queue→"current"-playlist snapshot mirror (S10.2, `+QueueMirror`).
-    /// A queue edit schedules a mirror; a newer edit cancels the pending one so only the settled
-    /// queue is written. Advance does NOT mirror (rows don't change). Not UI-bound.
-    var queueMirrorTask: Task<Void, Never>?
-
-    /// True once the user has edited the queue this session (any play verb / reorder / remove /
-    /// clear — set in `scheduleQueueMirror`). Guards launch hydration: if the user acted BEFORE
-    /// the store became ready, their queue wins and the persisted one is NOT restored over it
-    /// (the hydration "superseded" state). Not UI-bound.
-    var hasUserEditedQueue = false
+    /// True once the queue has changed this session — a play verb, a reorder, a removal, a clear: the
+    /// user's, since nothing else changes it before the launch's restore. Guards that restore: if the
+    /// user acted BEFORE the store became ready, their queue wins and the stored one is NOT restored over
+    /// it (the hydration "superseded" state). Not UI-bound.
+    @ObservationIgnored var hasUserEditedQueue = false
     /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. Not UI-bound.
     var queueHydrated = false
 
@@ -355,37 +366,15 @@ final class AudioViewModel {
             if selectedTrackIndex != oldValue {
                 onNowPlayingRefresh?() // track change (incl. gapless advance) → refresh Now Playing (S10.4)
             }
+            // By slot, not row: removing the selected song slides another into the same row (+Playlist).
+            followSelectionInShufflePass()
+            queueStateChanged()
         }
     }
 
     // Numbering what the view model asks of the engine (transport requests, on-deck requests) lives
-    // in AudioViewModel+TransportCommands.swift.
-
-    /// The queue slot of the selected song (`nil` = none, or an index out of range).
-    var selectedSlotID: UUID? {
-        selectedTrackIndex.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].id : nil }
-    }
-
-    /// Where Play resumes the selected song: the resume point when it belongs to the selected slot.
-    /// `nil` means "not paused" (the scrubber and Now Playing read it as such).
-    var pausedResumePosition: Double? {
-        resumePoint?.seconds(resuming: selectedSlotID)
-    }
-
-    /// Whether a manual Next would advance (honors shuffle / repeat / end-of-queue) — the single
-    /// source of truth with `nextTrack()`, used for the remote command's `.isEnabled` (S10.4).
-    var canGoNext: Bool {
-        // No selection → `nextTrack()` no-ops, so Next must read as disabled too (single source of
-        // truth with the verb — S10.4 CG-4; matches `canGoPrevious`).
-        guard let current = selectedTrackIndex else { return false }
-        return computeNextIndex(current: current, playlistCount: queue.count, manualSkip: true) != nil
-    }
-
-    /// Whether a manual Previous would move — mirrors `previousTrack()`.
-    var canGoPrevious: Bool {
-        guard let current = selectedTrackIndex else { return false }
-        return computePreviousIndex(current: current, playlistCount: queue.count) != nil
-    }
+    // in AudioViewModel+TransportCommands.swift. The selected slot, where a pause resumes and whether
+    // Next / Previous would move live in AudioViewModel+Transport.swift.
 
     // MARK: - Library (S3 F5 — extracted to the LibraryModel peer)
 
@@ -399,13 +388,14 @@ final class AudioViewModel {
 
     // MARK: - Playback Modes (WinAmp Style)
 
-    /// Shuffle mode: when enabled, plays tracks in random order. Kept across launches.
-    /// didSet: shuffle/repeat flip `canGoNext`/`canGoPrevious`, so refresh the remote-command
+    /// Shuffle mode: when enabled, plays every song once in a random order (`shufflePass`). Kept across
+    /// launches. didSet: shuffle/repeat flip `canGoNext`/`canGoPrevious`, so refresh the remote-command
     /// enable state (S10.4 QA #1) — else Control Center's Next/Prev stay stale until the next play.
     var shuffleEnabled = false {
         didSet {
             if shuffleEnabled != oldValue {
                 onNowPlayingRefresh?()
+                followSelectionInShufflePass() // on: a pass begins at the selected song; off: it ends
             }
             rememberListeningSettings()
         }
@@ -435,8 +425,9 @@ final class AudioViewModel {
     var pendingNextIndex: Int?
 
     let engine: any AudioPlaybackEngine
-    /// Where the now-playing cursor persists (`+QueueHydration`): the launch's
-    /// `AppDataLocation.defaults`. The picture-sheet renderer injects its own suite.
+    /// The launch's `AppDataLocation.defaults`: the listener's settings, and the cursor a build before
+    /// the queue's resume record kept (`+QueueHydration` reads it once). The picture-sheet renderer
+    /// injects its own suite.
     let defaults: UserDefaults
     /// The listener's settings, kept in `defaults` (`+ListeningSettings`).
     let settingsStore: SettingsStore
@@ -453,6 +444,10 @@ final class AudioViewModel {
         settingsStore = SettingsStore(defaults: defaults)
         spectrum = SpectrumSampler(engine: engine)
         eqDesignRate = engine.snapshot().eqDesignRate
+        // The sink reaches the view model weakly; `self` exists only once every stored property is set.
+        weak var model: AudioViewModel?
+        queueStateWriter = CoalescingWriter { _, _ in await model?.writeQueueState() }
+        model = self
         restoreListeningSettings()
     }
 
