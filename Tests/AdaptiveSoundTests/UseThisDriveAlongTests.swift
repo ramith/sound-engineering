@@ -14,8 +14,8 @@ import Testing
 // drive is checked, the rows say so; after, nothing is left checking.
 
 @MainActor
-@Suite("“Use this drive” moves the paused folders of the same drive (plan check §6 (10))", .serialized,
-       .timeLimit(.minutes(3)), .attachingLogTail)
+@Suite("“Use this drive” moves the paused folders of its drive — plan check §6, (10)", .timeLimit(.minutes(3)),
+       .serialized, .attachingLogTail)
 struct UseThisDriveAlongTests {
     /// Two music folders, "Rock" and "Jazz", on one drive (`Drive`), and "Other" elsewhere — each scanned, so
     /// each is bound to the drive it is on.
