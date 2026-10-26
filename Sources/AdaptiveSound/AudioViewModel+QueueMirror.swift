@@ -20,7 +20,8 @@ import PlaybackQueueKit
 // of the song — so a crash comes back at most 5 s early, for one row of a few dozen bytes per write. A request
 // made while a write is in flight waits, and requests made meanwhile coalesce into one: the sink writes the
 // queue AS IT IS when its turn comes, never a state from the middle of a verb. A request whose record has not
-// changed since the last write moves the playhead alone — a number, not the queue.
+// changed since the last write moves the playhead alone — a number, not the queue — and builds no record: a
+// 20,000-song queue's record is not rebuilt on the main actor at every scrub or every 5 s (review S5).
 //
 // Nothing is written until the launch's restore has read what is stored (`+QueueHydration`), so the empty queue
 // of a launch never overwrites the stored one; and nothing after the quit's last write (`mirrorQueueNow`), so the
@@ -44,6 +45,8 @@ struct QueueStateBook {
     var closed = false
     /// Where the playhead was when it last asked for a write.
     var playheadAsked = 0.0
+    /// How many whole records `queueStateNow` has built: a write of the playhead alone builds none (review S5).
+    var recordsBuilt = 0
 
     /// Whether a write may be asked for now.
     var isOpen: Bool {
@@ -78,17 +81,19 @@ extension AudioViewModel {
     }
 
     /// The writer's sink — the ONLY code that writes the queue state. Writes the queue as it is now: the
-    /// playhead alone when the record is the one last written, else the whole record with its playhead. A
-    /// failure is logged and leaves the stored state as it was; the next write is whole.
+    /// playhead alone when the record is the one last written — no record built — else the whole record with
+    /// its playhead, built only then. A failure is logged and leaves the stored state as it was; the next
+    /// write is whole.
     func writeQueueState() async {
         guard let store = library?.store else { return }
-        let revision = queueStateBook.revision
-        let (record, offset) = queueStateNow()
         do {
-            if let written = queueStateBook.written, written.revision == revision,
-               try await store.saveQueuePlayhead(offset, revision: written.storeRevision) {
+            if let written = queueStateBook.written, written.revision == queueStateBook.revision,
+               try await store.saveQueuePlayhead(queueOffsetNow(), revision: written.storeRevision) {
                 return
             }
+            // The whole record, as it is now: the playhead's write (or its refusal) may have let it move on.
+            let revision = queueStateBook.revision
+            let (record, offset) = queueStateNow()
             guard let record else {
                 logUX("queue state not written: the queue, the selected song and the shuffle pass disagree")
                 return
@@ -112,10 +117,16 @@ extension AudioViewModel {
     /// any other file by its path: seam S5, no `tracks` row needed), the selected one and the shuffle pass
     /// (nil if they disagree) — and the playhead the record keeps beside it.
     func queueStateNow() -> (record: QueueResumeRecord?, offset: Double) {
-        let offset = QueueResumeRecord.storedOffset(playbackPosition, selected: selectedSlotID != nil)
+        let offset = queueOffsetNow()
+        queueStateBook.recordsBuilt += 1
         let record = QueueResumeRecord(queue: queue, id: \.id, ref: \.file.slotRef, selected: selectedSlotID,
                                        offset: offset, shuffle: shufflePass)
         return (record, offset)
+    }
+
+    /// The playhead the record keeps beside it now: a place in the selected song, 0 when none is selected.
+    private func queueOffsetNow() -> Double {
+        QueueResumeRecord.storedOffset(playbackPosition, selected: selectedSlotID != nil)
     }
 
     // MARK: - The quit (`+Lifecycle.shutdown`)
