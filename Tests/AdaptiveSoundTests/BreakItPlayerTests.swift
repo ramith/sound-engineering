@@ -136,6 +136,42 @@ struct BreakItLibraryTests {
                 "the song left its playlist")
     }
 
+    @Test("BI-P07: after \"Use this drive\", a song renamed on the new drive keeps its id, as anywhere else")
+    func renameAfterARebindKeepsTheSong() async throws {
+        QuietLog.install()
+        let fixture = try await LibraryFolderFixture.make(titled: [("One", "A"), ("Two", "A"), ("Three", "B")])
+        defer { fixture.discard() }
+        let store = fixture.store
+        let library = LibraryModel(storeless: ())
+        library.store = store
+        let defaults = IsolatedDefaults("BreakItLibraryTests")
+        let browse = LibraryBrowseModel(audio: AudioViewModel(defaults: defaults.defaults, engine: FakeEngine()),
+                                        library: library)
+        let song = try #require(try await store.track(url: fixture.files[1])).id
+        let playlist = try await store.createPlaylist(name: "Keep")
+        _ = try await store.appendEntries(playlistID: playlist, trackIDs: [song])
+        // Every song is on the new drive (a Finder copy: same names, sizes and dates; new inodes).
+        let copy = fixture.base.appendingPathComponent("Music on T7 1", isDirectory: true)
+        try FileManager.default.copyItem(at: fixture.music, to: copy)
+        try FileManager.default.removeItem(at: fixture.music)
+        library.reconcileState[fixture.folderID] = .paused(.rootVanished)
+        _ = await browse.useDrive(copy, for: LibraryFolder(id: fixture.folderID, path: fixture.music.path))
+        try await until("the reconcile walk after the rebind to end") { library.walkTasks.isEmpty }
+        try #require(try await store.track(id: song) != nil, "precondition: the rebind kept the song")
+
+        // The listener renames the song in Finder; the next walk sees it at its new name.
+        try FileManager.default.moveItem(at: copy.appendingPathComponent("01.flac"),
+                                         to: copy.appendingPathComponent("01 renamed.flac"))
+        library.requestWalk(.reconcile, of: fixture.folderID)
+        try await until("the walk after the rename to end") { library.walkTasks.isEmpty }
+        // Without the rebind the same rename keeps the id (the S8.4 move-match on dev, inode, size, mtime).
+        #expect(try await store.track(id: song)?.url.lastPathComponent == "01 renamed.flac",
+                Comment(rawValue: "the renamed song lost its id, plays, love, rating and playlist place: the rebind "
+                    + "kept the OLD drive's (dev, inode) on every song it moved, and the walk's upsert leaves "
+                    + "them when size and date match, so the move-match never finds the song again"))
+        #expect(try await store.entries(inPlaylist: playlist).map(\.trackID) == [song], "the song left its playlist")
+    }
+
     @Test("BI-P05: Open With before the library store is ready — a library song ends up as that song, not a loose path")
     func openedBeforeTheStoreIsMatchedToTheLibrary() async throws {
         let fixture = try await LibraryFolderFixture.make(titled: [("One", "A"), ("Two", "B")])
