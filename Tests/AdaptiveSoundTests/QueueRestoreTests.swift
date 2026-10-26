@@ -191,11 +191,14 @@ struct QueueRestoreTests {
                 "the joined queue was not written")
     }
 
-    @Test("VM-QS-05: a library from before the record — the queue and its cursor come back once, then the keys go")
+    @Test("VM-QS-05: a library from before the record — the queue and its cursor come back once, then they go")
     func legacyQueueComesBackOnce() async throws {
         let world = try await QueueStateWorld(songs: 3)
         defer { world.discard() }
-        try await world.store.replaceEntries(playlistID: world.store.currentPlaylistID(), trackIDs: [3, 1, 2])
+        let current = try await world.store.currentPlaylistID()
+        try await world.store.replaceEntries(playlistID: current, trackIDs: [3, 1, 2])
+        let kept = try await world.store.createPlaylist(name: "Kept")
+        _ = try await world.store.appendEntries(playlistID: kept, trackIDs: [2, 3])
         let player = try await FakePlayer.launched(tracks: 0)
         let defaults = player.vm.defaults
         defaults.set(1, forKey: "queue.cursor.position")
@@ -211,6 +214,11 @@ struct QueueRestoreTests {
         #expect(stored.offset == 33)
         #expect(defaults.object(forKey: "queue.cursor.position") == nil, "the old cursor keys are kept")
         #expect(defaults.object(forKey: "queue.cursor.offset") == nil)
+        // The old queue's entries are dead data once it is the record (review N10): cleared. The built-in
+        // playlist itself stays — the same row — and no other playlist is touched.
+        #expect(try await world.store.entries(inPlaylist: current).isEmpty, "the old queue's entries are kept")
+        #expect(try await world.store.currentPlaylistID() == current, "the built-in playlist's row went")
+        #expect(try await world.store.entries(inPlaylist: kept).map(\.trackID) == [2, 3], "another playlist changed")
     }
 
     @Test("VM-QS-06: nothing is written before the restore read the store, nor after the quit's last write")

@@ -70,21 +70,33 @@ extension AudioViewModel {
         if removingCurrent, playIntent {
             logUX("removeTrack: removed currently-playing track, stopping")
             stopPlayback()
-            selectedTrackIndex = index < queue.count ? index : (index > 0 ? index - 1 : nil)
+            selectedTrackIndex = rowSelected(afterRemovingSelectedAt: index)
             return
         }
 
         if removingCurrent {
             // The paused (or stopped) current song left the queue (S10.8 G): its place and length go
-            // with it, so the song that slides into its row starts from the top and the footer shows
+            // with it, so the song selected in its stead starts from the top and the footer shows
             // no stale length. The re-selection below drops its resume point (another slot).
             playbackPosition = 0
             duration = 0
-            selectedTrackIndex = index < queue.count ? index : (index > 0 ? index - 1 : nil)
+            selectedTrackIndex = rowSelected(afterRemovingSelectedAt: index)
         } else if let cur = selectedTrackIndex, cur > index {
             selectedTrackIndex = cur - 1
         }
         keepOnDeck(armed: armed)
+    }
+
+    /// The row selected once the selected song, at `row`, left the queue. Under shuffle, the song the pass
+    /// plays next — what Next would play: the restore's rule for a selected song gone (review N2) — a step on
+    /// in the pass, never a pick of the row that slid in, which would count it as played out of turn; nil
+    /// when the pass has nothing next. In order, the row that slid into its place — the one before it at the
+    /// end.
+    private func rowSelected(afterRemovingSelectedAt row: Int) -> Int? {
+        if shuffleEnabled, shufflePass != nil {
+            return computeNextIndex(current: row, playlistCount: queue.count, manualSkip: true)
+        }
+        return row < queue.count ? row : (row > 0 ? row - 1 : nil)
     }
 
     /// The queue slot of the armed on-deck song (`nil` = none).
@@ -162,9 +174,10 @@ extension AudioViewModel {
     /// Keep the shuffle pass on the selected song (R1.1-B): it exists exactly while shuffle is on and a
     /// song is selected. Turned on, or a first song chosen with it on, a pass begins at the selected song.
     /// A selection the pass did not make itself — the seam into its next song, Next, a song the listener
-    /// picks, the row a removal slides in — is where the pass arrives (`ShufflePass.arrive`): its next song
-    /// is a step on, any other is a pick that plays now and counts as played. Previous steps the pass back
-    /// first (`previousTrack`), so the selection it makes is already the pass's.
+    /// picks, the pass's next song after the selected one was removed — is where the pass arrives
+    /// (`ShufflePass.arrive`): its next song is a step on, any other is a pick that plays now and counts as
+    /// played. Previous steps the pass back first (`previousTrack`), so the selection it makes is already the
+    /// pass's.
     func followSelectionInShufflePass() {
         guard shuffleEnabled, let selected = selectedSlotID else {
             if shufflePass != nil {

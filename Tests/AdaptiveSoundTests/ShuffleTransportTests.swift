@@ -173,4 +173,30 @@ struct ShuffleTransportTests {
         let heard = before + rest
         #expect(heard.count == 6 && Set(heard).count == 6, "the picked song played again: \(heard.map(name))")
     }
+
+    @Test("VM-SH-12 (N2): the selected song removed under shuffle — the pass's next song is selected, as a step on",
+          arguments: [false, true])
+    func removingTheSelectedSongSelectsThePassNext(whilePlaying: Bool) async throws {
+        let player = try await FakePlayer.launched(tracks: 0)
+        player.vm.shuffleEnabled = true
+        player.vm.playNow((0 ..< 6).map(audioFile), startAt: 0)
+        try await playing(player)
+        if !whilePlaying {
+            player.vm.pause()
+            try await player.vm.settled()
+        }
+        // A pass whose next song is not the row that slides in: t0 selected, then t4, t1, t2, t3, t5.
+        let slots = player.vm.queue.map(\.id)
+        let order = try #require(ShufflePass(permutation: [0, 4, 1, 2, 3, 5].map { slots[$0] }, history: [],
+                                             position: 0, seed: 12))
+        player.vm.shufflePass = order
+        player.vm.removeTrack(at: 0)
+        try await player.vm.settled()
+        #expect(player.vm.selectedSlotID == slots[4],
+                "selected \(player.vm.selectedTrackIndex.map { player.vm.queue[$0].file.name } ?? "none"), not t4")
+        // A step on: the pass keeps its order. A pick of t1 (the row that slid in) would move it ahead of t4.
+        let pass = try #require(player.vm.shufflePass)
+        #expect(pass.permutation == [4, 1, 2, 3, 5].map { slots[$0] } && pass.position == 0, "the pass was reordered")
+        #expect(!player.vm.isPlaying && player.vm.playbackPosition == 0)
+    }
 }
