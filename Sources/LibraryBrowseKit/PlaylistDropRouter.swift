@@ -13,16 +13,17 @@ public enum PlaylistDropOutcome: Equatable {
 }
 
 /// Routes a drop onto a playlist. Pure + testable so the add-only contract is provable without SwiftUI
-/// or the store. A drag of library rows carries track ids (`LibraryTrackDragItem`); a drag from Finder
-/// carries file URLs, of which only audio files the library admits are added (`LooseFiles`).
+/// or the store — and with no look at the disk, so a drop handler answers on the main actor at once. A drag
+/// of library rows carries track ids (`LibraryTrackDragItem`); a drag from Finder carries file URLs, of which
+/// only audio files the library admits are added (`LooseFiles.candidates`; the add, off the main actor,
+/// passes over one that is a folder after all).
 public enum PlaylistDropRouter {
     public static func route(droppedTrackIDs ids: [Int64]) -> PlaylistDropOutcome {
         .addTracks(PlaylistAddDecision.trackIDsToAdd(ids))
     }
 
-    /// A drop of files from Finder: the playable ones, each once, in the order dropped.
-    public static func route(droppedFiles urls: [URL],
-                             isDirectory: (URL) -> Bool = LooseFiles.isDirectory) -> PlaylistDropOutcome {
-        .addFiles(LooseFiles.plan(urls, isDirectory: isDirectory).playable)
+    /// A drop of files from Finder: the playable ones by name, each once, in the order dropped.
+    public static func route(droppedFiles urls: [URL]) -> PlaylistDropOutcome {
+        .addFiles(LooseFiles.candidates(urls))
     }
 }

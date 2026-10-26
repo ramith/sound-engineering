@@ -207,9 +207,10 @@ final class PlaylistsModel {
     }
 
     /// Create a new untitled playlist containing `trackIDs` (the "New Playlist" add path) and reload.
-    /// Returns the new id so the sidebar can select it (+ drop into rename). De-dupes the selection.
+    /// Returns the new playlist — its id, so the sidebar can select it (+ drop into rename), and how many
+    /// songs went in, for the toast. De-dupes the selection.
     @discardableResult
-    func createPlaylist(withTracks trackIDs: [Int64]) async -> Int64? {
+    func createPlaylist(withTracks trackIDs: [Int64]) async -> NewPlaylist? {
         await createPlaylist(with: trackIDs.map(PlaylistAddItem.track))
     }
 

@@ -151,6 +151,10 @@ final class LibraryBrowseModel {
     /// ⌘F's library search (R1.1-B, US-R1F-14) — the Search page's text and results (`+Search`).
     let search: LibrarySearchModel
 
+    /// The latest open of files from outside the library (Open…, a drop, Open With — `+LooseFiles`). Each open
+    /// waits for the one before it, so two Finder batches land in the order they came (review N9).
+    @ObservationIgnored var fileOpenTask: Task<Void, Never>?
+
     /// `audio` / `library` / `store` / `showQueueToast` are `internal` (not `private`) so the
     /// same-type `LibraryBrowseModel+Facets` extension (a separate file, for file length) can reach
     /// them — an extension of this type IS this type, and the app is a single module.

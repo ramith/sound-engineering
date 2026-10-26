@@ -61,11 +61,10 @@ struct AddToPlaylistMenu: View {
 
     private func createAndAdd() async {
         let items = await resolveItems()
-        guard let id = await playlists.createPlaylist(with: items) else { return }
-        let name = playlists.playlists.first { $0.id == id }?.name ?? "New Playlist"
-        let added = PlaylistAddDecision.itemsToAdd(items).count
-        if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: name) {
-            library.showToast(message)
+        guard let created = await playlists.createPlaylist(with: items) else { return }
+        let name = playlists.playlists.first { $0.id == created.id }?.name ?? "New Playlist"
+        if let message = PlaylistAddDecision.toastMessage(added: created.added, playlistName: name) {
+            library.showToast(message) // the songs that went in — fewer than chosen when a write failed (N3)
         }
     }
 }
@@ -162,14 +161,13 @@ struct PlaylistPickerSheet: View {
     }
 
     private func createAndAdd() async {
-        guard let id = await playlists.createPlaylist(withTracks: trackIDs) else {
+        guard let created = await playlists.createPlaylist(withTracks: trackIDs) else {
             dismiss() // a failure: the Library tab's notice says why, once this sheet is gone
             return
         }
-        let name = playlists.playlists.first { $0.id == id }?.name ?? "New Playlist"
-        let added = PlaylistAddDecision.trackIDsToAdd(trackIDs).count
-        if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: name) {
-            library.showToast(message)
+        let name = playlists.playlists.first { $0.id == created.id }?.name ?? "New Playlist"
+        if let message = PlaylistAddDecision.toastMessage(added: created.added, playlistName: name) {
+            library.showToast(message) // the songs that went in (N3)
         }
         dismiss()
     }

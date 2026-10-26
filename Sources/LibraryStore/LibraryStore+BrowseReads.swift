@@ -177,25 +177,52 @@ public extension LibraryStore {
         return try await dbWriter.read { db in
             var result: [Int64: LibraryTrackDisplay] = [:]
             result.reserveCapacity(ids.count)
-            var start = ids.startIndex
-            while start < ids.endIndex {
-                let end = ids.index(
-                    start, offsetBy: LibraryStore.artworkKeyChunkSize, limitedBy: ids.endIndex
-                ) ?? ids.endIndex
-                let chunk = Array(ids[start ..< end])
-                let placeholders = databaseQuestionMarks(count: chunk.count)
-                let sql = LibraryStore.displayTracksSQL(
-                    whereClause: "WHERE t.id IN (\(placeholders))",
-                    order: LibraryStore.displayDiscTrackOrder, limited: false
-                )
-                let rows = try LibraryTrackDisplay.fetchAll(db, sql: sql, arguments: StatementArguments(chunk))
-                for row in rows {
-                    result[row.id] = row
-                }
-                start = end
+            for row in try Self.displayRows(db, column: "t.id", in: ids) {
+                result[row.id] = row
             }
             return result
         }
+    }
+
+    /// Display rows for the songs at `urls`, keyed by the url asked for — files opened from outside the
+    /// library (Open With, a drop) that the library holds play as those songs (R1.1-B, US-LIB-02). ONE read,
+    /// chunked like `tracksDisplay(ids:)`, never a read per file (review N9). A url the library does not
+    /// hold is ABSENT.
+    func tracksDisplay(urls: [URL]) async throws -> [URL: LibraryTrackDisplay] {
+        guard !urls.isEmpty else { return [:] }
+        let keys = urls.map(PathNormalizer.normalizedString(for:))
+        return try await dbWriter.read { db in
+            var byKey: [String: LibraryTrackDisplay] = [:]
+            for row in try Self.displayRows(db, column: "t.url", in: Array(Set(keys))) {
+                byKey[PathNormalizer.normalizedString(for: row.url)] = row
+            }
+            var result: [URL: LibraryTrackDisplay] = [:]
+            for (url, key) in zip(urls, keys) {
+                result[url] = byKey[key]
+            }
+            return result
+        }
+    }
+
+    /// The display rows whose `column` is one of `values`, read in `IN`-lists of at most
+    /// `artworkKeyChunkSize` bound values (SQLite's variable limit). `column` is a fixed name from this file.
+    private static func displayRows<Value: DatabaseValueConvertible>(
+        _ db: Database, column: String, in values: [Value]
+    ) throws -> [LibraryTrackDisplay] {
+        var rows: [LibraryTrackDisplay] = []
+        var start = values.startIndex
+        while start < values.endIndex {
+            let end = values.index(start, offsetBy: artworkKeyChunkSize, limitedBy: values.endIndex)
+                ?? values.endIndex
+            let chunk = Array(values[start ..< end])
+            let placeholders = databaseQuestionMarks(count: chunk.count)
+            let sql = displayTracksSQL(whereClause: "WHERE \(column) IN (\(placeholders))",
+                                       order: displayDiscTrackOrder, limited: false)
+            let arguments = StatementArguments(chunk)
+            try rows.append(contentsOf: LibraryTrackDisplay.fetchAll(db, sql: sql, arguments: arguments))
+            start = end
+        }
+        return rows
     }
 
     /// Recently-Played display rows (S10.6): tracks played at least once, ordered by frecency

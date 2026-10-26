@@ -39,12 +39,14 @@ extension LibraryModel {
             metadataArtworkCache = ArtworkCache(directory: location.artworkCacheURL)
             logUX("libraryStore: ready at '\(Self.makeDisplayPath(url))'")
             onStoreReady?() // S10.2 2c: store is live — let the audio VM hydrate the queue
+            isStoreOpening = false // files opened meanwhile go on, matched to the library
         } catch {
             // Additive seam — the app runs without the store; only the parallel
             // store-population is unavailable until the next successful construction. Say why: a
             // library the store refused is left as it was, and the user should know it's safe.
             logUX("libraryStore: init failed — \(error)")
             onError?(Self.storeOpenFailureMessage(error))
+            isStoreOpening = false // files opened meanwhile play, as files from outside the library
         }
         // S8.4: start the FSEvents watcher — it drives the live store reconcile.
         // refreshWatchedRoots picks up the store roots.

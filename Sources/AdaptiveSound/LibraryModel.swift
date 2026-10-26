@@ -50,6 +50,24 @@ final class LibraryModel {
     /// truth (`LibraryBrowseModel` reads it); a folder scan populates it.
     var store: LibraryStore?
 
+    /// True from launch until the store has opened — or failed to (the first launch after an update runs its
+    /// migrations and a backup copy first). Files opened from outside the library meanwhile wait for it
+    /// (`openedStore`), so a library song opened at launch plays as that song, its plays counted — never as
+    /// a loose file (R1.1-B fix round, break-it BI-P05).
+    var isStoreOpening = false {
+        didSet {
+            guard !isStoreOpening else { return }
+            let waiting = storeWaiters
+            storeWaiters = []
+            for waiter in waiting {
+                waiter.resume()
+            }
+        }
+    }
+
+    /// The opens waiting for the store to open (`openedStore`).
+    @ObservationIgnored private var storeWaiters: [CheckedContinuation<Void, Never>] = []
+
     /// Latest scan progress snapshot (indeterminate count-up), published from the
     /// off-main scan via a `@MainActor` hop. `nil` when no scan is running.
     var scanProgress: ScanProgress?
@@ -134,6 +152,7 @@ final class LibraryModel {
         // Construct the persistent library store off-main (S8.2b). The initializer is async, so —
         // per design §7 — it runs in an init-time Task; failure leaves `store` nil and the audio
         // path (which no longer owns any of this state) fully intact.
+        isStoreOpening = true
         Task { await self.makeLibraryStore(at: location) }
     }
 
@@ -144,6 +163,19 @@ final class LibraryModel {
             self.clock = clock
         }
     #endif
+
+    /// The store, once it has opened — at once when it has, or failed to; nil when the library has none.
+    func openedStore() async -> LibraryStore? {
+        if isStoreOpening {
+            await withCheckedContinuation { storeWaiters.append($0) }
+        }
+        return store
+    }
+
+    /// Whether an open is waiting for the store (a test's view of `openedStore`).
+    var isWaitingForStore: Bool {
+        !storeWaiters.isEmpty
+    }
 
     /// Ordered library teardown: stop the FSEvents watcher + NSWorkspace volume monitor, start no
     /// more walks, and cancel every in-flight walk (add or reconcile), folder add and metadata pass,

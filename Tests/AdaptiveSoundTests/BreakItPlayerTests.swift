@@ -199,16 +199,22 @@ struct BreakItLibraryTests {
         let fixture = try await LibraryFolderFixture.make(titled: [("One", "A"), ("Two", "B")])
         defer { fixture.discard() }
         let player = try await FakePlayer.launched(tracks: 0)
-        let library = LibraryModel(storeless: ()) // the store still opening (a migration, a backup)
+        let library = LibraryModel(storeless: ())
+        library.isStoreOpening = true // the store still opening (a migration, a backup), as a launch starts it
         player.vm.library = library
         let browse = LibraryBrowseModel(audio: player.vm, library: library)
         browse.openFiles([fixture.files[1]])
+        // Fix round (M1): the open waits for the store, so the file is matched to the library from the start.
+        try await until("the open to wait for the store") { library.isWaitingForStore }
+        #expect(player.vm.queue.isEmpty, "the file played before the store said whether the library holds it")
+        // The store opens: `makeLibraryStore` sets it, runs `onStoreReady` (the queue's launch restore), and
+        // lets the opens waiting for it go on.
+        library.store = fixture.store
+        player.vm.hydrateQueueOnLaunch()
+        library.isStoreOpening = false
         try await until("the opened file to play") {
             player.vm.selectedSlotID != nil && player.vm.isPlaying && player.vm.transportCommand == nil
         }
-        // The store opens; the composition root's `onStoreReady` runs the queue's launch restore.
-        library.store = fixture.store
-        player.vm.hydrateQueueOnLaunch()
         try await player.vm.settled()
         let id = try #require(try await fixture.store.track(url: fixture.files[1])).id
         #expect(player.vm.queue.map(\.file.trackID) == [id],
@@ -218,5 +224,23 @@ struct BreakItLibraryTests {
         let stored = try #require(try await fixture.store.queueState())
         #expect(try QueueResumeRecord(storedQueue: stored.record, offset: 0).slots == [.track(id: id)],
                 "the record keeps a library song as a loose path")
+    }
+
+    @Test("BI-P05b (fix round): a store that fails to open never holds an open back — the file plays, loose")
+    func openedWhileTheStoreFailsPlaysLoose() async throws {
+        let fixture = try await LibraryFolderFixture.make(titled: [("One", "A")])
+        defer { fixture.discard() }
+        let player = try await FakePlayer.launched(tracks: 0)
+        let library = LibraryModel(storeless: ())
+        library.isStoreOpening = true
+        player.vm.library = library
+        let browse = LibraryBrowseModel(audio: player.vm, library: library)
+        browse.openFiles([fixture.files[0]])
+        try await until("the open to wait for the store") { library.isWaitingForStore }
+        library.isStoreOpening = false // the open failed: no store
+        try await until("the opened file to play") {
+            player.vm.selectedSlotID != nil && player.vm.isPlaying && player.vm.transportCommand == nil
+        }
+        #expect(player.vm.queue.map(\.file.trackID) == [nil])
     }
 }

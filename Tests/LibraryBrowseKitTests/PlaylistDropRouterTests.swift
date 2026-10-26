@@ -20,14 +20,15 @@ struct PlaylistDropRouterTests {
     }
 
     /// DROP-3 (R1.1-B, US-PLIST-02) — a drop of files from Finder routes to an add of the playable ones, in
-    /// order, each once: a folder or a file of another kind is not added, and nothing is ever moved.
+    /// order, each once: a folder or a file of another kind is not added, and nothing is ever moved. Judged
+    /// by name, with no look at the disk (review S2): the drop handler answers on the main actor.
     @Test("a Finder drop adds its audio files only, in order, each once")
     func finderDropAddsAudioFiles() {
         let song = URL(fileURLWithPath: "/Users/r/Downloads/demo.flac")
         let other = URL(fileURLWithPath: "/Users/r/Downloads/b-side.MP3")
         let notes = URL(fileURLWithPath: "/Users/r/Downloads/notes.txt")
         let folder = URL(fileURLWithPath: "/Users/r/Downloads/Album")
-        let outcome = PlaylistDropRouter.route(droppedFiles: [song, notes, folder, other, song]) { $0 == folder }
+        let outcome = PlaylistDropRouter.route(droppedFiles: [song, notes, folder, other, song])
         #expect(outcome == .addFiles([song, other]))
     }
 }
