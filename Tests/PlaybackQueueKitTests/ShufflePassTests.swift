@@ -267,6 +267,46 @@ struct ShufflePassTests {
         #expect(pass.relabeled { _ in 1 } == nil, "two slots relabeled as one")
     }
 
+    @Test("VM-SP-16 (S3): 20,000 songs appended, or played next, write the line at most once — not once a song")
+    func bulkEditsAreLinear() {
+        var pass = ShufflePass(beginningAt: 0, among: Array(0 ..< 12), seed: 16)
+        _ = playOut(&pass, repeatMode: repeatOff, limit: 4)
+        let queued = Array(0 ..< 20012)
+        let appended = ShufflePassTally()
+        ShufflePassTally.$current.withValue(appended) { pass.follow(queued) }
+        // One insert per song shifts the line each time: about 10⁸ slots here. Built once, it is at most the line.
+        #expect(appended.slotsMoved <= queued.count, "an Add to Queue moved \(appended.slotsMoved) slots")
+        #expect(Set(pass.permutation + pass.history) == Set(queued) && pass.position == 3)
+        let next = Array(20012 ..< 40012)
+        let playedNext = ShufflePassTally()
+        ShufflePassTally.$current.withValue(playedNext) { pass.insertNext(next) }
+        #expect(playedNext.slotsMoved <= queued.count + next.count,
+                "a Play Next moved \(playedNext.slotsMoved) slots")
+        #expect(Array(pass.permutation[4 ..< 20004]) == next && pass.position == 3, "Play Next is not next, in order")
+    }
+
+    @Test("VM-SP-17 (S3): songs added at once land exactly where adding them one at a time puts them")
+    func bulkFollowIsOneAtATime() throws {
+        for seed in UInt64(0) ..< 60 {
+            var base = ShufflePass(beginningAt: 0, among: Array(0 ..< 10), seed: seed)
+            // Every place the listener can be: early, mid-pass, on the pass's last song (nothing after it:
+            // the first added plays next), and — every third seed — two songs back in the last pass.
+            _ = playOut(&base, repeatMode: repeatAll, limit: Int(seed % 10) + 1)
+            if seed % 3 == 0 {
+                try base.arrive(at: #require(base.peekNext(repeatMode: repeatAll)))
+                base.stepBack(repeatMode: repeatAll)
+                base.stepBack(repeatMode: repeatAll)
+            }
+            var atOnce = base
+            atOnce.follow(Array(0 ..< 30))
+            var oneByOne = base
+            for size in 11 ... 30 {
+                oneByOne.follow(Array(0 ..< size))
+            }
+            #expect(atOnce == oneByOne, "seed \(seed): a batch landed elsewhere than one at a time")
+        }
+    }
+
     @Test("VM-SP-15: every order is drawn about equally often (Fisher–Yates, not a biased swap)")
     func ordersAreUniform() {
         var counts: [[Int]: Int] = [:]
