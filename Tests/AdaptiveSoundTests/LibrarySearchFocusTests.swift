@@ -72,13 +72,32 @@ struct LibrarySearchFocusTests {
         #expect(world.browse.selectedCategory == .search)
     }
 
-    @Test("below two characters ⌘F searches nothing and shows nothing — the gate holds for ⌘F too")
+    @Test("below the one search gate ⌘F searches nothing and shows nothing — the gate holds for ⌘F too")
     func twoCharacterGate() async {
         let world = World()
         world.browse.search.text = "b"
         await world.browse.search.run()
         #expect(world.browse.search.state == .idle)
         #expect(world.browse.search.results.isEmpty)
+    }
+
+    /// R1.1-B fix round (review S4): the search runs in the page's task, so a keystroke that supersedes it —
+    /// which cancels that task — stops it, rather than leaving a whole-library read and rank running behind.
+    @Test("a superseded ⌘F search is cancelled with its task, and publishes nothing")
+    func cancelledSearchStops() async throws {
+        let world = World()
+        let folder = try await LibraryFolderFixture.make(titled: [("Halo", "Beyoncé"), ("Formation", "Beyoncé")])
+        defer { folder.discard() }
+        world.library.store = folder.store
+        world.browse.search.text = "beyo"
+        let superseded = Task { await world.browse.search.run() }
+        superseded.cancel() // the next keystroke changes the page's task id
+        await superseded.value
+        #expect(world.browse.search.results.isEmpty, "a cancelled search still read, ranked and published")
+        #expect(world.browse.search.state != .done)
+        await world.browse.search.run() // the newer search runs to the end
+        #expect(world.browse.search.results.songs.count == 2)
+        #expect(world.browse.search.state == .done)
     }
 
     @Test("⌘F's results: the tabs' membership, ranked; “Show All” opens the tab filtered by the query")
