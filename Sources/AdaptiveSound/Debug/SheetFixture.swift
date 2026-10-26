@@ -73,6 +73,9 @@
             if variant == .folderPaused {
                 Self.seedPausedFolders(browse, library: library)
             }
+            if variant == .folderChecking {
+                Self.seedCheckingFolders(browse, library: library)
+            }
             if variant == .search {
                 Self.seedSearch(browse, songs: songs)
             }
