@@ -9,16 +9,16 @@ import LibraryStore
 /// tab's Filter keeps for the query (`LibrarySearch`), and where a tab keeps its own sort, ⌘F ranks.
 /// Owned by `LibraryBrowseModel` (`search`), so the text and the results survive a tab switch.
 ///
-/// Typing runs the search through the page's debounce (~120 ms, as the Songs filter): below the
-/// two-character gate (`SearchQueryGate`) nothing is searched or shown; each edit invalidates any search
-/// in flight at once and the newest search wins (`SearchEpoch`); a failed read keeps the last results.
-/// The store reads run off the main actor, and so does the ranking.
+/// Typing runs the search through the page's debounce (~120 ms, as the Songs filter): below the one search
+/// gate (`SearchQueryGate` — two characters, or one that is a syllable) nothing is searched or shown; each
+/// edit invalidates any search in flight at once and the newest search wins (`SearchEpoch`); a failed read
+/// keeps the last results. The store reads run off the main actor, and so does the ranking.
 @MainActor
 @Observable
 final class LibrarySearchModel {
     /// Where the search stands — what the page shows under its field.
     enum State: Equatable {
-        /// Below the two-character gate: nothing searched.
+        /// Below the one search gate (`SearchQueryGate`): nothing searched.
         case idle
         /// A search for the current text is running (the last results stay on screen).
         case searching
