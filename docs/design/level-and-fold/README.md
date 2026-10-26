@@ -425,6 +425,21 @@ public struct TrackLevelingDecision: Sendable, Equatable {
 
 **The analysis tool** (founder decision 4) is lane 1's executable `AnalyzeTracks`. It prints and writes nothing in `AppDataLocation`.
 
+## 8½. Conditions from the verify pass (2026-10-26) — binding before W4
+
+The verify pass (one fresh reviewer, after this revision) found the revision **ready to build with conditions**: 16 findings closed, 4 partly closed (F3, F6, F8, B4), none open. Its report is the session's `r11b/design-verify.md`. The conditions, as settled by the coordinator and the founder:
+
+- **C1 — mono, stereo and narrower multichannel outputs (settled).** F1's fix applies to sources of **3 or more channels**; mono and stereo keep today's graph formats. The founder's live listen on the XM4 (2026-10-26): a 44.1 kHz mono file plays in **both ears, centred** — macOS spreads it to both sides, so the offline left-only render does not happen on the device; the +3.01 LU mono correction (F8) stands. The first draft's rule for a device with fewer channels than the file but more than two (2 < M < N, e.g. 7.1 on a 5.1 output) is restored: **fold to stereo, never truncate**; 7.1 → 5.1 waits for the Engine sprint.
+- **C2 — the saved −ΔL profile at audibility (lane 1, step 1, before S1 / S3 freeze).** The decision that travels with the start and on-deck requests also carries what the planner needs to know −ΔL at audibility when a stored compact profile exists (the profile's key, or the off-thread value it implies) — so a fresh start of an analysed track never glides (NI-1). Add a **90th-percentile r²** field to `AsLfeStats` now, in version 1 of the analysis, so C4 never forces a re-analysis.
+- **C3 — W4 ownership, the five gaps (coordinator).**
+  1. The view-model call sites that pass `leveling:` to `startAudio` / `setNextTrack` (`AudioViewModel+Playback.swift`, `+AutoAdvance.swift`): **lane 1** in W4, passing a stub decision; lane 3 fills the decisions in W5.
+  2. `OnDeckEngineModel.swift` and the seam / seek tests that call `setNextTrack`: **lane 1** (the signature's owner).
+  3. The bridge's stored state lane 1 needs in `AudioEngineBridge.swift` (lane 2's file): the **coordinator's commit 0** adds one stored `leveling` property of a type lane 1 owns in its own file (`AudioEngineBridge+Leveling.swift`); lane 2 never touches it.
+  4. The ~10 test files the `LoudnessModule` deletion touches: **lane 1** (the deletion's owner).
+  5. Where `TrackLevelingDecision` lives in W4: the **coordinator's commit 0** creates the `LevelingKit` target holding only the struct (lane 1 owns it in W4; lane 3 adds the logic in W5).
+- **Deviations to reconcile in the plan check** (adds to §9's list): the S3 contract changed shape — the decision rides `startAudio(…, leveling:)` and `setNextTrack(…, leveling:)` plus `applyLevelingChange(current:next:)` and `publishEQ(…, comparing:)`, replacing the plan check's `publishTrackLeveling(_:for:)`.
+- **C4 / C5 (in the build, lane 1 / lane 2):** tighten the LFE include test with the p90 r² (it separates a kick-stem copy down to a kick 6 dB under the bass); add the kick-balance sweep and the 60 Hz high-pass case to the LFE tests; log the remaining case (a copied stem ≥ 10 dB under the bass) as a known issue; `AnalyzeTracks` prints the LFE statistics for the founder's surround albums. Restate F6's figures as fixture-dependent lower bounds (drop "the allowance covers the cut-only cases"); the known-issue tests log gain reduction instead of asserting one fixture's number, and the real figures are measured on the founder's hot masters. Add the Leveling-mode-change test row (NI-4); fix NI-7 (the unknown-loudness rule uses a known peak); size lane 1 at the start of W4.
+
 ## 9. W4 ownership (B4) and build order
 
 **Ownership, one owner per file in W4.**
