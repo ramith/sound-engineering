@@ -145,8 +145,9 @@ extension LibraryModel {
         do {
             let existing = try await store.roots().map { URL(fileURLWithPath: $0.path) }
             try LibraryScanner().validateNewRoot(url, against: existing)
-            let signature = LibraryScanner.deviceInode(of: url)
-            let folderID = try await store.addRoot(url, dev: signature.dev, inode: signature.inode)
+            let identity = RootReachabilityProbe.identity(of: url)
+            let folderID = try await store.addRoot(url, dev: identity?.dev, inode: identity?.inode,
+                                                   volume: identity?.volume)
             await refreshWatchedRoots() // cover the newly registered root with the watcher (S8.4)
             requestWalk(.add, of: folderID)
         } catch let conflict as NestedRootConflict {

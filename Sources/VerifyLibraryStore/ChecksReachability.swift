@@ -56,12 +56,14 @@ func checkRestampRoot(number: Int, url: URL) async -> Bool {
     }
 }
 
-/// A root bound to drive A: re-stamped on A (a remount with a new st_dev) it follows; drive B, or a
-/// volume with no UUID, at its path is refused and leaves the stamp as it was.
+/// A root bound to drive A: re-stamped on A (a remount with a new st_dev) it follows — a folder added on A
+/// with that pair is the root (QS3); drive B, or a volume with no UUID, at its path is refused and leaves the
+/// stamp as it was.
 private func restampFollowsTheRootsOwnDrive(_ store: LibraryStore, number: Int) async throws -> Bool {
     let idA = try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-A"), dev: 1, inode: 1)
     guard try await store.restampRoot(id: idA, to: RootIdentity(dev: 5, inode: 5, volume: "VOL-A")),
-          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-B"), dev: 5, inode: 5) == idA,
+          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-B"), dev: 5, inode: 5, volume: "VOL-A")
+          == idA,
           try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-C"), dev: 1, inode: 1) != idA else {
         printFail(number, "restamp: binding an unbound root did not refresh its (dev,inode)"); return false
     }
@@ -75,7 +77,8 @@ private func restampFollowsTheRootsOwnDrive(_ store: LibraryStore, number: Int) 
     }
     guard try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-D"), dev: 9, inode: 9) != idA,
           try await store.restampRoot(id: idA, to: RootIdentity(dev: 6, inode: 6, volume: "VOL-A")),
-          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-E"), dev: 6, inode: 6) == idA else {
+          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-E"), dev: 6, inode: 6, volume: "VOL-A")
+          == idA else {
         printFail(number, "restamp: a refused drive re-stamped the root, or its own drive's remount did not")
         return false
     }

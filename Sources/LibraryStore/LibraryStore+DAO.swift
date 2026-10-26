@@ -32,9 +32,11 @@ public extension LibraryStore {
     /// Insert a new ROOT folder (is_root = 1) with its bookmark + `(dev, inode)` identity.
     private static let insertRootFolderSQL =
         "INSERT INTO folders(path, is_root, bookmark, dev, inode) VALUES (?, 1, ?, ?, ?);"
-    /// The rowid of an existing ROOT for the same on-disk `(dev, inode)` identity (QS3).
+    /// The rowid of an existing ROOT for the same on-disk `(dev, inode)` identity on the same drive — or one not
+    /// yet bound to a drive, whose pair is its add's own, moments old (QS3; R1.1-B fix round, break-it BI-P06).
     private static let selectExistingRootIDSQL =
-        "SELECT id FROM folders WHERE is_root = 1 AND dev = ? AND inode = ? LIMIT 1;"
+        "SELECT id FROM folders WHERE is_root = 1 AND dev = ? AND inode = ? "
+            + "AND (volume_uuid IS NULL OR volume_uuid = ?) LIMIT 1;"
     /// Every registered scan root, path-ordered.
     private static let selectRootsSQL =
         "SELECT id, path, parent_id, is_root, bookmark, last_scanned FROM folders "
@@ -102,17 +104,21 @@ public extension LibraryStore {
 
     /// Register (or return the existing) scan-root folder for `url`. Idempotent two ways:
     /// on the normalised path (`UNIQUE(path)`), AND — when `dev`/`inode` are supplied (the
-    /// caller's lstat of the root) — on the on-disk `(dev, inode)` identity (QS3).
+    /// caller's lstat of the root) — on the on-disk `(dev, inode)` identity (QS3), on the drive `volume`
+    /// (`RootIdentity.volume`): st_dev numbers are handed out again after an unmount, so a gone drive's
+    /// stored pair may name a directory on another drive now, which must not pass for that root.
     /// `bookmark` is stored but reserved-unused under the Developer-ID posture (§8-D5).
     @discardableResult
-    func addRoot(_ url: URL, dev: Int64? = nil, inode: Int64? = nil, bookmark: Data? = nil) async throws -> Int64 {
+    func addRoot(_ url: URL, dev: Int64? = nil, inode: Int64? = nil, volume: String? = nil,
+                 bookmark: Data? = nil) async throws -> Int64 {
         let path = PathNormalizer.normalizedString(for: url)
         return try await dbWriter.write { db in
             if let existing = try Int64.fetchOne(db, sql: Self.selectFolderIDByPathSQL, arguments: [path]) {
                 return existing
             }
-            // Same on-disk directory (by lstat identity) already a root? → idempotent.
-            if let dev, let inode, let existing = try Self.existingRootID(db, forDev: dev, inode: inode) {
+            // Same on-disk directory (by lstat identity, on the same drive) already a root? → idempotent.
+            if let dev, let inode,
+               let existing = try Self.existingRootID(db, forDev: dev, inode: inode, volume: volume) {
                 return existing
             }
             try db.execute(
@@ -124,12 +130,14 @@ public extension LibraryStore {
     }
 
     /// The rowid of an existing ROOT registered for the same on-disk directory (matched
-    /// on the lstat `(dev, inode)` identity), or nil. Roots with a NULL dev/inode never
-    /// match (SQL `= NULL` is never true). Underlies `addRoot`'s case-insensitive dedup (QS3).
-    internal static func existingRootID(_ db: Database, forDev dev: Int64, inode: Int64) throws -> Int64? {
+    /// on the lstat `(dev, inode)` identity, on the drive `volume` or not yet bound to one), or nil. Roots
+    /// with a NULL dev/inode never match (SQL `= NULL` is never true). Underlies `addRoot`'s
+    /// case-insensitive dedup (QS3).
+    internal static func existingRootID(_ db: Database, forDev dev: Int64, inode: Int64,
+                                        volume: String?) throws -> Int64? {
         try Int64.fetchOne(
             db, sql: selectExistingRootIDSQL,
-            arguments: [dev, inode]
+            arguments: [dev, inode, volume]
         )
     }
 

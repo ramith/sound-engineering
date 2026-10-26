@@ -360,6 +360,22 @@ private func rootIdentityDedup(_ store: LibraryStore, number: Int) async throws 
         return false
     }
 
+    // A gone drive's stale pair (R1.1-B fix round, break-it BI-P06's wider version): st_dev numbers are handed
+    // out again after an unmount, so a root bound to one drive must not swallow a new folder on another that
+    // got the same (dev, inode) — only the same drive's, or an unbound root's, pair is the same directory.
+    let gone = try ScanFixtureBuilder.makeCaseRoot("identity-gone")
+    let goneID = try await store.addRoot(gone, dev: 50, inode: 2, volume: "VOL-GONE")
+    _ = try await store.restampRoot(id: goneID, to: RootIdentity(dev: 50, inode: 2, volume: "VOL-GONE"))
+    let other = try ScanFixtureBuilder.makeCaseRoot("identity-other-drive")
+    let otherID = try await store.addRoot(other, dev: 50, inode: 2, volume: "VOL-NEW")
+    let sameDrive = try ScanFixtureBuilder.makeCaseRoot("identity-same-drive")
+    guard otherID != goneID,
+          try await store.addRoot(sameDrive, dev: 50, inode: 2, volume: "VOL-GONE") == goneID else {
+        printFail(number, "root identity: a gone drive's stale (dev,inode) swallowed a folder on another drive, "
+            + "or the same drive's pair did not dedup")
+        return false
+    }
+
     let realDir = try ScanFixtureBuilder.makeCaseRoot("Identity-Real")
     guard let realSig = independentLstat(realDir) else {
         printFail(number, "root identity: lstat failed for the real dir"); return false
