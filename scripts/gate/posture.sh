@@ -35,6 +35,8 @@ check_playlist() {
         "Sources/AdaptiveSound/UI/Library/LibrarySidebar.swift"
         "Sources/AdaptiveSound/UI/Playlist/AddToPlaylistMenu.swift"
         "Sources/AdaptiveSound/PlaylistsModel.swift"
+        "Sources/AdaptiveSound/PlaylistsModel+Add.swift"
+        "Sources/AdaptiveSound/UI/Library/FileOrRowDrop.swift"
         "Sources/LibraryBrowseKit/PlaylistDropRouter.swift"
         "Sources/LibraryStore/LibraryStore+Playlists.swift"
     )
