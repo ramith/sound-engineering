@@ -79,6 +79,9 @@
         /// The rail's Music Folders with paused folders (R1.1-A, KI-LIB-02): one watched, one whose drive
         /// is unplugged and one the app may not open — each paused row's question-mark folder and reason.
         case folderPaused = "folder-paused"
+        /// "Use This Drive…" checking the drive chosen (R1.1-B fix round, review N4): the folder chosen and the
+        /// paused folder of the same drive moving along with it say "Checking the drive…", their buttons held.
+        case folderChecking = "folder-checking"
         /// The Library's Search page (R1.1-B, ⌘F) with results in every section it fills.
         case search
         /// The Monitoring worlds (S10.8 G1) — the Monitoring tab only, dark and light at both sizes: mono
@@ -184,7 +187,7 @@
             case .ringRail: [.library, .eq]
             case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates,
                  .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
-                 .playlistFailure, .folderRemove, .folderPaused, .search: [.library]
+                 .playlistFailure, .folderRemove, .folderPaused, .folderChecking, .search: [.library]
             case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure: [.settings]
             case .monitorMono, .monitor51, .monitor71: [.monitoring]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
