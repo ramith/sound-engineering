@@ -122,6 +122,36 @@ struct LooseFileTests {
             == "Can’t play “notes.txt” — it isn’t an audio file this app plays.")
     }
 
+    /// R1.1-B fix round (review N3): a multi-item add is several writes; when a later one fails, the ones before
+    /// it are in the playlist — the add says how many went in (the toast's number), and the failure.
+    @Test("a playlist add that fails part-way returns the songs that went in, and says the failure")
+    func partialAddCountsWhatWentIn() async throws {
+        let world = try await World.make()
+        defer { world.discard() }
+        let demo = world.file("demo.flac")
+        let playlistID = try await world.store.createPlaylist(name: "Demos")
+        await world.playlists.loadTree()
+        let gone: Int64 = 9999 // a song that left the library while the menu was open
+        let added = await world.playlists.add([.file(demo), .track(gone)], toPlaylist: playlistID)
+        #expect(added == 1, "the add said \(added) songs went in")
+        #expect(try await world.store.entries(inPlaylist: playlistID).count == 1)
+        #expect(world.playlists.dialog != nil, "the failure was not said")
+    }
+
+    /// R1.1-B fix round (review N9): two opens land in the order they came, each whole.
+    @Test("two opens, one after the other, land in the order they came")
+    func opensInOrder() async throws {
+        let world = try await World.make()
+        defer { world.discard() }
+        let first = world.file("first.flac")
+        let second = world.file("second.flac")
+        world.browse.appendFiles([first])
+        world.browse.appendFiles([second])
+        await world.browse.fileOpenTask?.value
+        let urls = world.player.vm.queue.map(\.file.absoluteURL)
+        #expect(urls.suffix(2) == [first, second])
+    }
+
     @Test("added to a playlist: a song in no music folder, there after a relaunch; gone, it wears the dead-file badge")
     func playlistAddSurvivesRelaunchAndShowsMissing() async throws {
         let world = try await World.make()

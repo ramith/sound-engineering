@@ -26,6 +26,23 @@ struct LooseFilesTests {
         #expect(LooseFiles.plan([tricky]) { _ in true }.skipped == [tricky])
     }
 
+    @Test("a drop target's answer reads names only: the audio files, in order, each once")
+    func candidatesByName() {
+        #expect(LooseFiles.candidates([song, notes, upper, folder, song, opus]) == [song, upper, opus])
+    }
+
+    @Test("an open's plan and its words are read off the caller's actor, from the disk")
+    func plannedOffTheCaller() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("loose-planned-\(UUID().uuidString)", isDirectory: true)
+        let album = base.appendingPathComponent("Album.flac", isDirectory: true) // a folder named like a song
+        try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let opened = await LooseFiles.planned([album, song])
+        #expect(opened.plan.playable == [song])
+        #expect(opened.skippedMessage == "“Album.flac” is a folder — add it under Music Folders to play it.")
+    }
+
     @Test("what the app says about what it passed over")
     func skippedMessages() {
         #expect(LooseFiles.skippedMessage([]) { _ in false } == nil)

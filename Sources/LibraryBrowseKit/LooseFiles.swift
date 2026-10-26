@@ -16,7 +16,32 @@ public enum LooseFiles {
         public let skipped: [URL]
     }
 
-    /// Sort `urls` into what plays and what does not. `isDirectory` reads the disk (a seam for tests).
+    /// An open read off the caller's actor: its plan, and what to say of what it passed over.
+    public struct Opened: Equatable, Sendable {
+        public let plan: Plan
+        public let skippedMessage: String?
+    }
+
+    /// `plan` and `skippedMessage` for `urls`, read off the caller's actor: each file needs a look at the disk
+    /// (is it a folder?), and 300 files dropped from a spun-down disk or a network share must never stall
+    /// the main thread (R1.1-B fix round, review S2).
+    @concurrent
+    public static func planned(_ urls: [URL]) async -> Opened {
+        let plan = plan(urls)
+        return Opened(plan: plan, skippedMessage: skippedMessage(plan.skipped))
+    }
+
+    /// The files among `urls` that may play, judged by name alone — no look at the disk, so a drop target
+    /// can answer at once whether it takes a drop: the audio files the library admits, in the order given,
+    /// each once. What is not a file after all (a folder named "x.flac") is passed over by the add that
+    /// reads it (`LibraryScanner.makeScannedFile`).
+    public static func candidates(_ urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.filter { isPlayable($0) && seen.insert($0.standardizedFileURL).inserted }
+    }
+
+    /// Sort `urls` into what plays and what does not. `isDirectory` reads the disk (a seam for tests): never
+    /// call this on the main actor with the default — use `planned`.
     public static func plan(_ urls: [URL], isDirectory: (URL) -> Bool = LooseFiles.isDirectory) -> Plan {
         var seen = Set<URL>()
         var playable: [URL] = []
