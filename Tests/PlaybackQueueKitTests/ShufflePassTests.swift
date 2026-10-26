@@ -267,6 +267,21 @@ struct ShufflePassTests {
         #expect(pass.relabeled { _ in 1 } == nil, "two slots relabeled as one")
     }
 
+    @Test("VM-SP-15: every order is drawn about equally often (Fisher–Yates, not a biased swap)")
+    func ordersAreUniform() {
+        var counts: [[Int]: Int] = [:]
+        for seed in UInt64(0) ..< 24000 {
+            let pass = ShufflePass(beginningAt: 0, among: Array(0 ..< 5), seed: seed)
+            counts[Array(pass.permutation.dropFirst()), default: 0] += 1
+        }
+        // 24 orders of the four songs after the first, 1000 expected each; 4.5σ either side.
+        #expect(counts.count == 24)
+        #expect(counts.values.allSatisfy { (860 ... 1140).contains($0) }, "\(counts.values.sorted())")
+    }
+}
+
+@Suite("PlaybackQueueKit — ShufflePass, many songs at once (VM-SP, review S3)")
+struct ShufflePassBulkEditTests {
     @Test("VM-SP-16 (S3): 20,000 songs appended, or played next, write the line at most once — not once a song")
     func bulkEditsAreLinear() {
         var pass = ShufflePass(beginningAt: 0, among: Array(0 ..< 12), seed: 16)
@@ -305,17 +320,5 @@ struct ShufflePassTests {
             }
             #expect(atOnce == oneByOne, "seed \(seed): a batch landed elsewhere than one at a time")
         }
-    }
-
-    @Test("VM-SP-15: every order is drawn about equally often (Fisher–Yates, not a biased swap)")
-    func ordersAreUniform() {
-        var counts: [[Int]: Int] = [:]
-        for seed in UInt64(0) ..< 24000 {
-            let pass = ShufflePass(beginningAt: 0, among: Array(0 ..< 5), seed: seed)
-            counts[Array(pass.permutation.dropFirst()), default: 0] += 1
-        }
-        // 24 orders of the four songs after the first, 1000 expected each; 4.5σ either side.
-        #expect(counts.count == 24)
-        #expect(counts.values.allSatisfy { (860 ... 1140).contains($0) }, "\(counts.values.sorted())")
     }
 }
