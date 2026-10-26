@@ -1,491 +1,637 @@
-# Level and fold — the R1.1-B sound design note
+# Level and fold — the R1.1-B sound design note (revision 1, after the panel)
 
-*Step 1 of the full loop (`docs/sprints/00-sprint-model.md` §5) for the sprint's sound lanes, written before their code, for the blind three-reviewer panel. Drafted 2026-10-26 against `r1.1b/level-and-fold-design` @ da728c00. Code claims cite file:line on that commit. Standards and implementations cited were opened this session (list at the end). **Measured** = a prototype run this session on synthetic material (scripts: §13); **(from DSP principle)** = reasoning, not measurement; **unverified** = not checked. The only founder decisions named here are the ones in [the sprint record](../../sprints/r1-1b-record.md) ("Decisions at the gates"). The roadmap's sound plan is cited as the plan of record. Everything else here is a proposal.*
+*Step 1 of the full loop (`docs/sprints/00-sprint-model.md` §5) for the sprint's sound lanes. Revision 1 is the one author revision after the blind three-reviewer panel (breaker, state-of-the-art challenger, architect). The first draft was 5eb5ae38. §14 maps every panel finding to what changed.*
 
-**Scope.** This note covers the one analysis pass, leveling's gain, the cap and the peak-safe turn-down, Compare, the old leveller's deletion (lane 1), and the interim fold's arithmetic and LFE rule (lane 2), plus the app-side contract they need (lane 3). Pure is out of scope: leveling in Pure is deferred until the USB DAC (record, decision 1). So the analysis does not run in Pure this sprint.
+*Basis: code claims cite file:line on `r1.1b/level-and-fold-design` @ da728c00. The standards and implementations cited were opened in the drafting session (list at the end).*
 
-## 0. The answers, and what changes from the plan
+*Labels:*
+- ***Measured*** — a prototype run on synthetic material (scripts: §15). No founder music was read.
+- ***(from DSP principle)*** — reasoning, not measurement.
+- ***Unverified*** — not checked.
 
-| Q | Answer (one line) |
+*Decisions: the only founder decisions named here are the ones in [the sprint record](../../sprints/r1-1b-record.md) ("Decisions at the gates"). The roadmap's sound plan is cited as the plan of record. Listener-facing choices that belong to the founder are **not decided here**; they are in §12, "For the founder".*
+
+**Scope.**
+- In scope:
+  - **Lane 1:** the one analysis pass, the per-track plan (leveling gain, cap, fold trim), the peak-safe turn-down, Compare, and the old leveller's deletion.
+  - **Lane 2:** the interim fold, the LFE rule, the backstop, and **a fix to shipped code** (F1: the resampler route drops or reorders channels).
+  - **Lane 3:** the app-side decisions, the store and the album scheduler.
+- Out of scope: Pure. Leveling in Pure is deferred until the USB DAC (record, decision 1), so nothing here runs in Pure.
+
+## 0. The answers, revised
+
+| Q | Answer |
 |---|---|
-| **P1** | Measure every true peak **on the engine-rate signal, after the engine's own Mastering converter**. Use the shipped 8× kernel, take the max over all N channels (LFE included), and measure the fold at three LFE gains. At the source rate the reading misses by +0.53 dB on clipped 44.1 kHz masters and over-states hi-res files by up to 4.6 dB (measured). Extra cost: 110× real time for 44.1 kHz stereo and 6× for 192 kHz × 8. |
-| **P2** | **Pool the album's gated blocks** (BS.1770 on the concatenation). This is the ReplayGain 2.0 definition and what rsgain/libebur128 compute. A duration-weighted power average differs by up to 2.8 LU (measured). The payload is a sparse 0.1 LU histogram with exact energy sums: 0.9 KB median per track, pooling error ≤ 0.005 LU. Album peak = the max of the tracks' peaks. |
-| **P3** | **No.** The trim stays `min(0, C_work − TP_fold)`, a per-track constant independent of g and G. The **level stage** protects `P = max(TP_N, TP_fold + trim)` and levels `L_fold + trim`, so both nets close with one owner of level. A continuous gapless group keeps one trim: the group's worst TP_fold. |
-| **P4** | Zero-lag ρ **fails** on a plain low-passed copy (ρ₀ = −0.64, measured). Use one global least-squares FIR per main channel instead. Omit when ≥ 40 % of active blocks are ≥ 80 % explained. Include when ≥ 50 % carry unexplained LFE power within 12 dB of the mains' low band. Omit otherwise, and omit when unknown. Margins ≥ 0.4 on every clean case. Proposed include gain **−6 dB per side** (BS.775-4 Annex 7 Fig. 5), not 0 dB. |
-| **P5** | Nothing automatic moves inside a track: g, P, C_work and the trim freeze at audibility. −ΔL refines as today. A listener's mode change glides at τ = 0.15 s. An unknown TP counts as 0 dBTP (the RG2 rule). The arithmetic closes **exactly** with the EQ Off. With the EQ On it closes **only as far as `TP + B` bounds the EQ'd peak**. That is a heuristic, measured to fail by up to +1.07 dB on a phase-coherent synthetic bass. |
-| **P6** | Compare = the identity cascade at `g + T`. It matches EQ-on to within the predictor's error. On a folded file the profile must be built **on the fold**: the 5.1-weighted profile misses by up to 0.22 dB (measured). `sizeof(TargetState)` stays **768 B** (measured: 744 → 732 used bytes, `alignas(64)`). The stereo golden master should hold bit for bit. |
+| **P1** | **Where:** every true peak is measured on the engine-rate stream after the engine's own Mastering converter, with the converter's output format set to **the file's own channel layout** (F1).<br>**How:** analysis peak = max(shipped 8×24 reading, an 8×64 reading). The limiter therefore never reads above the field, and the reconstructed peak is under-read by at most 0.09 dB.<br>**What:** max over all N channels including the LFE, plus the fold at LFE gains 0, 0.5, 1.0 and 1.585.<br>**Cost:** 110× real time for 44.1 kHz stereo; 6× for 192 kHz × 8; 3.1–3.3× for 352.8/384 kHz × 8. |
+| **P2** | The album's loudness **anchor** (pooled gated blocks, or the loudest track per AES77 / Grimm) is the **founder's** choice (§12 F-1). Both are computable from the stored record without re-analysis. A folded album uses **one trim** (F2), so pooling or max is over member numbers that share it. Album peak = max of the members' peaks. |
+| **P3** | **The trim:** stays `min(0, C_work − TP_F)` in Track scope at seams across silence.<br>**Groups:** any group (Album scope, or a continuous gapless run) shares one trim, one leveling gain and one LFE choice. The trim is the group's worst.<br>**Output change mid-track:** a protective re-plan with the frozen g: `trim′ = min(0, C_work′ − (TP_F + g))` (F5).<br>**One planner:** a pure C++ planner computes the plan **once**, and the same value goes to both audio units (B1). |
+| **P4** | The LFE decision is made **at plan time** from stored statistics (M4).<br>**Statistics:** a global lag search; a multi-input least-squares fit; a scale-invariant per-block shape match; an "explaining gain" bound.<br>**Result:** 117 of 117 fixture runs are correct, from my fixtures and both reviewers': delayed, linear-phase, kick-stem, automated-send and EQ'd copies are omitted; independent layers and redirected bass are included.<br>**Include gain:** the founder's choice (§12 F-3). |
+| **P5** | **Frozen at audibility:** g, P, C_work, the trim, the LFE choice, and now **G** too, from a persisted −ΔL profile (challenger #2).<br>**What may move:** a listener's mode change glides; an output change re-plans protectively.<br>**Silent or very short tracks:** unknown loudness (F4); g ≤ +12 dB.<br>**When it closes:** exactly with the EQ Off **and crossfeed off**. With the EQ On it holds only as far as `TP + B_eff` bounds the peak; the measured envelope is +1.56 dB on boosts and +0.69 dB on cuts before the cut allowance (F6). |
+| **P6** | **Compare** = identity at g + T. On a fold, ΔL must come from the fold's own profile: the 5.1 basis misses by up to 2.14 dB (F7).<br>**Deletion:** `LoudnessModule` is deleted entirely (M8).<br>**Size and golden masters:** `sizeof(TargetState)` stays 768 B (728 B used). The stereo golden master should hold. A new golden covers P1 with a leveling gain. |
 
-**Findings that change the plan** (each detailed below):
-- (a) Source-rate true peaks cannot close the cap (P1).
-- (b) The architecture's zero-lag LFE rule would include every film-style copy and double the bass by about +5.6 dB (P4).
-- (c) BS.775-4 has **no 7.1 row** (P3, S1b).
-- (d) The folded loudness can read **2.75 LU above** the 5.1 figure, not only 1–2 LU under. An included LFE moves it by up to +5.8 LU (§1.2).
-- (e) The `TP + B` "bound" is not a bound (P5).
-- (f) The −ΔL profile must follow the fold (P6).
-- (g) MPD's and foobar2000's "auto" pick track gain by shuffle state, not by the neighbour rule the architecture attributes to them (§12, Q11).
-
-## 1. The model in one page
+## 1. The model
 
 ### 1.1 Symbols
 
-- C = the output's ceiling by scope: −0.1 dBTP lossless at the engine rate, else −1 dBTP (roadmap sound plan §1).
-- **C_work = 20·log10(ceiling_lin × kIspSafetyMargin) − ε**, with `kIspSafetyMargin` = 0.96939 (`Limiting/LimiterModule.h:105`). ε = 0.01 dB is a new rounding guard: the limiter acts only when `peak > workingCeiling` (`LimiterModule.h:440`), and the cap targets that reading itself. This gives −1.272 dBTP on Bluetooth (0.891, `include/AudioConstants.h:16`) and −0.372 dBTP wired.
-- L_T = −18 LUFS.
-- B = max_f of the EQ program's played response (≥ 0).
-- ΔL = the taste layer's predicted loudness change (`Loudness/TrackLoudnessProfile.h:123-135`).
-- The **processed-path ceiling** is the one P1 actually plays: `max(truePeakCeiling, eqOnlyCeiling)` (`DSPKernel.cpp:257-259`). With Intensity held at 0 that is the only processed path.
+| Symbol | Meaning |
+|---|---|
+| C | The output's ceiling by scope (roadmap sound plan §1): −0.1 dBTP lossless at the engine rate, else −1 dBTP. |
+| **C_work** | 20·log10(ceiling_lin × `kIspSafetyMargin`) − ε. `kIspSafetyMargin` is 0.96939 (`Limiting/LimiterModule.h:105`). ε = 0.01 dB guards rounding, because the limiter acts only when `peak > workingCeiling` (`:440`). Values: **−1.282 dBTP** on Bluetooth (0.891), **−0.380** wired (0.98855). The backstop computes its working ceiling the same way, from the same float. |
+| L_T | −18 LUFS |
+| B | Max over f of the EQ program's played response (≥ 0). |
+| **B_eff** | max(B, min(20·log10‖h‖₁, 0.7 dB)): the cut allowance (§6). |
+| ΔL | The taste layer's predicted loudness change (`Loudness/TrackLoudnessProfile.h:123-135`). |
+| Processed-path ceiling | `max(truePeakCeiling, eqOnlyCeiling)` (`DSPKernel.cpp:257-259`). |
 
-### 1.2 Per track: the numbers (one pass, off the audio thread)
+### 1.2 Per track: what the pass measures (off the audio thread)
 
-| Number | Definition | Signal | Persisted |
-|---|---|---|---|
-| L_N | BS.1770-5 gated loudness, N-channel weights (L/R/C 1, surrounds 1.41, LFE 0 — BS.1770-5 Table 3) | engine-rate stream | yes |
-| TP_N | 8× `TruePeakKernel` (`include/TruePeakKernel.h`), max over **all N** channels incl. LFE (the linked limiter, `LimiterModule.h:268-271`) | engine-rate stream | yes |
-| L_F[k], TP_F[k] | the same on the BS.775 stereo fold with LFE gain k ∈ {0, 0.5, 1.0} per side | engine-rate stream, folded | yes (N > 2) |
-| head, tail | loudness of the first / last whole 400 ms block (N-channel weights) | engine-rate stream | yes |
-| histograms | 0.1 LU block histogram, count + exact energy sum per bin (LufsMeter's own form, `Loudness/LufsMeter.h:93-97, 453-460`), N-channel plus each fold variant | engine-rate stream | yes (sparse) |
-| LFE stats | §5 | engine-rate stream | yes |
-| profile | gated 1/24-octave block spectra for −ΔL (today's) | **source rate**, basis per §7 | no (memory cache, as today) |
+The pass decodes once at the source rate.
+- **Source rate:** feeds today's profiler first (−ΔL prefix, unchanged, published before any conversion — architect N12).
+- **Engine rate:** the stream converts to 48 kHz through `StreamingResampler` **with the file's own layout as the output format** (F1), and feeds the analyzer:
 
-**Measured, why each fold variant is kept** (p6_foldloud, 10 s pink fixtures, 48 kHz):
+| Quantity | Definition |
+|---|---|
+| L (N-channel) | BS.1770-5 gated, BS.1770-5 Table 3 weights (LFE 0). A mono file is stored as measured; the planner adds +3.01 LU when it plays to ≥ 2 output channels (F8, measured below). |
+| TP_N | max(8×24 shipped kernel, 8×64 kernel), over **all N** channels including the LFE (the linked effects limiter, `LimiterModule.h:267-271`). |
+| L_F[v], TP_F[v] | The same on the BS.775 stereo fold, for LFE gains v ∈ {0, 0.5, 1.0, 1.585} per side. |
+| head, tail | First and last whole 400 ms block (N-channel weights). |
+| histograms | 0.1 LU, count + exact energy sum (LufsMeter's form, `Loudness/LufsMeter.h:93-97, 453-460`), N-channel and each fold variant. |
+| LFE statistics | §5. |
+| compact −ΔL profiles | 1/12-octave bands, 400 ms non-overlapping blocks, float16, one per playable basis (N-channel; fold × 4 variants). |
+
+**Measured, mono (F8, `bench/mono.swift`):** AVAudioEngine's main mixer, fed a 1-channel source into a 2-channel output (offline manual rendering, mirroring the app's last edges), puts it on **both sides at 0.00 dB**. The heard programme is therefore dual mono, 3.01 LU above the one-channel measure (libebur128's `EBUR128_DUAL_MONO`). Lane 1 confirms this on the device path with VerifyAUGraph.
+
+**Why each fold variant is kept.**
 
 | Fixture | L_F(omit) − L_N | L_F(0.5) − L_F(omit) | L_F(1.0) − L_F(omit) |
 |---|---|---|---|
-| uncorrelated, equal in all 5 mains | −1.62 LU | 0 | 0 |
-| uncorrelated, surrounds −6 dB | −0.58 LU | 0 | 0 |
-| centre-only vocal | −0.04 LU | 0 | 0 |
-| vocal equal in L, R and C (divergence) | **+2.75 LU** | 0 | 0 |
-| strong LFE sub (−20 dBFS rms) | −0.85 LU | +0.73 LU | +2.39 LU |
-| film-level LFE (−14 dBFS rms) | −0.83 LU | +2.29 LU | +5.81 LU |
+| uncorrelated, equal | −1.63 LU | 0 | 0 |
+| surrounds −6 dB | −0.57 | 0 | 0 |
+| centre only | 0.00 | 0 | 0 |
+| divergent vocal (L = R = C) | **+2.88** | 0 | 0 |
+| strong LFE sub | −0.85 | +0.73 | +2.39 |
+| film-level LFE | −0.83 | +2.29 | +5.81 |
 
-EBU Tech 3343-2023 §7.1 predicts the sign change: the BS.1770 surround weight (+1.5 dB) against the −3 dB downmix coefficient, and up to 3 LU more loudness with divergence. Its remedy is the one adopted here: "a subsequent loudness measurement and potential static gain correction". The architecture's "leveling is unaffected [by the LFE] — BS.1770 weights the LFE 0" (`architecture.md` §7) holds for L_N but **not** for L_F. An included LFE is part of the folded stereo.
+The first four rows are the breaker's analytic values; my noise fixtures read within 0.13 LU. EBU Tech 3343-2023 §7.1 predicts the sign change and prescribes "a subsequent loudness measurement and potential static gain correction".
 
-### 1.3 Per play: the plan (one pure function, computed off the audio thread)
+### 1.3 Per play: the plan — one pure function, called once (B1)
 
-The plan depends on the output's fold state (fold ⇔ N > 2 and M < N) and on C_work. Track scope uses the track's numbers. Album/group scope uses the pooled loudness (§3) and the **max** of the members' peaks.
+`AsTrackPlan asPlanTrack(const AsTrackLeveling* decision, const AsOutputState* output, const AsTrackPlan* frozenOrNull)` lives in C++ in AudioDSP (`Planning/TrackPlan.{h,cpp}`, new). Inputs:
+- the app's decision (§8, S3): measured numbers only, already scope-resolved;
+- the output state (M2): {transport, nominal rate, M, N}.
 
 ```
-unfolded:  P = TP_N                                  L = L_N            trim = 0
-folded:    trim = min(0, C_work − TP_F[k])           (k = the decided LFE gain; group: max TP_F over the group)
-           P = max(TP_N, TP_F[k] + trim)             L = L_F[k] + trim
-level:     g = min(L_T − L, C_work − P)              (Leveling Off: g = 0.  Unknown loudness: g = −5 dB.  Unknown TP: 0 dBTP, §6)
-turn-down: C_cap = C_work − (P + g + B)              G = min(−ΔL, C_cap)       T = G − (−ΔL) ≤ 0
-applied:   effects unit  eq.outputGainDb = g + G     (Compare held: identity cascade at g + T)
-           spatial unit  fold matrix · LFE gain k · trim, then the backstop at the same C
+TP     = unknown, or peakRateHz ≠ the kernel's 48 kHz → 0 dBTP     (RG2's "assume 1.0"; architect N6)
+v      = the decision's LFE variant (Omit unless chosen; a group shares one, §4)
+C_work = from the output state (one rule, in C++)
+fold   = N > 2 and M < N  (mono: no fold; L += 3.01 when M ≥ 2)
+trim   = fold ? min(0, C_work − TP_F[v]) : 0          (group/album: TP_F = max over the members)
+P      = max(TP_N, fold ? TP_F[v] + trim : −∞)        (group: maxima over the members)
+L      = (fold ? L_F[v] : L_N) + trim                 (group/album: the anchor over the members, §3)
+g      = Leveling Off → 0
+         no gated block, or duration < 0.4 s, or unknown → min(0, −5 − trim)   (F4; the unknown rule;
+                  a fold's fallback trim already cuts more than −5, so it is not cut twice)
+         else min(L_T − L, C_work − P, +12 dB)        (F4: the +12 dB clamp, as −ΔL's)
 ```
 
-**Where each is computed and applied.**
-- g, C_cap, G and T: in `TrackLoudnessGain` (`Loudness/TrackLoudnessGain.h`) on the Realizer's queue. They are added **outside** the `ownGainDb` early return (`TrackLoudnessGain.cpp:104-121`) and published in `eq.outputGainDb` (`include/TargetState.h:32-33`), as today. So with the EQ Off, g alone takes the kernel off P0, correctly.
-- The trim: in the spatial unit, from the same inputs through one pure function, `foldTrimDb` (S1b).
-- The numbers L, TP and the LFE gain come from the app through S3. The app resolves the scope; the engine resolves the fold state and C_work. No ceiling rule exists in Swift.
+**Where the plan's parts are applied.**
+- **The effects unit** gets `setCurrentTrack(token, seam, plan)`. Its Realizer keeps `levelDb_ = g` from plans only. In `TrackLoudnessGain`'s `neutralDb_` it computes **C_cap = C_work − (P + g + B_eff)**, **G = min(−ΔL, C_cap)** and **T = G + ΔL ≤ 0**.
+- `eq.outputGainDb = g + G` (`include/TargetState.h:32-33`).
+- With the EQ Off, G = min(0, C_cap). That is 0 by construction at plan time, and becomes negative only after a protective output re-plan. With Leveling Off and the EQ Off, nothing is applied (P0 holds).
+- **The spatial unit** gets the matrix, v's gain and the **computed** trim, from the same plan value, in the same turn (M1).
+
+**When the planner runs** — on the queue that declares audibility, and only then:
+1. **A new token becomes audible.** This includes the same token at a real seam (Repeat One — architect N3). The gain **snaps** at a fresh start, so no 10 ms glide from the previous gain (N4), and glides 10 ms at a gapless seam.
+2. **The listener changes the Leveling mode (`appliesNow`).** The current track re-plans; both units glide at τ = 0.15 s. The next track's armed decision is replaced (N11).
+3. **The output state changes at a re-establish.** This is the protective re-plan with g frozen:
+   - `trim′ = min(0, C_work′ − (TP_F[v] + g))`;
+   - `P′ = max(TP_N, TP_F[v] + trim′)`;
+   - the effects side's C_cap uses P′ and C_work′.
+
+   F5's example (g = +5.62, TP_F = −3.5, switching to Bluetooth): trim′ = −3.40 dB, backstop asleep.
+
+A resume, seek or device move with the same token and the same output state sends **nothing** (B1).
 
 ### 1.4 What may change inside a track
 
 | Quantity | Automatic change inside a track | Listener's act |
 |---|---|---|
-| g, P, C_work, trim | **never** — frozen at audibility (`trackBecameAudible` → `setCurrentTrack`); a later publish for the playing token is kept for its next play | Leveling mode change: at once, one-pole τ = 0.15 s (reuse `kRefreshRampSeconds`) |
-| −ΔL (so G, T) | as today: prior → prefix 0.5 s, prefix → whole 2 s, causal fallback ≤ 1 dB/s (`TrackLoudnessGain.h:17-24`) | EQ edits, Compare |
-| fold state | an output change folds or unfolds at its re-establish; the trim engages **at once** (protection); g re-plans at the next track | (the output change is the act) |
-| ceiling | US-R1F-10 item 6: re-caps at the next track start | — |
+| g, P, C_work, trim, LFE variant | never — the plan is frozen at audibility | mode change: re-plan, glide 0.15 s |
+| −ΔL (so G, T) | **never** when a persisted profile exists (challenger #2). Otherwise, on a never-analysed first play only, today's refinement: prior → prefix → whole (`TrackLoudnessGain.h:17-24`). | EQ edits, Compare |
+| output-state change (fold, ceiling) | — | protective re-plan at the re-establish (above) |
 
 ## 2. P1 — the pass and the true peak
 
-**The kernel is accurate. The question is which signal it reads.**
-
-*The kernel itself* (p1_kernel, against an exact FFT-sinc reference):
-- It never over-reads: no reading came out above the exact reference (largest difference +0.000 dB, i.e. rounding).
-- It under-reads band-limited pulses by at most 0.11 dB at 44.1 kHz and 0.04 dB at 48 kHz.
-- BS.1770-5 Annex 2 Attachment 1 gives 0.136 / 0.169 dB for 8× at f_norm 0.45 / 0.5.
-- Its worst phase droops to −2.0 dB for a 20 kHz tone at 44.1 kHz, against −0.14 dB at 48 kHz.
-
-*Source rate vs the limiter's view* (p1_rate, n = 18 synthetic clipped masters per rate; the SRC is a Kaiser-14 polyphase stand-in for Apple's Mastering converter, **unverified** equivalence):
-
-| Source | R_limiter(48 k after SRC) − R_analysis(source rate) |
-|---|---|
-| 44.1 kHz, clipped at −0.1 dBFS | **+0.02 … +0.53 dB** (median +0.23) |
-| 88.2 / 96 / 192 kHz, ultrasonic noise at −40 dB | −0.94 … −4.64 dB (the source rate over-states) |
-
-Clipping writes energy up to Nyquist. The 44.1 kHz kernel cannot reconstruct it: on these masters it reads up to 0.81 dB under the exact TP. The converter then removes 21–22 kHz content and lifts the peak the limiter sees. Neither error is bounded by the detector's 0.17 dB, and the first is larger than the whole 0.27 dB working margin.
+**The kernel.**
+- Against an exact FFT-sinc reference, the shipped 8×24 kernel never read above the reference on band-limited pulses.
+- It is accurate to ≤ 0.04 dB only below about 19 kHz. On HF-only bursts at 48 kHz it errs +0.09 / −0.28 dB to 22 kHz (breaker N1).
+- Through Apple's real converter (which is flat to 21.5 kHz from 44.1 kHz and to 23.5 kHz from 96/192 kHz), it under-reads the reconstructed peak by up to 0.22 dB (clipped 44.1), 0.56 (clipped 96), 0.34 (dynamic 96 — where the cap binds) and 1.01 dB (clipped native 48). Challenger #4, measured.
+- An 8× kernel with **64 taps per phase** cuts those to 0.07 / 0.06 / 0.04 / 0.09 dB.
 
 **Decision.**
-- Decode once at the source rate.
-- Feed the existing profiler at the source rate, unchanged.
-- Convert the stream with the engine's own `StreamingResampler` (`AudioFormatKit/StreamingResampler.swift:39, 57-64`) to the engine rate. Today that is 48 kHz on every graph edge (`architecture.md` §2.5). A 48 kHz source passes bit-exact.
-- Measure every peak, histogram and LFE statistic on that stream. Record `peakRateHz` so the Engine sprint (engine at the device rate) knows what was measured.
+- Analysis TP = max(64-tap reading, shipped reading), in a new analysis-only header (`Loudness/AnalysisTruePeak.h`). The limiter's own kernel is untouched.
+- So the limiter's reading ≤ the field (the net sleeps), and the reconstructed peak lands at ≤ C_work + 0.09 dB < C.
 
-The remaining difference comes from the engine converter's start state across a same-format gapless seam (C-22). It is bounded by a few milliseconds of filter history (from DSP principle).
+**Source rate vs the limiter's view.**
 
-**Cost** (measured on this machine, an M4 Pro; the M1 Pro floor is slower by an unmeasured factor):
-- Apple Mastering at max quality: 110× real time (44.1 kHz × 2), 32× (44.1 kHz × 6), 16× (96 kHz × 6), **6.3× (192 kHz × 8)** (bench/srcbench).
-- The shipped kernel: 308× real time per channel at 192 kHz, about 1 230× at 48 kHz.
-- At 192 kHz × 8 there are N + 3 × 2 = 14 detector channels at 48 kHz, which run at 88× real time.
-- An exact pruning — skip a sample whose 24-sample window max × max_p‖h_p‖₁ (2.18) cannot beat the running max — gives the identical peak at 2.7× the speed (bench/tpbench).
-- Net cost per 4-minute track: about 2.4 s for 44.1 kHz stereo (SRC 2.2 s); about 41 s of one utility core for 192 kHz × 8 (SRC 38 s). The SRC dominates. The existing profiler's cost is unchanged and unmeasured here.
+| Source | R_limiter(48 kHz after SRC) − R_analysis(source rate) | Who measured |
+|---|---|---|
+| 44.1 kHz clipped masters | +0.02 … +0.53 dB (my Kaiser stand-in); **+0.12 … +0.65 dB, median +0.25** | breaker, through Apple's real converter |
+| hi-res sources | negative, i.e. the source rate over-states (direction confirmed; the 4.6 dB magnitude is fixture-dependent) | — |
+
+So peaks are measured after the engine's own converter.
+
+**F1 — a fix to shipped code (blocker).** On the resampler route (any file not at 48 kHz, `AudioEngineBridge+EnhancedRestart.swift:93-95` → `+EnhancedResampler.swift:169-170`), the converter maps the file's layout into the graph's count-derived layout (`AudioFormatKit/MultichannelFormat.swift:33-67`). Measured with Apple's converter (breaker `chmatrix2`, re-run here):
+
+| Source layout | What happens on the resampler route |
+|---|---|
+| `WAVE_7_1` | loses Rls/Rrs; slots 6/7 are silent |
+| `MPEG_7_1_C` | loses its back pair |
+| `AAC_5_1` | reordered (so roles from the file's labels are wrong) |
+| 3/4/5/7-channel files | fall back to a stereo graph (`+Reconfigure.swift:110-118`): only L and R play; C, the surrounds and the LFE are dropped |
+
+**The fix**, measured to map every channel identity (breaker `chmatrix3`, re-run here: `WAVE_7_1`, `WAVE_5_0_B`, `AAC_5_1`, `DiscreteInOrder|8` at 96 kHz):
+- The graph's source-width format is **the file's own layout** (`DiscreteInOrder | N` when unlabelled), for every N in 1…8.
+- The converter's output format is that layout at 48 kHz, so it converts the rate only.
+- Roles are derived once from that layout (S1b). The analysis uses the same function for its converter.
+
+Lane 2 owns the fix; VerifyAUGraph proves it (§10).
+
+**Cost** (M4 Pro; the M1 Pro floor is unmeasured):
+- Mastering SRC: 110× real time (44.1 kHz × 2), 32× (44.1 kHz × 6), 16× (96 kHz × 6), 6.1–6.3× (192 kHz × 8), 3.3× / 3.1× (352.8 / 384 kHz × 8 — breaker N11; about 75 s per 4-minute DXD track).
+- Detectors: 14 channels at 48 kHz × (24 + 64 taps) is about 2.7× the first draft's multiply-adds, still a few percent of the pass. The exact pruning bound (max_p‖h_p‖₁ = 2.18) applies to both kernels.
 
 ## 3. P2 — album loudness
 
-**Pooled gated blocks.**
-- The ReplayGain 2.0 specification: album gain is "calculated … with all tracks concatenated to make one long audio file".
-- EBU Tech 3343-2023 §11.2.1 treats an album as a "dedicated sequence" whose Programme Loudness is the BS.1770 integrated measure. EBU Tech 3341 lets a meter "start/pause/continue" one integrated measurement.
-- libebur128's `ebur128_gated_loudness` pools every state's blocks under one relative gate (`third_party/libebur128/ebur128/ebur128.c:1086-1159`, `ebur128_loudness_global_multiple` :1178).
-- rsgain's default album loudness is exactly that call, and its album peak is the max of the track peaks (`src/scan.cpp:722-760`, commit aae8cc74). Its opt-in `album_as_aes77` uses the loudest track (AES77 not opened: **unverified**).
-- foobar2000's scanner is closed source and its algorithm was not opened.
+**The anchor is the founder's** (§12 F-1). Both candidates are computed from the stored record:
+- **Pooled:** BS.1770 gating over all the album's blocks.
+  - The ReplayGain 2.0 specification ("with all tracks concatenated").
+  - libebur128's `ebur128_loudness_global_multiple` (`ebur128.c:1086-1159, 1178`).
+  - rsgain's default (`src/scan.cpp:722-760`).
+- **Loudest track:** the max of the members' L.
+  - rsgain's `--album-aes77`.
+  - Grimm 2017: "always the 'loudest track' version"; Tidal (per secondary sources).
+  - Proposed outlier guard: tracks under 30 s are left out.
 
-**Measured** (p2_album; block-level simulation; LU relative to pooled):
+**Measured.**
+- My synthetic albums: a power average sits up to 2.83 LU off pooled.
+- The challenger's 100 synthetic albums (p5–p95 of each album's loudest song after its gain): pooled 3.7–4.1 dB wide, loudest-track 0.0 dB; albums whose loudest song plays > 3 dB over target: pooled 15–17 %, loudest-track 0 %.
 
-| Album | pooled | power avg (by duration) | power avg (equal) | mean of LUFS |
-|---|---|---|---|---|
-| pop, 10 loud + 1 ballad | −8.99 | −0.00 | −0.03 | −0.26 |
-| classical, 4 movements | −19.67 | −0.34 | −0.06 | −1.25 |
-| compilation, mixed eras | −11.22 | −0.33 | −0.67 | −2.62 |
-| ambient intro + loud album | −9.00 | −0.66 | −0.79 | −4.49 |
-| live, crowd between songs | −11.69 | +0.00 | +0.00 | −0.04 |
-| quiet half + loud half | −9.95 | **−2.83** | −2.83 | −7.85 |
+**One trim per folded album (F2).** The trim is min(0, C_work − max over the members of TP_F[v]), with one v for the album (§5).
+- Pooled: L_album = pool(L_F[v]) + trim.
+- Loudest track: L_album = max(L_F[v]) + trim.
+- P_album = max(max TP_N, max TP_F[v] + trim).
+- Per-track trims are gone from Album scope. Measured by the breaker: they squashed a hot 5.1 album's 9.90 LU loud-to-ballad spacing to 3.02 LU.
 
-The power average counts quiet tracks' energy that the album's own relative gate discards. It plays the loud half of a "quiet + loud" album 2.8 dB over target. That is more than the ~1 dB a listener notices between albums. Pooling also keeps a one-track album equal to Track mode. **Album TP** = the max of the members' P.
+**Payload and gate.**
+- The sparse histogram is 0.9 KB median and 3.3 KB max per variant.
+- Its pooling error is ≤ 0.005 LU typically. It is not a bound: a constant-level interlude within 0.05 LU of the album's relative gate gives −0.35 to −1.94 LU against the exact gate, because LufsMeter gates by bin centre (`LufsMeter.h:486-491`; breaker N4). The exact gate is equally discontinuous there, so the listener harm is nil. The test uses libebur128 in `EBUR128_MODE_HISTOGRAM`.
+- Pooling is one pure function: `asLoudnessPoolHistograms` over (member, variant) pairs. The "album complete" rule lives in LevelingKit only (M6).
+- The gate math stays once, in C++.
 
-**Payload** (p2_payload): LufsMeter's histogram (800 bins of 0.1 LU from −70 LUFS, count + energy). Album = per-bin sums, then the same two-pass gate.
-- Error against exact pooling: ≤ 0.0045 LU with float32 sums.
-- Sparse size (u16 bin, u32 count, f32 energy): median 96 bins = 0.9 KB, max 340 = 3.3 KB per variant. Dense: 9.6 KB.
-- Histograms come from every block on the engine-rate stream, so the profiler's 10-minute decimation (`TrackLoudnessProfiler.h:27-35`) never touches them.
-- The gate math lives **once**, in C++ (LufsMeter's gate as a free function over a histogram), called through TrackLoudnessKit. LevelingKit keeps only the rule: which tracks, and when the album is complete.
+## 4. P3 — the trim, groups and the output change
 
-**Worked example.** "Quiet + loud halves" pools to −9.95 LUFS, so g_album = −8.05 dB. The loud tracks (−9.9) play at −17.95 and the quiet ones (−25.7) at −33.75: their 15.8 LU spacing is kept. The power average would give g = −5.22: loud tracks at −15.1, 2.8 dB over every other album's foreground.
+1. **Track scope, seam across silence:** each track's own trim = min(0, C_work − TP_F[v]). The level stage protects P = max(TP_N, TP_F + trim) and levels L_F + trim (§1.3).
+2. **Any group shares the whole plan** (B3). A group is Album scope, or a continuous gapless run.
+   - g, the trim and the LFE variant are shared.
+   - The trim is the group's worst.
+   - v = Omit unless every analysed member decides Include.
+   - Continuity has **one judge**: LevelingKit, from the persisted head/tail (both > −50 LUFS; unknown counts as sounding). Its verdict travels in the decision, and the engine's −ΔL group lock reads that flag instead of judging again.
+   - At a continuous seam in an album not yet fully analysed, B inherits A's plan, and B's excess is metered by the backstop.
+3. **The proof that both nets close** (given §6's bound). Effects peak ≤ TP_N + B_eff + g + G ≤ P + B_eff + g + G ≤ C_work. Fold peak ≤ TP_F + trim + B_eff + g + G ≤ C_work.
+   - This holds because the EQ is identical per channel and the effects limiter's gain is common to every channel, so both commute with the matrix (from DSP principle).
+   - **Crossfeed is not covered.** It sits between the gain and the limiter. bs2b's worst-case ℓ1 gain is +1.84 / +2.30 / +2.45 dB (architect M7, breaker N8). On 8 music-like fixtures it lowered TP by 0.50–2.17 dB. The claim is therefore narrowed to crossfeed off, with crossfeed-on rows in §10. Crossfeed's ℓ1 is not folded into B: that would turn every track down by about 2 dB.
+4. **Fallback with no folded analysis:** trim = min(0, C_work − 20·log10(max-row Σ|gain|)).
 
-## 4. P3 — the fold trim with g and G upstream
+   | Layout | Bluetooth | Wired |
+   |---|---|---|
+   | 5.1 | −8.94 dB | −8.04 dB |
+   | 7.1 at 0.5 surrounds | −9.93 dB | −9.03 dB |
 
-The plan check's `trim = min(0, C_work − (TP_fold + g + G))` couples the two units. It makes the trim move with every EQ edit and Compare press across two separately published audio units. Instead (§1.3):
-
-1. **trim = min(0, C_work − TP_F[k])** is a per-track constant, independent of g, G and B. It is set at audibility and ramped at the track change. With nothing on (Leveling Off, EQ Off) it alone keeps the backstop asleep. The effects unit stays at P0.
-2. **The level stage accounts for the trim.**
-   - It protects P = max(TP_N, TP_F[k] + trim). The effects limiter needs TP_N; the backstop needs the trimmed fold.
-   - It levels L_F[k] + trim. So g gives back the trim where the cap allows, and the track lands on −18.
-   - The proof that both nets close, given the bound of §6: effects peak ≤ TP_N + B + g + G ≤ P + B + g + G ≤ C_work. Fold peak ≤ (TP_F + trim) + B + g + G ≤ P + B + g + G ≤ C_work, because the EQ is identical per channel and commutes with the matrix (from DSP principle).
-3. **Compare keeps the trim.** The trim does not depend on the EQ, so Compare and EQ-on hear the same downstream gain.
-4. **A continuous gapless group** (Album scope, or the group rule of `TrackLoudnessGain.cpp:247-270`) uses **one trim**: min(0, C_work − max TP_F over the group's analysed members). It is decided before the group's first track. An unanalysed member's excess goes to the metered backstop, never to a step mid-music. At a seam across silence each track keeps its own trim.
-
-**Fallback with no folded analysis**: trim = min(0, C_work − 20·log10(max-row Σ|gain|)) — the matrix's own worst case.
-
-| Layout | Max-row Σ\|gain\| | Fallback trim (Bluetooth / wired) |
-|---|---|---|
-| 5.1 | 2.414 (+7.66 dB) | −8.93 / −8.03 dB |
-| 7.1 at 0.5 surrounds | 2.707 (+8.65 dB) | −9.92 / −9.02 dB |
-
-The backlog's "−7.7 dB" omits C_work.
-
-**Worked example** (p35_chain: hot 5.1 at 48 kHz, kick in L/R/C, vocal in L/R/C, LFE an independent sub → include 0.5, Bluetooth so C_work = −1.272):
+**Worked example** (5.1, Bluetooth; computed without ε — every cap is 0.01 dB lower with it; reproduced exactly by the breaker):
 
 | Step | Value |
 |---|---|
-| analysis | TP_N +0.23 dBTP · TP_F +5.56 dBTP · L_N −6.50 · L_F −4.10 LUFS |
-| fold | trim = min(0, −1.272 − 5.56) = **−6.84 dB** · P = max(0.23, −1.28) = +0.23 · L = −10.93 |
-| level | g = min(−18 + 10.93, −1.272 − 0.23) = **−7.07 dB** |
-| EQ (+5 dB bells on 20–125 Hz, cascade B = +11.88, true ΔL = +1.72) | C_cap = −1.272 − (0.23 − 7.07 + 11.88) = −6.32 · G = min(−1.72, −6.32) = −6.32 · **T = −4.60 dB** |
-| readings | effects limiter (6 ch, linked) −5.50 dBTP, backstop −9.82 dBTP: both ≤ C_work, **GR 0.0 dB** |
-| Compare | identity at g + T = −11.66 dB: −22.60 LUFS against EQ-on −22.60 LUFS (true ΔL; the predictor adds ≤ 0.14 dB) |
-| EQ Off | output −18.00 LUFS · backstop −8.34 dBTP |
-| nothing on | backstop reads exactly −1.272 (= C_work, so the guard ε matters) |
+| analysis | TP_N +0.23, TP_F +5.56 dBTP; L_N −6.50, L_F −4.10 LUFS |
+| plan | trim −6.84 dB → P = +0.23 → L = −10.93 → g = −7.07 dB |
+| EQ (B = +11.88, ΔL = +1.72) | C_cap = −6.31, G = −6.31, **T = −4.59 dB** |
+| net readings | effects −5.50, backstop −9.82 dBTP: GR 0.0 |
+| Compare | matched |
+| EQ Off | output −18.00 LUFS |
 
-## 5. P4 — the LFE rule
+## 5. P4 — the LFE
 
-**Standards.**
-- BS.775-4 Annex 7: the LFE is recorded at −10 dB for exchange and reproduced +10 dB (p. 11). The music industry (DVD-Audio, SACD) codes it for **zero** offset gain (NOTE, pp. 11 and 20).
-- The LFE "is often not included in a 2-channel downmix" (p. 11, Fig. 9 p. 18).
-- Where it is combined with two mains, Fig. 5 (p. 15) applies +10 dB then **−6 dB into each** of L and R: the coherent pair sums back to the LFE's own level.
-- So the standard's include gain for a music-convention LFE is **0.5 per side**. The architecture's 1.0 is +6 dB over it on speakers. On headphones there is no acoustic sum across the pair, so 1.0 matches the speaker level (from DSP principle).
-- **Proposal: default include gain 0.5.** It is the standard's figure and costs 6 dB less trim. The founder's three-way listen (omit / −6 dB / full, US-R1F-08 item 5) picks the shipping constant. The pass measures all three gains, so the choice needs no re-analysis.
+**Standards.** BS.775-4 Annex 7:
+- The LFE is recorded at −10 dB and reproduced at +10 dB (p. 11).
+- DVD-Audio and SACD code it for zero offset (NOTE, pp. 11 and 20).
+- It "must therefore be considered as, at most, an enhancement" (p. 19).
+- Fig. 5 (p. 15) folds it at +10 then −6 dB per side. That is **0.5** per side for the music convention and **1.585** (+4 dB) for the film convention.
+- The challenger's measured k* (p4_lfe) keeps the room's LFE-to-mains balance on a headphone fold: 0.48–0.71 for music and 1.53–2.24 for film. So 0.5 is right on headphones too; the first draft's "1.0 matches the speaker level" was about absolute level, not balance.
 
-**Statistics** (p4_lfe*):
-- Take the 20–120 Hz band of each channel (LPF Butterworth-4 at 120 Hz, HPF Butterworth-2 at 20 Hz), decimated to 500 Hz.
-- An *active block* is a 400 ms block (100 ms hop) whose LFE band is ≥ −50 dBFS.
-- Fit **one** least-squares FIR per main channel (±20 ms = 21 taps × 5 mains = 105 unknowns) from the five mains' bands to the LFE band, over the active blocks.
-- Per active block: e_j = 1 − P_residual / P_LFE, and x_j = 10·log10(P_residual / Σ P_mains).
-- **coherentShare** = share(e_j ≥ 0.8). **lfeExcessShare** = share(x_j ≥ −12 dB).
+**The include gain is the founder's** (§12 F-3). The pass measures v ∈ {0, 0.5, 1.0, 1.585}, so any choice needs no re-analysis.
 
-**Rule `foldDecideLfe`:**
-1. activeBlocks < 50 (5 s) → Omit (unknown).
-2. coherentShare ≥ 0.4 → Omit (mostly a copy).
-3. lfeExcessShare ≥ 0.5 → Include.
-4. Else Omit.
+**Statistics** (stored as `AsLfeStats`; measured, `proto/p4_lfe_v2.py`). All on the 20–120 Hz band at 500 Hz, in 400 ms blocks with a 100 ms hop, over **active** blocks (LFE band ≥ −50 dBFS):
 
-**Measured** (5 seeds × 60 s each, ranges):
+| Statistic | Definition |
+|---|---|
+| lag, lagPeak | Global normalised cross-correlation of the LFE with the mains' sum over **±200 ms**: its best lag and peak. Catches delayed and uncompensated linear-phase copies (breaker F3). |
+| coherentShare, medianR2 | One least-squares FIR per main (±20 ms) **centred on the lag**. Per block, r² = the squared correlation of the LFE with the prediction. It is **scale-invariant**, so automated sends and compressed copies still match. coherentShare = share(r² ≥ 0.8). |
+| excess20 | Share of blocks whose unexplained power P_LFE·(1 − r²) is ≥ the mains' low-band power − 20 dB. |
+| explainGain | Max over the 25–63 Hz third-octaves of the prediction's power over the **mains' plain sum**. A copy stays near 0 dB, whatever its filter or delay. A fit that must invert an authoring high-pass (bass moved out of the mains into the LFE) reads +38 dB or more. This is the challenger's bound, re-normalised: against the strongest single main, a plain L+R+C copy read +8.6 dB and was wrongly included. |
 
-| Case | ρ₀ (arch. rule) | coherentShare | lfeExcessShare | Decision (margin) |
-|---|---|---|---|---|
-| copy, LPF Butterworth-8 120 Hz | −0.64 | 1.00 | 0.00 | Omit (+0.60) |
-| copy via LR4 80 Hz | −0.72 | 1.00 | 0.00 | Omit (+0.60) |
-| copy at −10 dB (film) | −0.64 | 1.00 | 0.00 | Omit (+0.60) |
-| copy, EQ-boosted at 45 Hz | — | 1.00 | 0.00 | Omit (+0.60) |
-| copy of L+R+C; surrounds own bass | — | 1.00 | 0.00 | Omit (+0.60) |
-| copy + rare booms (1 per 8 s) | −0.59 | 0.89–0.90 | 0.15 | Omit (+0.49) |
-| copy + frequent booms (1 per 1.5 s) | −0.45 | 0.50–0.51 | 0.71–0.74 | Omit (+0.10, the mixed case) |
-| bass only in the LFE | 0.00 | 0.00 | 1.00 | Include (0.40 / 0.50) |
-| mains HP 100 Hz + LFE sub | 0.03 | 0.00 | 1.00 | Include |
-| independent sub layer at −10 dB | −0.04 | 0.00 | 1.00 | Include |
-| silent, or noise at −62 dBFS | — | 0 active | — | Omit (unknown) |
+**Rule `foldDecideLfe`** (a pure C function; lane 2's; applied at **decision time** from the stored statistics, so its thresholds tune without re-analysis — M4):
+1. Fewer than 50 active blocks (5 s) → Omit (unknown).
+2. Copy-like (medianR2 ≥ 0.5, or coherentShare ≥ 0.4, or lagPeak ≥ 0.8) with explainGain ≤ +15 dB → Omit (a copy).
+3. Copy-like with explainGain > +15 dB → Include (redirected bass).
+4. coherentShare < 0.2 and excess20 ≥ 0.5 → Include (independent).
+5. Else → Omit.
 
-- The architecture's rule (zero-lag ρ ≥ 0.7 → omit) never sees a copy. A production LPF's phase turns ρ₀ negative.
-- A single-lag fit (max over ±10 ms) fixes plain copies (0.96–0.99) but fails the EQ'd copy (coherentShare 0.65–0.79) and the subset copy (0.10–0.16).
-- The mixed case sits at the threshold by construction. In this fixture, including it would lift the copied bass by about +5.6 dB at gain 0.5 (L′ bass 0.88b → 1.68b).
-- **Cost and memory:** 105-unknown normal equations at 500 Hz (about 3 M multiply-adds per second of audio). 6 × 500 Hz floats are kept for the fit, capped at the first 10 minutes like the profiler (7.2 MB). Past the cap, blocks are scored with the fitted filter on the fly.
+The asymmetry follows Annex 7: a wrong Include combs or doubles the bass, while a wrong Omit loses an enhancement.
+
+**Measured: 117 / 117 correct** (my 12 cases × 3 seeds, the breaker's 22 cases × 3, the challenger's 5 × 3). Ranges:
+
+| Case | Statistic | Range | Decision (margin) |
+|---|---|---|---|
+| plain, LR4, film, EQ'd, subset, delayed 15–38 ms, linear-phase 21/43 ms, polarity, compressed, automated sends | coherentShare | 0.98–1.00 | Omit (≥ +0.58) |
+| | explainGain | ≤ +6 dB | (≥ 9 dB under +15) |
+| kick-stem copy, kick and bass panned alike | coherentShare | 0.39–0.59 | Omit, via medianR2 0.75–0.81 (+0.25) |
+| 6 tandem LPFs | lagPeak | 0.47–0.49 | Omit, via coherentShare 0.83–0.86 |
+| copy + rare / frequent booms (mixed) | — | — | Omit (by the asymmetry) |
+| independent sub layers, octave-down sub, bass only in the LFE | medianR2 | ≤ 0.08 | Include (+0.42) |
+| | lagPeak | ≤ 0.19 | |
+| | excess20 | ≥ 0.98 | (+0.48) |
+| mains high-passed, bass redirected to the LFE | explainGain | +38 dB | Include (+23 dB) |
+
+- The breaker's envelope-onset statistic is **not** used. It flagged independent sub layers that follow the bass rhythm (onset share 0.77–1.00 on two Include cases), and medianR2 separates the kick-stem copy without it.
+- The challenger's residual include (LFE minus its predicted copy) is the better rule for mixed LFEs. It needs the fit's filter in the playing path, so it is an Engine-sprint candidate.
 
 ## 6. P5 — what may move, and the peak arithmetic
 
-**Freeze.** §1.4. The acceptance "one gain value for the whole of a track" is asserted on g with the EQ Off (US-R1F-10 items 4 and 9): 100 samples, max − min = 0. With the EQ On, g is constant and only G may refine with −ΔL, as today. A mode change (US-R1F-10 item 19) glides at τ = 0.15 s. The P0 crossfade (5 ms) handles the bit-exact edge after it.
+**Freeze.**
+- §1.4 governs.
+- With the persisted compact profile (§8), G and T are frozen too: the challenger measured 1.0–3.3 dB glides at every fresh start with an EQ on, plus 1.2–4.8 dB on songs with a quiet intro, all removed. The compact form predicts ΔL within 0.023 dB.
+- The acceptance "one gain value for the whole of a track" is asserted on g and on G with the EQ Off and the EQ On (§10).
 
-**Unknown TP.**
-- Assume 0 dBTP: the ReplayGain 2.0 player rule, "assume a peak level of 1.0".
-- Raise it to a tag's peak only when that is above full scale. RG2 peaks are **sample** peaks ("the maximum absolute sample value"), so they never bound a true peak from above.
-- So an unanalysed or tag-sourced track's gain never exceeds C_work (−0.37 / −1.27 dB): it is never raised until analysed. The −5 dB unknown cut never meets the cap.
-- A TP that lands mid-track applies at the next track.
+**Unknown TP** = 0 dBTP (RG2 "assume a peak level of 1.0"). It is raised to a tag's sample peak only above full scale, so an unanalysed or tag-sourced track is never raised.
 
-**The arithmetic closes exactly where the gain path is a multiply.**
-- Leveling with the EQ Off: identity cascade, g a constant.
-- The fold: a fixed matrix, its TP measured on the same engine-rate signal.
-- Both readings come from the same kernel on the same samples. They differ only by float rounding, which the ε guard covers.
+**Silence and stings (F4).** No gated block, L ≤ −70, or a duration under 0.4 s is unknown loudness (the −5 dB rule). g ≤ +12 dB always: without it, a −60 dBTP hiss track would get +58.7 dB.
 
-**With the EQ On it rests on `TP_H ≤ TP + B`.** The bound form the roadmap's sound plan §1 names for R1.1-B is not a bound: an all-pass or a cut can raise a peak (from DSP principle). Measured, p3_bound, violation v = TP_H − (TP + B):
+**The bound.** The closure with the EQ On rests on `TP_H ≤ TP + B_eff`, which is not a strict bound.
 
-| Curve (drawn gains, no solve) | B | v, music-like fixtures | worst v (any fixture) |
-|---|---|---|---|
-| +5 dB bells, 20–125 Hz | +11.88 | −7.65 … −3.04 | **+1.07** (square-ish 50 Hz bass) |
-| +12 dB at 63 Hz | +12.00 | −11.25 … −6.08 | −4.15 |
-| +6 dB at 4 kHz | +6.00 | −6.07 … −4.93 | −4.93 |
-| smile +6/+6 | +13.87 | −7.58 … −0.64 | +0.23 |
-| jagged ±12 | +4.44 | −4.83 … −2.65 | −1.10 |
-| cut only, −12 dB at 100 Hz | 0.00 | −0.93 … **+0.09** | +0.09 (clipped master) |
+| Curve | Measured violation (worst fixture) | Who |
+|---|---|---|
+| Boost curves | up to **+1.56 dB** (a driven 808 sub under +5 dB on 20–125 Hz) | breaker F6 |
+| Boost curves | up to +1.07 dB (square-ish bass) | mine |
+| Cut-only, −12 dB at 100 Hz | up to **+0.69 dB** on a clipped master | breaker |
 
-"Music-like" = 3 clipped loud masters and 3 dynamic tracks; the extra fixture is a square-ish 50 Hz bass (odd harmonics in phase).
+- **B_eff** = max(B, min(20·log10‖h‖₁, 0.7 dB)) covers the cut-only cases measured (0.69 < 0.7). The Realizer computes ‖h‖₁ on its idle refresh, as it does −ΔL.
+- The boost envelope stays a **known issue** until S14-lite's measured TP_H. Its acceptance reads "GR 0.0 with the EQ Off and crossfeed off; with the EQ On, GR ≤ the stated envelope" (§10).
+- With Leveling **Off** (the default) and the EQ On, the cap binds on every hot master: a +0.5 dBTP master with B = +5 turns down 4.8 dB. That is the plan of record ("quieter by the turn-down").
 
-On music-like material with a boost curve the bound over-turns-down by 0.6–11.6 dB. A cut-only curve can exceed it by 0.09 dB on a clipped master. Phase-coherent harmonic bass under a stacked boost can exceed it by about 1 dB, and the net then works. The strict bound 20·log10‖h‖₁ (+16.4 dB for the first curve) would over-turn-down by 4.5 dB more. **Recommendation:**
-- Keep the planned bound form, with **no extra margin**.
-- State the failure envelope in known issues.
-- Prove "GR 0.0 dB with the EQ On" on music-like fixtures and the founder's corpus.
-- The measured TP_H (S14-lite) closes it.
-- With leveling at −18 the cap rarely binds: a −9 LUFS master at +0.5 dBTP on Bluetooth has g = −9 and C_cap = 7.23 − B, so T = 0 for any B ≤ 7.2 dB.
+**Seams.**
+- Seam across silence: B's plan lands "as the engine counts it", up to one buffer late (KI-GAP-02), then glides 10 ms.
+- Continuous seam: B shares the group plan, so nothing steps.
+- Seek or restart: a fresh converter starts mid-waveform. Exclude the first 5 ms after it from GR acceptance; a fade-in belongs to the Engine sprint (breaker N10, architect N5).
 
-**Seams.** B's gain lands at the seam "as the engine counts it", up to one buffer late (KI-GAP-02), then glides 10 ms. A continuous seam shares the group gain and trim, so nothing steps. At a seam across silence, a B that opens loud within about 20 ms can play its first ~20 ms at A's gain. If g_A > g_B, the net may act there. This is accepted until the Engine sprint. The gapless test reports the worst case on its fixture pairs.
-
-## 7. P6 — Compare, the deletion, the golden master
+## 7. P6 — Compare, the deletion, the golden masters
 
 **Compare.**
-- Hold = the identity cascade published with outputGainDb = g + T.
-- EQ-on loudness = L + g + G + ΔL_true. Compare = L + g + G + ΔL_pred.
-- So the mismatch is the predictor's error alone: ≤ 0.112 dB on the 7-track corpus, ≤ 0.14 dB on broadband music (`TrackLoudnessProfile.h:19-20, 38`).
-- The bound B changes G on both sides equally. The trim is EQ-independent (§4).
-- **Folded files:** predicting ΔL on the 5.1-weighted profile while the listener hears the fold misses by −0.22 … +0.19 dB on a bass boost (p6_dl_fold). Combined with the predictor's own error, that breaks the 0.2 dB budget.
-- **So the profiler is fed the signal heard.** When the graph folds (known at `configureGraphForSource`, `AudioEngineBridge+ChannelLayout.swift:65-76`), the profile basis is the stereo fold. It uses the LFE gain from the persisted analysis when one exists, else omit. The cache key gains the basis.
-- Compare needs the EQ-on design while the identity plays. `EqIntent` gains `comparing` (S3), and the Realizer keeps the last EQ-on design for B and ΔL.
+- Compare = identity cascade at g + T. The mismatch is the predictor's error: ≤ 0.112 dB on the corpus and ≤ 0.14 dB on broadband music. On pathological curves it can be up to 2.8 dB past (`TrackLoudnessProfile.h:19-20, 36-38`; breaker N12).
+- **Fold basis (F7).** Predicting on the 5.1-weighted basis misses the heard fold by **−1.05 dB** (LFE omitted), −1.15 dB (v = 0.5) and **−2.14 dB** (v = 1.0) on a +5 dB 20–125 Hz curve, and by +0.45 to +0.84 dB on +6 dB at 8–16 kHz (breaker, measured).
+- So the persisted profiles cover every playable basis, and the planner's variant picks one. A never-analysed first play profiles on omit. On an Include track with the EQ on, that first play can miss by up to 1.09 dB, until the record lands.
+- `EqIntent` gains `comparing` (`Realizer.h:88-92`), and the Realizer keeps the last EQ-on design for B_eff and ΔL.
+- **The loudness model itself** (BS.1770 vs ISO 532-1 differ by 1.2–2.0 dB on bass presets; challenger #5) is a by-ear check before S14-lite's blind tests (§12 F-7).
 
-**The deletion.**
-- `LoudnessParams`, the makeup law, `loudnessContribution_` and its glide (`DSPKernel.cpp:39, 294-299, 348-351`), and the P2/blend Loudness calls (`:267, :316`) go.
-- `LufsMeter` and `CausalLoudnessTap` stay.
-- The proof is the Intensity sweep 0 → 1 → 0 with Leveling Off: LUFS within 0.1 dB, plus a semgrep rule banning `LoudnessParams`.
+**The deletion (M8).**
+- Delete **`LoudnessModule` entirely**: the class, its worker, the kernel's construction (`DSPKernel.cpp:63, 71`), layout forwarding (`:110-112`) and the worker accessors (`:142-157`).
+- Delete `LoudnessParams`, the makeup law, `loudnessContribution_` and its glide (`:39, 294-299, 348-351`), and the P2/blend calls (`:267, :316`).
+- The parking tests point at `CausalLoudnessTap` alone.
+- semgrep bans both names.
+- The proof is the Intensity sweep 0 → 1 → 0 at ≤ 0.1 dB.
 
-**`sizeof(TargetState)`.** Measured offline with the shipped header: 768 B today (744 B used), 768 B without `LoudnessParams` (732 B used). `alignas(64)` absorbs the 12 B, so `kMeasuredTargetStateBytes` (`TargetState.h:161`) stays 768. The offsets of brir, crossfeed and limiter shift by −12 B, which does not touch the audio. Re-run the assert as the recorded step.
+**`sizeof(TargetState)`.** 768 B before and after; used bytes go 744 → **728** (measured by both reviewers). `kMeasuredTargetStateBytes` (`TargetState.h:161`) holds. Re-run the assert as the recorded step.
 
-**Golden master.** `0xF0E1D4EF83763709` (`Tests/TestSupport.h:126`) runs P2 with `loudness.enabled = 0` (`:368-371`). There the makeup ramp is snapped to unity at initialize and stays on the identity fast path (`LoudnessModule.cpp:56-58, 128-131, 163-169`). Removing the stage is therefore expected to hold the hash bit for bit, and the run is the proof. Tests that set or assert the makeup re-baseline or are deleted as a recorded step: `LoudnessTests.inc`, `EqEngine{BreakItMeasurements,BreakItTests,FixTests}.inc`, `LimiterTests.inc`, `MultichannelTests.inc`, `SnapshotConcurrencyTests.inc` and `TestSupport.h` (16 `.loudness.` references). The fold is a no-op at N = 2.
+**Golden masters.**
+- `0xF0E1D4EF83763709` (`Tests/TestSupport.h:126`) runs P2 with `loudness.enabled = 0` (`:371`). Its makeup ramp is snapped to unity and stays on the identity fast path (`LoudnessModule.cpp:56-58, 128-131, 163-169`), so the hash is expected to hold. The run is the proof.
+- **New** (architect N8): a stereo hash for the path that ships — P1, EQ Off, g = −7.07 dB.
+- Tests that drive the makeup re-baseline or go: 16 references in the listed `.inc` files and `TestSupport.h`.
 
 ## 8. The seams, frozen
 
-### S1 — the pass (lane 1 → lanes 2, 3)
+### S1 — the analyzer (lane 1)
 
-**A deviation from the plan check.** The analysis is a separate C++ object fed the **engine-rate** stream, not a field of the source-rate profile. Album jobs need it without a profile (§2), and it is measured at another rate. `TrackLoudnessProfile` is unchanged.
+The analyzer is a separate C++ object fed the engine-rate stream (a deviation from the plan check's stub; the panel agreed).
 
 ```c
-// include/TrackLoudnessBridge.h (beside AsLoudnessProfileInfo)
-#define AS_TRACK_ANALYSIS_VERSION 1u     // bump on any change to: fold coefficients, LFE rule/stats/gains,
-                                         // peak rate or SRC, K-weighting, gates, histogram form
-typedef enum { AsLfeUnknown = 0, AsLfeOmit = 1, AsLfeInclude = 2 } AsLfeChoice;
-enum { AS_FOLD_LFE_VARIANTS = 3 };       // per-side LFE gain 0, 0.5, 1.0
-typedef struct { uint32_t activeBlocks; double coherentShare, lfeExcessShare, medianExplained; } AsLfeStats;
+// include/TrackLoudnessBridge.h
+#define AS_TRACK_ANALYSIS_VERSION 1u  /* bump on: fold coefficients, LFE variant set, LFE statistics' definition,
+   peak kernels or rate, the SRC or its output format, K-weighting, gates, histogram or profile form,
+   role numbering, the role resolver, the count fallbacks. NOT on decision thresholds (planner-side). */
+typedef struct AsTrackAnalyzer AsTrackAnalyzer;
+enum { AS_FOLD_LFE_VARIANTS = 4 };       /* per-side LFE gain 0, 0.5, 1.0, 1.585 — one table, shared */
+typedef struct { uint32_t activeBlocks; float lagMs, lagPeak, coherentShare, medianR2, excess20Share, explainGainDb; } AsLfeStats;
 typedef struct {
-  uint32_t version, channelCount;
+  uint32_t version, channelCount; uint8_t roles[8];              /* AsChannelRole values */
   double sourceRateHz, peakRateHz, durationSeconds;
-  double integratedLufs, truePeakDbtp;           // L_N, TP_N (all N channels, LFE included)
-  double headBlockLufs, tailBlockLufs;           // −200 = silent
-  uint8_t folds, lfeChoice;                      // folds: N > 2 and makeBs775Fold succeeded
-  double foldedLufs[AS_FOLD_LFE_VARIANTS], foldedTruePeakDbtp[AS_FOLD_LFE_VARIANTS];  // NaN when !folds
+  double integratedLufs, truePeakDbtp;                            /* NaN when no gated block */
+  double headBlockLufs, tailBlockLufs;
+  uint8_t folds;
+  double foldedLufs[AS_FOLD_LFE_VARIANTS], foldedTruePeakDbtp[AS_FOLD_LFE_VARIANTS];
   AsLfeStats lfe;
 } AsTrackAnalysis;
-typedef struct { uint16_t bin; uint32_t count; float energy; } AsLoudnessBin;  // bin i = [−70 + 0.1 i, +0.1) LUFS
 AsTrackAnalyzer* asTrackAnalyzerCreate(double engineRateHz, uint32_t channels, const uint8_t* roles) AUDIODSP_C_NOEXCEPT;
-bool asTrackAnalyzerFeed(AsTrackAnalyzer*, const float* const* channels, uint32_t channelCount, uint32_t frames) AUDIODSP_C_NOEXCEPT;
-bool asTrackAnalyzerFinish(AsTrackAnalyzer*, AsTrackAnalysis* out) AUDIODSP_C_NOEXCEPT;      // decides lfeChoice
-uint32_t asTrackAnalyzerHistogram(const AsTrackAnalyzer*, uint8_t variant /*0 = N-ch, 1+k = fold k*/,
-                                  AsLoudnessBin* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT; // non-zero bins
-bool asLoudnessPoolHistograms(const AsLoudnessBin* const* tracks, const uint32_t* counts, uint32_t trackCount,
-                              double* outLufs) AUDIODSP_C_NOEXCEPT;  // LufsMeter's gate over the summed bins
+bool asTrackAnalyzerFeed(AsTrackAnalyzer*, const float* const*, uint32_t channelCount, uint32_t frames) AUDIODSP_C_NOEXCEPT;
+bool asTrackAnalyzerFinish(AsTrackAnalyzer*, AsTrackAnalysis* out) AUDIODSP_C_NOEXCEPT;  /* measures; decides nothing */
+uint32_t asTrackAnalyzerHistogram(const AsTrackAnalyzer*, uint8_t variant, AsLoudnessBin* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT;
+uint32_t asTrackAnalyzerProfile(const AsTrackAnalyzer*, uint8_t basis, uint16_t* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT;
+/* both return the count required; nothing is written when capacity is short (architect N10) */
 void asTrackAnalyzerDestroy(AsTrackAnalyzer*) AUDIODSP_C_NOEXCEPT;
 ```
 
-**Swift (TrackLoudnessKit).**
-- `public struct TrackAnalysis: Codable, Sendable, Equatable`. It carries the version, the `TrackIdentity` (`TrackIdentity.swift:9-36`), the scalars above, `roles: [ChannelRole]`, `fold: Fold?` (lfeChoice, stats, loudness[3], truePeak[3], histograms[3]), `histogram`, and `analysedAt`.
-- `static func fixture(…)` serves the stubs.
-- The decoder's outcome becomes `.whole(profile?, analysis)`.
+The Swift `TrackAnalysis` (Codable) mirrors it, plus the identity, histograms, compact profiles and `analysedAt`.
 
-**Stub commit 1.** The analysis fields are NaN, `folds = 0`, `lfeChoice = Omit`.
+### S1b — roles and the matrix (lane 1; the LFE rule is lane 2's)
 
-### S1b — roles and the matrix (lane 1; rule body lane 2)
+**Roles (M3).**
+- The C enum is `AsChannelRole` in `include/TrackPlanBridge.h`, with fixed numbers: Unknown 0, L 1, R 2, C 3, Lfe 4, Ls 5, Rs 6, Lb 7, Rb 8, Cs 9, Lc 10, Rc 11, Lw 12, Rw 13, Mono 14. A `static_assert` ties it to the C++ enum, and a Swift test checks the same.
+- One pure C function, `asResolveChannelRoles(const AudioChannelLayout*, uint32_t channels, uint8_t* roles)`, is called once per file by **one Swift resolver** in AudioFormatKit (`ChannelRoles.swift`). Its result goes by value to the analyzer, the effects unit and the planner.
+- Labels come from `CoreAudioBaseTypes.h:976-1064`.
+- Count fallbacks follow RFC 9639's table for every count 1–8 (breaker N9): 3 L R C; 4 FL FR BL BR; 5 FL FR FC BL BR; 6 FL FR FC LFE BL BR; 7 FL FR FC LFE BC SL SR; 8 FL FR FC LFE BL BR SL SR.
+- The planner uses fold numbers only if the record's roles equal the playback roles. Otherwise it uses the fallback trim.
 
-**Roles.**
-- `ChannelLayout` gains `std::array<ChannelRole, kMaxChannels> role` (`include/ChannelLayout.h:16-23`), filled off the audio thread from CoreAudio's own expansion of the tag or bitmap into labels (`kAudioFormatProperty_ChannelLayoutForTag` / `…ForBitmap`, or the file's descriptions).
-- `enum class ChannelRole : uint8_t { Unknown, L, R, C, Lfe, Ls, Rs, Lb, Rb, Cs, Lc, Rc, Lw, Rw, Mono }`. The labels come from `CoreAudioBaseTypes.h:976-1064`: Left 1, Right 2, Center 3, LFEScreen 4 / LFE2 37 → Lfe, LeftSurround 5 / LeftSurroundDirect 10 → Ls, RearSurroundLeft 33 → Lb, CenterSurround 9 → Cs, LeftCenter 7 → Lc, LeftWide 35 → Lw, Mono 42.
-- The decoder today knows five tags (`Loudness/ChannelLayoutDecoder.cpp:143-245`). It falls back to weight 1.0 with no LFE for `WAVE_5_1_B`, `WAVE_7_1` (`L R C LFE Rls Rrs Ls Rs`, SDK :1416), `AAC_5_1` (`C L R Ls Rs Lfe`, :1356) and others. That is KI-MC-02 for loudness too.
-- The analyzer passes `format.channelLayout?.layoutTag ?? Unknown` (`TrackLoudnessAnalyzer.swift:336`), not the bridge's resolved tag. **One resolver for both.**
-- The count fallback for 8 channels should be `WAVE_7_1`: FLAC's default order (RFC 9639 channel table: "front left, front right, front center, LFE, back left, back right, side left, side right"). It should not be `MPEG_7_1_A` (`AudioFormatKit/MultichannelFormat.swift:62-63`).
+**`makeBs775Fold(const ChannelLayout&, uint8_t lfeVariant)`** builds two output rows.
 
-**`std::optional<FoldMatrix> makeBs775Fold(const ChannelLayout&, float lfeGain) noexcept`** builds 2 rows × kMaxChannels.
+| Role | Into L′ / R′ | Source |
+|---|---|---|
+| L / R | 1.0 into its own side | BS.775-4 Table 2, p. 8 |
+| C, Mono | 0.7071 to both | Table 2; Annex 5 §1.1 |
+| the one surround pair (Ls/Rs, or Lb/Rb alone) | 0.7071 into its side | Table 2 |
+| Ls **and** Lb present (7.1) | **0.5** each into its side, by default | Derived from Note 5 and Table 2; **BS.775-4 has no 7.1 row** (both reviewers confirmed). The alternative is §12 F-4. |
+| Cs | 0.5 to both | derived |
+| Lc, Lw | 1.0 into its side | judgment, unverified |
+| Unknown | 0.5 to both | judgment |
+| Lfe | the variant's gain to both | — |
 
-| Role | → L′ | → R′ | Source |
-|---|---|---|---|
-| L / R | 1.0 | — / 1.0 | BS.775-4 Table 2 (p. 8) |
-| C, Mono | 0.7071 | 0.7071 | Table 2; Annex 5 §1.1 (mono on two speakers −3 dB) |
-| Ls (only surround pair) | 0.7071 | — | Table 2 |
-| Ls **and** Lb both present (7.1) | 0.5 each | — | **derived**: recommends §2 Note 5 (one LS feeds several speakers at equal total power ⇒ the inverse sums them at 0.7071), then Table 2's 0.7071. **BS.775-4 has no 7.1 row** |
-| Lb only (e.g. WAVE_5_1_B) | 0.7071 | — | treated as the surround pair |
-| Cs | 0.5 | 0.5 | derived: mono surround fed to LS and RS (§3; Annex 5 §2.2 equal power), then Table 2 |
-| Lc, Lw | 1.0 | — | judgment, **unverified** (rare SDDS / wide layouts) |
-| Lfe | lfeGain | lfeGain | §5; BS.775-4 Fig. 5 |
-| Unknown | 0.5 | 0.5 | judgment: keep it audible, bounded |
+`foldTrimDb(cWorkDb, tpDbtp, matrix)` = min(0, cWorkDb − tp); with NaN it falls back to the matrix's worst case. `foldDecideLfe` lives in lane 2's new `Spatial/FoldLfeRule.{h,cpp}`, with a C entry for the decision builder.
 
-The mirrored right side follows the same rules. `foldTrimDb(double cWorkDb, double foldedTpDbtp, const FoldMatrix&) noexcept` = min(0, cWorkDb − tp); with NaN TP it uses the matrix's own worst case (§4). `AsLfeChoice foldDecideLfe(const AsLfeStats&) noexcept` holds §5's constants (lane 2's body; the W1 stub returns Omit).
+### S3 — decisions, the planner and the units (B1, B2, M2)
 
-### S3 — leveling and Compare into the level stage (engine end lane 1, sender lane 3)
+**The decision travels with the transport request that can make its token audible** (B2). The D41 ticket already orders those requests (`OnDeckGate`, `+Gapless.swift:66-80`).
 
 ```swift
-// AudioPlaybackEngine (Sources/AdaptiveSound/AudioPlaybackEngine.swift:204) — FakeEngine records both
-func publishTrackLeveling(_ leveling: TrackLeveling, for token: UInt64)  // replaceable until audible; frozen then
-func publishEQ(points: [Float], isOn: Bool, comparing: Bool)            // replaces publishEQ(points:isOn:)
-// LevelingKit (pure)
-public struct TrackLeveling: Sendable, Equatable {
-  public enum Scope: Sendable, Equatable { case off, track, album(groupKey: UInt64) }
-  public enum Source: Sendable, Equatable { case analysis, tags, unknownCut }
-  public var scope: Scope; public var source: Source
-  public var unfolded: LevelNumbers            // album: pooled loudness, max peak
-  public var folded: FoldedNumbers?            // N > 2; sent in every scope, .off included (the trim needs it)
-  public var appliesNow: Bool                  // the listener's mode change only
-}
-public struct LevelNumbers: Sendable, Equatable { public var loudnessLufs: Double?; public var peakDbtp: Double? } // nil = unknown
-public struct FoldedNumbers: Sendable, Equatable {
-  public var loudnessLufs: Double; public var peakDbtp: Double; public var channelPeakDbtp: Double; public var lfeGain: Double
+// AudioPlaybackEngine — FakeEngine records every one
+func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64, leveling: TrackLevelingDecision) async throws
+func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?) async  // D41 on-deck
+func applyLevelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?)  // the listener's mode change
+func publishEQ(points: [Float], isOn: Bool, comparing: Bool)
+// LevelingKit (pure): measured numbers only, scope-resolved; no ceiling rule, no C_work
+public struct TrackLevelingDecision: Sendable, Equatable {
+  public enum Mode: Sendable, Equatable { case off, leveled, unknownCut }
+  public var mode: Mode; public var source: Source               // .analysis | .tags | .unknownCut
+  public var continuousWithPrevious: Bool                        // the one continuity judge (§4)
+  public var unfolded: LevelNumbers                              // L, TP_N — or the group/album's anchor and maxima
+  public var folded: FoldedNumbers?                              // L_F[v], TP_F[v], TP_N (group: anchor/maxima), variant v
+  public var roles: [UInt8]                                      // must equal playback's, else the fallback trim
 }
 ```
 
-- **C-ABI:** `bool publishTrackLeveling(void* au, uint64_t token, const AsTrackLeveling*)`, a struct mirror with NaN for unknown. `setOutputTransport` (`Realizer.h:146`) becomes `setOutputTransport(uint32_t transport, double nominalRateHz, uint32_t outputChannels)`. That gives C_work, the rate condition (KI-SND-07) and the fold state, from the bridge's `configureGraphForSource`.
-- `TrackLoudnessGain::TrackEntry` (`TrackLoudnessGain.h:120-126`) gains `std::optional<Leveling>`. `onCurrentTrack` freezes {g, P, C_work, trim}. `EqIntent` (`Realizer.h:88-92`) gains `bool comparing`.
-- **The spatial unit** gets `asSpatialSetFold(void* spatialAU, const AsFoldParams*)`: {matrix, lfeGain, foldedPeakDbtp, ceilingLinear}. The bridge sends it at `trackBecameAudible` with the same frozen inputs. Lane 2 owns the receiving end; it must be the same numbers the effects plan used.
+**Defaults and delivery.**
+- **No decision at audibility** means Off (g = 0) with the fallback trim, logged. That is a bug state, because every start and arm carries one.
+- **Per-token leveling in `TrackEntry` is dropped**, so slot eviction cannot lose a decision (B2). The C-ABI mirrors the struct with NaN for unknown.
+- **One `AsOutputState`** {transport, nominal rate, M, N} is assembled on `engineQueue` at `configureGraphForSource` and at every re-establish (M2). The view model hands the transport over as a value and never reads it on main. It is the planner's only input for C_work and the fold, and is published to the effects Realizer.
+- The new or changed entries (`startAudio`, `setNextTrack`, `applyLevelingChange`, `publishEQ(…comparing:)`) join the stall self-test's `EntryProbe` as `architecture.md:259` requires for synchronous members.
 
-### The derived-data record and its scheduling
+**The spatial unit (M1).**
+- `SpatialUnit {node, au}` sits under `stateLock`, with a borrow count and a teardown wait, mirroring `EffectsUnit` (`+Values.swift:7-13`, `+SharedState.swift:260-265`).
+- `FoldParams` reach the render thread through a `TripleBufferSnapshot`, copied once per block and ramped per sample.
+- The unit keeps its last `FoldParams` across an allocate. If N or M changed with no new set, it uses the matrix's worst-case trim, **never 0**.
 
-**The file.**
-- `AppDataLocation.directory/track-analysis.sqlite3`, beside `library.sqlite3` (`AdaptiveSound/AppDataLocation.swift:26-28`). It is never the library DB (record, decided as recommended).
-- One GRDB `DatabaseQueue` (the library's own engine, a separate file). Table `track_analysis(path, size, mtime, version, payload BLOB, analysed_at)` with primary key (path, size, mtime), the full identity, never the 64-bit token alone.
-- `payload` = the binary-plist `TrackAnalysis` with its sparse histograms: about 1–4 KB per stereo track and ×4 for a folded one.
+### The store and the scheduler (lane 3; M5, M6, architect N7)
 
-**The rebuild rule.**
-- A record of another `version` is "not analysed" and is overwritten on re-analysis.
-- An unreadable file or a schema mismatch **deletes and recreates the file**. This is derived data, the one store allowed to be wiped, never through `eraseDatabaseOnSchemaChange` (`posture.sh`).
-- A moved or re-tagged file gets a new identity and costs one re-analysis. No pruning in R1.1-B.
+**The store.**
+- The file is `AppDataLocation.directory/track-analysis.sqlite3` (`AppDataLocation.swift:26-28`), a GRDB `DatabaseQueue` separate from the library.
+- Records are keyed by the full identity (path, size, mtime).
+- Compact profiles are LRU-capped at 1 GB (rebuildable). Scalar records are about 4 KB each and uncapped.
 
-**The contract.**
-- `TrackAnalysisStore` (actor): `analysis(for:)`, `save(_:)`, `pooled(_ identities:) -> AlbumLoudness?` (nil unless every member is present at the current version).
-- `TrackLoudnessAnalyzer.analyzeAlbum(_ tracks: [(URL, TrackIdentity)], priority:)` runs in the background at utility QoS, at most 2 jobs. It skips stored records, never pre-empts the current/next jobs (their slots stay), and emits `landed: AsyncStream<TrackIdentity>`.
-- **Triggers** (lane 3's coordinator): any queue change → every queued track's album (the library's album identity; a loose file is its own album) not fully analysed, in queue order.
-- No library-wide sweep, nothing while Pure is the path in use, and failures held in memory only (as today, `TrackLoudnessAnalyzer.swift:110, 195-198`).
-- A landing never changes the playing track. Album mode before an album is complete follows the record's rule: tags if every track has them, else the track's own gain until the next seam across silence.
+**Rebuild and re-key.**
+- **Rebuild:** another version, or a payload that will not decode, counts as not analysed and is overwritten. A broken file is recreated with GRDB's `erase()` on the open connection, or by closing it and deleting the main file plus its `-wal` and `-shm`. Never with `eraseDatabaseOnSchemaChange`.
+- **Re-key on "Use this drive":** old root → new root, same size and mtime, called after a successful rebind.
 
-## 9. Proving measurements (rig · tolerance)
+**The scheduler.**
+- **Horizon:** analyse the albums of the current slot and the next ~2 hours of queue (at least the next 3 albums), re-evaluated on each advance. This reconciles the founder's 2026-10-25 rule ("analysed once any of its tracks is queued; no library-wide sweep") for genre and artist plays (§12 F-8).
+- At most 2 album jobs at `.background`. The current/next jobs run the engine-rate pass only when the store has no current-version record; otherwise they decode for the profile only, which is today's cost.
+- File identities are read off main.
+- **Prefetch:** the coordinator keeps the horizon's decisions in memory, prefetched off main on every queue change. At Play it waits at most 50 ms for a missing record, then uses `.unknownCut`.
+
+**The analysis tool** (founder decision 4) is lane 1's executable `AnalyzeTracks`. It prints and writes nothing in `AppDataLocation`.
+
+## 9. W4 ownership (B4) and build order
+
+**Ownership, one owner per file in W4.**
+
+| Owner | Files |
+|---|---|
+| **Coordinator, commit 0** | `Package.swift` (TrackLoudnessKit → AudioFormatKit and GRDB; empty `AnalyzeTracks` target); the test registries' hooks for the new `.inc` files (lane 1: `LevelPlanTests.inc`, `AnalyzerTests.inc`; lane 2: `FoldTests.inc`, `LfeRuleTests.inc`); an empty `include/SpatialBridge.h` included from `DeviceBridge.h`. |
+| **Lane 1** | `Loudness/*` (`LoudnessModule.*` deleted); `Planning/TrackPlan.*` (new); `include/{TrackLoudnessBridge,TrackPlanBridge,ChannelLayout,TargetState,AudioUnitRegistrationBridge}.h`; `Spatial/FoldMatrix.h`; `AudioEngine/{Realizer.*,AUAudioUnit.mm}`; `DSPKernel.*`, including S2's atomic and its C-ABI (moved from lane 2: one owner); `Tests/{DSPKernelNullTest.cpp,TestSupport.h,MultichannelTests.inc}`; `TrackLoudnessKit/*` minus the store; `AudioFormatKit/ChannelRoles.swift` (new); `+TrackLoudness.swift`, `+EQControl.swift`, and the decision and planner hunks of `+Playback.swift` / `+Gapless.swift`; `AudioPlaybackEngine.swift`, `FakeEngine.swift`, `SheetEngine.swift`; the `EntryProbe`; `AnalyzeTracks`. |
+| **Lane 2** | **F1:** `AudioFormatKit/MultichannelFormat.swift`, `+Reconfigure.swift`, `+ChannelLayout.swift` (it also assembles `AsOutputState`), `+EnhancedRestart.swift`, `+EnhancedResampler.swift`. **Fold:** `Spatial/{SpatialRenderKernel.*,FoldLfeRule.*}`, `AudioEngine/SpatialRendererAU.mm`, `include/SpatialBridge.h`. **Spatial handle and S2's Swift side:** `AudioEngineBridge.swift` (spatial handle, `snapshot()`), `+Graph.swift`, `+Values.swift`, `+SharedState.swift` (spatial borrow), `+Lifecycle.swift` (spatial teardown), `EngineSnapshot.swift`, `SignalPathInfo.swift`. **Tests:** `VerifyAUGraph/*`, `SpatialTests.inc`, `FoldTests.inc`, `LfeRuleTests.inc`. |
+| **Lane 3 (W5)** | `LevelingKit/*` (decisions, Auto, album anchor and completeness, continuity, groups, `foldDecideLfe` calls); the store; the scheduler; the coordinator (`AudioViewModel+Leveling.swift`); SettingsKit; the UI; the rebind re-key call. |
+
+**Order.**
+- **Lane 1:**
+  1. The seam headers (`TrackPlanBridge.h`: roles, `AsOutputState`, the decision and plan structs, the LFE variant table, `AsLfeStats`; the planner's signature as a stub; `FoldMatrix.h` with the full table; the version), the Swift fixtures, no-op engine members, and S2's atomic.
+  2. Roles and the one resolver.
+  3. The analyzer: two kernels, folds × 4, histograms, LFE statistics, compact profiles, prefix before the SRC. It consumes lane 2's F1 format function.
+  4. The planner body and the `TrackLoudnessGain` split (`levelDb_` / `neutralDb_`, the frozen persisted profile, B_eff, Compare, snap, repeat).
+  5. The bridge: decisions with start and arm, the planner at audibility, both units in one turn.
+  6. The deletion, the size assert and the golden masters.
+  7. Oracles and `AnalyzeTracks`.
+- **Lane 2:**
+  1. **F1** and its VerifyAUGraph proof (day 1–2; lane 1's step 3 needs it).
+  2. The `SpatialUnit` handle, the snapshot and keep-across-allocate.
+  3. Matrix, variant gain, trim, the backstop and its GR atomic.
+  4. `FoldLfeRule` with §5's thresholds and fixtures.
+  5. S2's Swift side.
+  6. VerifyAUGraph M == N bit-exact.
+
+**Deviations from the plan check**, for the coordinator to reconcile in plan check §3–§4:
+- g is computed in the C++ planner, not LevelingKit (architect N9).
+- The store and scheduler move to lane 3.
+- S2's engine end moves to lane 1.
+- The analyzer is a separate object (S1).
+
+## 10. Proving measurements (rig · tolerance)
 
 | Acceptance line | Rig | Tolerance |
 |---|---|---|
-| gain to −18 (Track, Album) | C++ null test: analysis → plan → apply → libebur128 (`ebur128_loudness_global_multiple` for albums) | 0.2 LU where the cap allows; else output TP ≤ C_work |
-| TP field | C++: field vs the limiter's own reading on the same 48 kHz signal; vs libebur128 TP | ≤ 0.001 dB; ≤ 0.3 dB (`kOracleTpTolDb`, `LoudnessOracleTests.inc`) |
-| folded TP | C++: field vs the kernel on the actually folded stereo | ≤ 0.01 dB (same kernel and samples; the plan's 0.1 dB is loose) |
-| net GR, leveled corpus | C++ at 48 kHz (exact); the coordinator's read-only CLI through the real converter on the founder's files (decision 4) | max GR < 0.01 dB |
-| T on a −9 LUFS fixture with a bass preset | C++, music-like fixture | GR < 0.01 dB; single application (output = input × (g + G) on the flat path) |
-| Compare with T active | C++: EQ-on vs Compare LUFS (libebur128), stereo and folded fixtures | ≤ 0.2 dB |
-| one gain per track; unknown −5 dB | C++ `RealizerTests` (g sampled 100×, EQ Off) + Swift FakeEngine records | max − min = 0 |
-| gapless Album pair | C++ + Swift | one g, one trim across the seam |
-| mode-change glide | C++: τ = 0.15 s one-pole | glide shape within 0.05 dB |
-| AGC gone | C++ Intensity sweep 0 → 1 → 0, Leveling Off; semgrep `LoudnessParams` | 0.1 dB; 0 hits |
-| folded file leveled on L_F | C++ fixture with L_F − L_N = 1.6 LU by design | asserts L_F |
-| album pooling | C++ / TrackLoudnessKitTests: histogram pool vs exact blocks vs libebur128 multiple | ≤ 0.01 LU |
-| LFE rule | C++ `SpatialTests`: §5's synthetic cases | the table's decisions; copy fold low band within 1 dB of mains-only |
-| matrix | C++: C-only −3.0 dB/side, L = R = C +4.6 dB, stereo-in-5.1 null (fixture TP < C_work) | ±0.1 dB; bit-exact |
-| backstop | the CLI over the founder's surround albums; VerifyAUGraph M == N bit-exact with the backstop bypassed | GR < 0.01 dB; bit-exact |
-| persistence | TrackLoudnessKitTests: round trip, version bump → not analysed, corrupt file → recreated; VerifyLibraryStore: no loudness column | exact |
-| fresh-launch null | golden master + MD5 | bit-exact |
+| gain to −18 (Track, Album; stereo, folded, **mono**) | C++: decision → planner → apply → libebur128 (`_multiple`; `EBUR128_DUAL_MONO` for mono) | 0.2 LU where the cap allows |
+| TP field | C++: ≥ the limiter's own reading on the same 48 kHz samples (always); vs an exact FFT reference on band-limited fixtures; vs libebur128 only below 20 kHz | ≤ 0.1 dB; ≤ 0.3 dB |
+| F1 channel identity | VerifyAUGraph: a tone per channel, layouts `WAVE_7_1`, `MPEG_7_1_C`, `AAC_5_1`, `WAVE_5_0_B`, 3/4/5/7-channel labelled, `DiscreteInOrder|5/8`, at 44.1 / 48 / 96 kHz | each input on its own slot, ±0.05 dB, others < −80 dB |
+| one plan per token (B1) | C++ + FakeEngine: seek, resume, device move after a mid-track landing; both units receive bit-identical plans | g and trim constant (100 samples); bit-identical |
+| decision ordering (B2) | FakeEngine: every start and arm carries a decision; C++: audibility with none gives Off, held | exact |
+| group (B3, F2) | C++ / LevelingKit: late profile at a gapless seam, EQ Off; differing LFE stats in a group; a folded album with silence seams | g constant; one variant; spacing = source fold's ±0.1 LU |
+| output change (F5) | C++: unfolded → folded and wired → Bluetooth mid-track | backstop and effects GR < 0.01 dB |
+| silence and stings (F4) | C++: digital zero, −75 LUFS noise, a 300 ms file | unknown rule; g ≤ +12 |
+| net GR, leveled corpus | C++ at 48 kHz; `AnalyzeTracks` through the real converter on the founder's files; **crossfeed on and off, each preset** | < 0.01 dB with crossfeed off; crossfeed rows logged |
+| T with the EQ On | C++: music-like −9 LUFS fixture with a bass preset; known-issue fixtures (808, cut-only) | music-like < 0.01 dB; the known-issue fixtures ≤ their stated envelope |
+| Compare | C++: stereo and folded fixtures, persisted profiles | ≤ 0.2 dB |
+| no motion inside a song | C++: g and G sampled 100× on analysed tracks, EQ On | max − min = 0 |
+| LFE rule | `LfeRuleTests.inc`: §5's 39 cases × seeds | the table's decisions |
+| matrix | C++: C-only −3.0 dB per side; L = R = C +4.6 dB; stereo-in-5.1 null | ±0.1 dB; bit-exact |
+| spatial re-allocation (M1) | C++ / VerifyAUGraph: re-allocate mid-play | trim unchanged; never 0 on an unknown layout |
+| backstop | `AnalyzeTracks` over the founder's surround albums; VerifyAUGraph M == N bit-exact with the backstop bypassed | GR < 0.01 dB; bit-exact |
+| AGC gone | C++ Intensity sweep; semgrep `LoudnessParams`, `LoudnessModule` | 0.1 dB; 0 hits |
+| persistence | store round trip, version bump, undecodable payload, `erase()`, re-key; VerifyLibraryStore: no loudness column | exact |
+| golden masters | the stereo hash; the new P1 leveled hash; fresh-launch MD5 | bit-exact |
 
-## 10. Golden-master impact
+GR acceptance excludes the first 5 ms after a seek or start (§6).
 
-The hash should hold (§7). `sizeof` stays 768. Tests that drive the makeup re-baseline or go (recorded). New fold fixtures get their own hashes in `MultichannelTests.inc` (lane 2). Nothing changes at N = 2 or with Leveling Off and the EQ Off.
+## 11. Known issues to log at close
 
-## 11. Build order
+- **The boost-curve envelope** of `TP + B` (+1.56 dB measured) → S14-lite's measured TP_H.
+- **Crossfeed** may add up to +2.45 dB worst case before the limiter on stereo files.
+- **A hot omitted LFE caps g** (the linked effects limiter, breaker N7).
+- **The seek-start overshoot** (≤ 5 ms) → Engine sprint.
+- **M == N on a multichannel device routes by file order**, not device order → Engine sprint's layout owner.
+- **Before F1:** non-48 kHz 7.1 files lost their back pair, and 3/4/5/7-channel files played only L and R. This is fixed in this sprint; log it as fixed.
 
-**Lane 1:**
-1. Stubs: S1 header/C-ABI with NaN, `FoldMatrix.h` 5.1 row, S3 members as no-ops, `TrackAnalysis.fixture`.
-2. Roles from labels plus one layout resolver, then the full `makeBs775Fold`.
-3. `AsTrackAnalyzer`: TP_N, fold × 3, histograms, LFE stats, head/tail. Swift feeds it through `StreamingResampler`.
-4. Pooling and the store, then `analyzeAlbum`.
-5. `TrackLoudnessGain`: leveling, freeze, cap, T, Compare. `setOutputTransport` gains rate and width.
-6. The profile basis on the fold.
-7. AGC deletion plus the size assert.
-8. Oracle tests.
+## 12. For the founder (plain options; recommendation first)
 
-**Lane 2 (parallel from W4):**
-1. S2 stub fields.
-2. The spatial control path, matrix, LFE gain, `foldTrimDb`, and the ramp at the track change.
-3. The backstop and its GR atomic.
-4. The `foldDecideLfe` body.
-5. Crossfeed engaged + `SignalPathInfo`.
-6. VerifyAUGraph.
+**F-1. How an album's level is set** (Album mode, and Auto when a neighbour is from the same album).
+- **Recommended — the album's loudest song sits at −18.** Every album's loudest moment lands at the same level, and soft songs stay as soft as the album made them. You will never hear one album's big single jump out above the others. The cost: albums with many quiet songs play quieter on average, about 3–6 dB for "one loud single among soft songs" albums. This is what AES77 and Tidal do, and what Grimm's research recommends.
+- **Alternative — the album's average (all songs measured as one) sits at −18.** This is ReplayGain's and Apple's way. Quiet-song albums sound fuller, but an album with one loud single plays it 3–6 dB above other albums' loud songs (15–17 % of synthetic albums put their loudest song > 3 dB over target).
+- Either can be switched later without re-measuring.
 
-Lane 2 builds against the S1 fixture until lane 1's step 3 lands.
+**F-2. What "Auto" means in shuffle.**
+- **Recommended — keep today's rule:** album level when the song next to it is from the same album, else each song at its own level. The leveling story (US-R1F-10) asks for "albums and shuffled songs to sit at one level".
+- **Alternative:** album level always, once the album is measured. In Grimm's blind test of a shuffled list, 71 % preferred it. You already get this by choosing "Album" instead of "Auto".
 
-## 12. Open questions (recommendation first)
+**F-3. How loud the LFE (".1") is when a surround track includes it.** Decided by your listen on the two albums.
+- **Recommended — −6 dB per side.** This is the standard's figure for music discs (SACD, DVD-Audio). It keeps the sub-to-main balance the mixer heard, on headphones too.
+- **Full (0 dB) per side.** The plan's wording. About 6 dB more sub-bass; the rumble can feel heavy.
+- **+4 dB per side.** The standard's figure for film-convention discs (DVD-Video, many Blu-rays). It only fits those, and is boomy on music discs.
+- All three are measured, so your choice needs no re-analysis. If one of your two albums is a Blu-ray or DVD-Video rip, include the +4 dB option in the listen.
 
-1. **LFE include gain** → 0.5 per side (BS.775-4 Fig. 5) by default. The founder's listen picks 0.5 or 1.0. The pass measures both, so no re-analysis.
-2. **7.1 → 2.0** (no BS.775-4 row) → 0.5 per surround (derived, power-preserving). The alternative, 0.7071 each, puts the surround field +3 dB hotter than the 5.1 fold.
-3. **2 < M < N** (a 7.1 file on a 6-channel output) → fold to stereo on device channels 0–1, never truncate. A 7.1 → 5.1 fold is the Engine sprint's (the layout owner). Founder check: how many channels the HDMI soundbar presents.
-4. **The bound form** → keep it, with no margin, and log the measured envelope (+1.07 dB worst) as a known issue forwarded to S14-lite's measured TP_H.
-5. **Ceiling or fold change mid-track** → the trim engages at once, and g re-caps at the next track (backlog item 6).
-6. **The seam blip** (§6) → accept until the Engine sprint; measure and report it in the gapless test.
-7. **The analysis CPU on the M1 Pro floor** → measure at lane 1's step 3. If 192 kHz × 8 albums are too slow, lower the album jobs to 1. Do not use a cheaper SRC (it reopens §2).
-8. **The unknown-role fallback (0.5 to both)** → acceptable for R1.1-B; positional folding comes with the Engine sprint's layout owner.
-9. **The first play of an unanalysed 5.1 track** → fallback trim −8.9 dB (Bluetooth) plus the −5 dB unknown cut. Accept: album analysis on queue makes the second play exact.
-10. **Album pooling across fold states** (some tracks folded, some not) → pool each member's variant for the current output.
-11. **Citation fix** (architecture §9.1 "the rule Roon, JRiver, foobar2000 and MPD share"):
-   - MPD's `auto` is "track … if random play is activated, otherwise album" (`doc/user.rst:669-671`).
-   - foobar2000's is "by playback order" (wiki, Preferences: Playback).
-   - Roon's Auto is the neighbour rule ("adjacent tracks", Roon KB Volume Leveling).
-   - JRiver: not opened.
-   - The Auto rule itself is a state rule for the step-2 review.
+**F-4. 7.1 files: how much of the back and side surrounds goes into stereo.**
+- **Recommended — half each (−6 dB).** Folded like a 5.1 file when the mix spreads one surround sound across both speakers.
+- **Alternative — −3 dB each.** About 1 dB more room sound on 7.1 mixes whose four surrounds carry separate ambience.
+- These files are rare; a quick listen on one 7.1 file is enough.
 
-## 13. Prototype index
+**F-5. The first play of a surround track nobody has measured yet.**
+- **Recommended — play it quieter and clean** until it is measured: up to about 9 dB under how it will play once measured. The next play is exact, and the badge reads "5.1 → stereo · measuring".
+- **Alternative — play it at level** and let the safety limiter catch the peaks; it may pump on loud passages.
 
-Scripts are in `/private/tmp/claude-501/-Users-ramith-code-sound-engineering/3d4475b9-e75c-4bb0-9910-1b01ee070987/scratchpad/r11b/design/`. Run them with `venv/bin/python -I` from `proto/`.
+**F-6. A song with unknown loudness** (not yet measured, no tags).
+- **Recommended — keep the fixed −5 dB for now.** It is rare, since albums are measured as soon as they are queued. Revisit it with the numbers from your own library once the analysis tool runs.
+- **Alternative — the typical cut of your already-measured songs** (likely nearer −10 dB for modern albums).
 
-- `proto/common.py`: exact ports of `TruePeakKernel.h`, BS.1770-5 K-weighting and gates (validated: −3.010 LKFS for a 0 dBFS 997 Hz tone; coefficients equal BS.1770-5 Tables 1–2), libebur128's 4× interpolator, the shipped bell, and synthetic signals.
-- `p1_kernel` and `p1_rate` / `_check`: P1.
-- `p2_album` and `p2_payload`: P2.
-- `p3_bound`: §6.
-- `p35_chain`: §4.
-- `p4_lfe`, `p4_lfe2`, `p4_lfe3`: P4.
-- `p6_foldloud` and `p6_dl_fold`: §1.2, §7.
-- `bench/tpbench.cpp` (clang -O2 against the shipped header), `bench/srcbench.swift` (AVAudioConverter, Mastering/max), and `bench/sz.cpp` (sizeof).
-- Every fixture is synthetic. No founder music was read.
+**F-7. A ten-minute ear check before the S14-lite blind tests** (not this sprint). Match Compare to EQ-on by ear on two bass presets and one cut. Two standard loudness models disagree by 1–2 dB on bass boosts, and your ear decides which one Compare should follow.
 
-## Sources opened this session
+**F-8. A clarification of your 2026-10-25 rule** ("analyse an album once any of its tracks is queued; no library-wide sweep").
+- **Recommended — only albums within the next ~2 hours of the queue are analysed,** re-checked as it plays. Otherwise "Play" on a genre or artist would analyse hundreds of albums at once: a library sweep in all but name, with fan noise and battery drain.
 
-- ITU-R BS.1770-5 (11/2023): Annex 1 eqs (2)–(7), Tables 1–3; Annex 2 and its Attachment 1 table.
-- ITU-R BS.775-4 (12/2022): recommends §2–7 and Notes 1–5; Annex 4 Table 2; Annex 5; Annex 7 with Figs 5 and 9; Annex 8.
-- EBU R 128-2023; EBU Tech 3341 §2 (gating), 3342, and 3343-2023 §§4.1, 4.2, 7.1, 11.1.1, 11.2.1.
-- libebur128 (vendored, 67b33ab): `ebur128.c` :110-200, :345-352, :687-780, :1062-1182.
-- ReplayGain 2.0 specification (hydrogenaudio wiki, archived copy).
-- rsgain `src/scan.cpp` @ aae8cc74.
+**F-9. A never-measured song with an EQ on:** start at once (**recommended**). The level settles within the first second on that first play only. The alternative is to start 0.2 s late so it doesn't.
+
+## 13. Engineering questions still open
+
+1. CPU on the M1 Pro floor with 192 kHz × 8 and DXD albums. Measure at lane 1 step 3. Stop rule: if a 4-minute track takes over 2 minutes, drop to 1 album job.
+2. The mono upmix on the real device path (VerifyAUGraph), not only offline.
+3. The compact profile's 1/12-octave grid needs `bandsPerOctave` to become a field of `TrackLoudnessProfile`. If that proves invasive, use 1/24-octave (about 289 KB per 4 minutes, error 0.010 dB).
+4. The AES77 text was not opened; its rule is taken from rsgain's code and help, Grimm 2017, and TD1008 summaries.
+
+## 14. Changes since the panel
+
+| Finding | Change |
+|---|---|
+| **Breaker** | |
+| F1 | Shipped-code fix (lane 2): graph format = the file's layout, N 1–8; converter rate-only; one role resolver; VerifyAUGraph proof (§2, §9, §10) |
+| F2 | One trim per album and per group; S3 separates group numbers from the variant (§3, §4, §8) |
+| F3 | LFE statistics v2: lag search, scale-invariant shape match, `bestLag` persisted; Include made harder. **Adapted:** the onset statistic was rejected (it misfires on rhythm-following sub layers, measured); medianR2 covers the kick-stem copy. 117/117 (§5) |
+| F4 | No gated block or < 0.4 s → unknown rule; g ≤ +12 dB (§1.3, §6) |
+| F5 | Protective re-plan with the frozen g at an output change (§1.3) |
+| F6 | Honest envelope (+1.56 / +0.69); cut allowance B_eff; acceptance reworded; known issue (§6, §10, §11) |
+| F7 | Magnitude corrected (−2.14 dB); persisted profiles for every basis; first-play Include residue stated (§7) |
+| F8 | Measured: mono plays dual mono at 0 dB per side; the planner adds +3.01 LU; mono oracle row (§1.2, §10) |
+| N1 | Kernel claim reworded; TP tests vs an exact reference, libebur128 only below 20 kHz (§2, §10) |
+| N2 | C_work −1.282 / −0.380; the backstop computes it identically (§1.1) |
+| N3 | Used bytes 728 (§7) |
+| N4 | Pool error stated as typical, with the knife-edge; test in histogram mode (§3) |
+| N5 | 7.1 coefficient → F-4, with both correlation cases |
+| N6 | Fourth variant, 1.585 (§1.2, §5) |
+| N7 | Known issue (§11) |
+| N8 | Crossfeed narrowing + rows (§4, §10) |
+| N9 | RFC 9639 counts 1–8 (S1b) |
+| N10 | Seek exclusion; fade-in → Engine sprint (§6) |
+| N11 | DXD cost rows (§2) |
+| N12 | Predictor limits stated (§7) |
+| N13 | Analytic fold rows (§1.2) |
+| **Challenger** | |
+| 1 album anchor | → **founder F-1** (recommended: loudest track). Histograms kept, so both stay computable. The "drop the histograms" simplification is **rejected** until the founder chooses |
+| Auto in shuffle | → **founder F-2** |
+| 2 persisted −ΔL profile, freeze G | **Adopted** (§1.4, §6, §8); the start-delay option → F-9 |
+| 3 LFE gain bound, k = 1.58 | **Adopted, re-normalised** to the mains' sum at +15 dB (the strongest-main form wrongly included plain copies, measured +8.6 dB); 1.585 measured; include gain → F-3 |
+| 4 64-tap analysis kernel | **Adopted:** max with the shipped reading (§2) |
+| 5 Compare loudness model | → F-7 (before S14-lite) |
+| 6 unknown fallback | → F-6 |
+| 7–8 fold, trim, 7.1 row, glide | kept |
+| TP oracle vs exact | **Adopted** (§10) |
+| **Architect** | |
+| B1 | One pure C++ planner, called once by the bridge, same value to both units, no-op on repeats (§1.3, §8) |
+| B2 | Decisions travel with start and arm; "no decision" defined; per-token slots and "kept for next play" dropped (§8) |
+| B3 | `levelDb_` / `neutralDb_` split; one continuity judge; groups share g, trim, LFE (§4, §9) |
+| B4 | W4 ownership table; coordinator commit 0 (§9) |
+| M1 | `SpatialUnit` handle, snapshot, keep across allocate, never trim 0 (§8) |
+| M2 | One `AsOutputState` on `engineQueue`; `EntryProbe` additions (§8) |
+| M3 | C role enum, one resolver, roles in the version list (S1b, S1) |
+| M4 | Statistics stored; decision at plan time; variant index (§5, S1) |
+| M5 | Horizon (F-8), `.background`, skip the pass when stored, identities off main, prefix before the SRC (§8) |
+| M6 | `erase()` or a sidecar-aware delete, undecodable payload → re-analyse, pure pool, the tool writes nothing (§8) |
+| M7 | Crossfeed (§4, §10, §11) |
+| M8 | `LoudnessModule` deleted entirely (§7) |
+| N1 | 728 B |
+| N2 | `groupKey` dropped |
+| N3 | Repeat = new play |
+| N4 | Snap at a fresh start |
+| N5 | Seek exclusion |
+| N6 | TP unknown on a rate mismatch |
+| N7 | Re-key on rebind; LRU cap |
+| N8 | New golden master |
+| N9 | Deviation flagged (§9) |
+| N10 | C-ABI typedef and buffer rule |
+| N11 | Mode change re-arms next |
+| N12 | Prefix before the SRC |
+| N13 | Superseded by F5 |
+| Pre-mortem 1–3 | Covered by B1–B3 |
+| Pre-mortem 4 | Covered by M5 |
+| Pre-mortem 5 | → F-5; the unknown rule no longer stacks −5 dB on the fallback trim (§1.3) |
+
+## 15. Prototype index
+
+All in `/private/tmp/claude-501/-Users-ramith-code-sound-engineering/3d4475b9-e75c-4bb0-9910-1b01ee070987/scratchpad/r11b/design/`; run with `venv/bin/python -I` from `proto/`.
+
+**First draft:**
+- `common.py`
+- `p1_*`, `p2_*`, `p3_bound`, `p35_chain`
+- `p4_lfe`, `p4_lfe2`, `p4_lfe3`
+- `p6_*`
+- `bench/{tpbench.cpp, srcbench.swift, sz.cpp}`
+
+**Revision:**
+- `proto/p4_lfe_v2.py` and `.out` (the LFE rule on all three fixture sets).
+- `bench/mono.swift` (F8).
+
+**The reviewers' prototypes**, cited by finding: `r11b/panel-breaker/src/`, `r11b/panel-challenger/proto/`.
+
+## Sources opened
+
+- ITU-R BS.1770-5 (11/2023): Annexes 1 and 2.
+- ITU-R BS.775-4 (12/2022): recommends §2–7, Notes 1–5; Annexes 4, 5, 7 (Figs 5, 9) and 8.
+- EBU R 128-2023; EBU Tech 3341, 3342 and 3343-2023.
+- libebur128 @ 67b33ab.
+- ReplayGain 2.0 specification (archived).
+- rsgain @ aae8cc74.
 - Roon KB "Volume Leveling" (archived).
-- MPD `doc/user.rst` (master).
+- MPD `doc/user.rst`.
 - foobar2000 wiki "Preferences: Playback" (archived).
-- RFC 9639 (FLAC) channel table.
-- `CoreAudioBaseTypes.h` (macOS SDK in Xcode).
+- RFC 9639.
+- `CoreAudioBaseTypes.h`.
+- Grimm, "Recommendation for loudness normalization by Music Streaming Services" v1.2 (2017), pp. 6–8 (the challenger's downloaded copy, read with pdftotext): the shuffle test ("71% of the subjects preferred album normalization blindly") and Additional note 2 ("always the 'loudest track' version").
