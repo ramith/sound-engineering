@@ -8,7 +8,7 @@
 //
 // ADDITIVE and data-preserving, the v9 pattern: `tracks_fts` is DERIVED from `tracks` (rowid = `tracks.id`),
 // and its DDL is unchanged — only what each row holds changes — so the index is emptied and rebuilt from
-// `tracks` through the write path's own projection and normalisation (`LibraryStore.rebuildSearchIndex`).
+// `tracks` through the v9 projection (frozen) in the rule's current form (`LibraryStore.rebuildSearchIndex`).
 // No user data is named: playlists, entries and the track user-state columns are untouched, and the step
 // references nothing a foreign key checks (FTS5 tables have none).
 
@@ -24,7 +24,7 @@ public extension Schema.MigrationID {
 public extension Schema {
     /// Migrate v10 → v11: rebuild `tracks_fts` from `tracks`, every row in the search rule's form.
     static func migrateV10toV11(_ db: Database, appBuild: String?, timestamp: Int64) throws {
-        try LibraryStore.rebuildSearchIndex(db)
+        try LibraryStore.rebuildSearchIndex(db, projection: searchProjectionV9)
         try writeSchemaInfo(db, version: 11, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }

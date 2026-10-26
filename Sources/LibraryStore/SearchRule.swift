@@ -6,10 +6,13 @@
 // and ⌘F's facet sections match in memory. Both halves read text through THIS file, so one query finds the
 // same items wherever it is typed:
 //   • TEXT — `normalized`: compatibility-composed (NFKC: a decomposed spelling meets the composed one, a width
-//     or ligature variant its plain letters), with the zero-width joiner and non-joiner folded away (a
-//     Sinhala conjunct typed with or without its joiner, "ශ්‍රී" / "ශ්රී", is one word). The index stores every
-//     row in this form (`LibraryStore.rebuildSearchIndex`; migration v11 re-wrote it) and every query is put
-//     in it.
+//     or ligature variant its plain letters), with what shapes a character's look but is no part of a word
+//     folded away — the zero-width joiner and non-joiner (a Sinhala conjunct typed with or without its
+//     joiner, "ශ්‍රී" / "ශ්රී", is one word), variation selectors and emoji skin-tone modifiers — and with every
+//     combining mark that follows no word character dropped: an emoji's keycap or enclosing circle, a mark
+//     after a space or a symbol belongs to no word ("❤️" is no word; it used to find every emoji title — break-it
+//     BI-P08). The index stores every row in this form (`LibraryStore.rebuildSearchIndex`; the re-index
+//     migrations v9, v11 and v13 wrote it — `indexFormVersion`) and every query is put in it.
 //   • WORDS — maximal runs of word characters (`isWordScalar`): exactly the characters the index's tokenizer
 //     keeps in a token (`unicode61 … categories 'L* N* Co M*'`, Schema+SearchTokens.swift). Its character
 //     tables are Unicode 6.1's, so a character assigned since reads to it as unassigned — which it keeps in
@@ -28,21 +31,74 @@ import Foundation
 public enum SearchRule {
     // MARK: - Text
 
-    /// `text` as search reads and stores it: the zero-width joiner and non-joiner folded away, then
-    /// compatibility-composed (NFKC). Plain ASCII is returned as it is.
+    /// The form the search index holds its text in — what `normalized` writes. Every change to `normalized`
+    /// is a new form: it bumps this, and lands with a re-index migration that names it
+    /// (`Schema.searchIndexForms`), or every upgraded library keeps rows in the old form while the queries
+    /// use the new one. VerifyLibraryStore fails when this is ahead of the latest re-index migration, and
+    /// when `normalized` writes another form than this one's golden (`ChecksSearchForm`).
+    ///   1 — NFKC (v9, R1.1-A);  2 — + the zero-width joiners folded away (v11);  3 — + variation selectors and
+    ///   emoji modifiers folded away, stray combining marks dropped (v13, R1.1-B fix round).
+    public static let indexFormVersion = 3
+
+    /// `text` as search reads and stores it: what only shapes a character's look folded away (`isFoldedAway`),
+    /// compatibility-composed (NFKC), and every combining mark that follows no word character dropped. Plain
+    /// ASCII is returned as it is.
     public static func normalized(_ text: String) -> String {
         guard !text.utf8.allSatisfy({ $0 < 0x80 }) else { return text }
-        guard text.unicodeScalars.contains(where: isJoiner) else {
-            return text.precomposedStringWithCompatibilityMapping
+        let unshaped: String
+        if text.unicodeScalars.contains(where: isFoldedAway) {
+            var scalars = String.UnicodeScalarView()
+            scalars.append(contentsOf: text.unicodeScalars.lazy.filter { !isFoldedAway($0) })
+            unshaped = String(scalars)
+        } else {
+            unshaped = text
         }
-        var scalars = String.UnicodeScalarView()
-        scalars.append(contentsOf: text.unicodeScalars.lazy.filter { !isJoiner($0) })
-        return String(scalars).precomposedStringWithCompatibilityMapping
+        return droppingStrayMarks(unshaped.precomposedStringWithCompatibilityMapping)
     }
 
-    /// The zero-width joiner (U+200D) and non-joiner (U+200C): they shape a conjunct, they do not end a word.
-    private static func isJoiner(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.value == 0x200D || scalar.value == 0x200C
+    /// Whether `scalar` only shapes how its neighbours look and is no part of a word: the zero-width joiner
+    /// (U+200D) and non-joiner (U+200C), which shape a conjunct; a variation selector, which picks a glyph
+    /// (an emoji's colour form, a CJK ideograph's variant); an emoji skin-tone modifier.
+    private static func isFoldedAway(_ scalar: Unicode.Scalar) -> Bool {
+        if scalar.isASCII {
+            return false
+        }
+        return scalar.value == 0x200D || scalar.value == 0x200C
+            || scalar.properties.isVariationSelector || scalar.properties.isEmojiModifier
+    }
+
+    /// `text` less every combining mark that follows no word character — at the start, or after a space, a
+    /// symbol or punctuation (a keycap's U+20E3 after "#", an enclosing circle, a combining low line): such
+    /// a mark belongs to no word, and the index's tokenizer would read it as a word of its own.
+    private static func droppingStrayMarks(_ text: String) -> String {
+        guard hasStrayMark(text) else { return text }
+        var afterWord = false
+        var kept = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars where !isCombiningMark(scalar) || afterWord {
+            kept.append(scalar)
+            afterWord = isWordScalar(scalar)
+        }
+        return String(kept)
+    }
+
+    /// Whether `text` holds a combining mark that follows no word character (`droppingStrayMarks`).
+    private static func hasStrayMark(_ text: String) -> Bool {
+        var afterWord = false
+        for scalar in text.unicodeScalars {
+            if isCombiningMark(scalar), !afterWord {
+                return true
+            }
+            afterWord = isWordScalar(scalar)
+        }
+        return false
+    }
+
+    /// Whether `scalar` is a combining mark (Unicode category M: nonspacing, spacing or enclosing).
+    private static func isCombiningMark(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark: true
+        default: false
+        }
     }
 
     // MARK: - Words

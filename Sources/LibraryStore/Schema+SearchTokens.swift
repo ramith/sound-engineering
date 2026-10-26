@@ -30,6 +30,25 @@ public extension Schema {
         tokenize = "unicode61 remove_diacritics 2 categories 'L* N* Co M*'");
     """
 
+    /// The searchable-field projection of tracks the v9 re-index introduced — `id, title, artist, album,
+    /// genre` — LEFT-JOINed so a track with no artist/genre still resolves; `title` falls back to the filename
+    /// `name`, genres are space-joined. The album text is the song's own album title (`tracks.album_title`,
+    /// v7): an album row's title IS its songs' album title (S10.8 C2) — and a metadata pass, which leaves
+    /// album assignment to its end-of-pass regroup (C2 fix round B2), still indexes the album text at the
+    /// song's own write. FROZEN: the re-index migrations v9, v11 and v13 read it, and a track write indexes
+    /// through it (`LibraryStore+SearchIndex`); a new projection is a new constant and a new re-index.
+    static let searchProjectionV9 = """
+    SELECT t.id,
+           COALESCE(NULLIF(t.title, ''), t.name),
+           COALESCE(ar.name, ''),
+           COALESCE(t.album_title, ''),
+           COALESCE((SELECT group_concat(g.name, ' ')
+                     FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
+                     WHERE tg.track_id = t.id), '')
+    FROM tracks t
+    LEFT JOIN artists ar ON ar.id = t.artist_id
+    """
+
     /// Drop the v2 index (its tokenizer can't be altered in place).
     private static let dropFtsStatement = "DROP TABLE tracks_fts;"
 
@@ -38,7 +57,7 @@ public extension Schema {
     static func migrateV8toV9(_ db: Database, appBuild: String?, timestamp: Int64) throws {
         try db.execute(sql: dropFtsStatement)
         try db.execute(sql: createV9FtsStatement)
-        try LibraryStore.rebuildSearchIndex(db)
+        try LibraryStore.rebuildSearchIndex(db, projection: searchProjectionV9)
         try writeSchemaInfo(db, version: 9, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
