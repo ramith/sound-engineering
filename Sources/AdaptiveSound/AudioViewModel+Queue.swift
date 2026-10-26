@@ -156,7 +156,12 @@ extension AudioViewModel {
             if let removeAt {
                 queue.remove(at: removeAt)
             }
-            queue.insert(QueueItem(file: track), at: insertAt)
+            let item = QueueItem(file: track)
+            // First: the pass plays it next, as Play Next does, so the queue's edit finds it held and draws no
+            // place for it; the play below is then a step on in the pass — the pick a jump-play is, with the
+            // pass's randomness left as it was (the launch's join ends in the same pass, `QueueJoin`).
+            shufflePass?.insertNext([item.id])
+            queue.insert(item, at: insertAt)
             logUX("playTrackNextNow: '\(track.name)' → index \(insertAt)"
                 + (removeAt.map { " (moved from \($0))" } ?? "") + " (playing=\(isPlaying))")
             // playTrack overwrites selectedTrackIndex and re-primes the on-deck, so the stale

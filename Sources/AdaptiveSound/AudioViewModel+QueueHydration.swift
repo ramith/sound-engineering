@@ -10,19 +10,24 @@ import PlaybackQueueKit
 // with shuffle on the same pass (its order, place and history) — never auto-play (founder brainstorm §0.2).
 //
 // What the user queued BEFORE the restore — a file opened at launch (Open With, a drop on the Dock icon), any
-// play verb — is never thrown away, and neither is the stored queue: it JOINS the restored queue right after
-// the restored song, where it goes when the restore comes first (`playTrackNextNow` puts an opened file
-// right after the song selected), so the two orders end in the same queue. A song the user started plays on;
-// otherwise the restored song is selected at its place. Either way the result is written.
+// play verb — is never thrown away, and neither is the stored queue: it JOINS the restored queue where doing
+// the same after the restore would have put it (`QueueJoin`, PlaybackQueueKit: an opened file right after the
+// restored song — first when none is selected — moving the restored queue's slot of the same file, never
+// doubling it), so the two orders end in the same queue, song, next song and record. A song the user started
+// plays on; otherwise the restored song is selected at its place. Either way the result is written.
 //
 // What can't be found any more is dropped the tolerant way (`QueueResumeRecord.resolved`, QA break-it #2/#3):
 // a song deleted while the app was closed leaves the queue, and when it was the selected one the queue starts
 // at the top — or, under shuffle, at the pass's next song — never another song at the old offset. A loose file
-// comes back by its path, found or not; the dead-file badge says the rest.
+// comes back by its path, found or not; the dead-file badge says the rest. A damaged record restores nothing,
+// and the session's first change writes the queue whole. A store that fails the read is read once more; if it
+// fails again the writer stays closed for the session, so the stored queue is never overwritten by one this
+// launch never saw (review N1).
 //
 // A library a build before the record left (R1.1-A and earlier) holds no record: its queue is the "current"
 // playlist's songs, its cursor three keys in the defaults (written only at a clean quit). They are read once,
-// the tolerant way they always were, written as the record, and the keys removed.
+// the tolerant way they always were, and written as the record; then the playlist's entries and the keys are
+// cleared — dead data from then on (review N10). The built-in playlist itself stays.
 //
 // Shuffle and repeat are listening settings, not the record (R1.1-A): they come back at every launch from the
 // listener's settings (`+ListeningSettings`). A kept pass is used only when shuffle is on.
@@ -54,27 +59,33 @@ extension AudioViewModel {
         }
     }
 
+    /// What the launch's read of the store found.
+    private enum StoredQueueRead {
+        /// A queue: the record's slots found again — from a build before the record when `legacy`.
+        case found(QueueResumeRecord.Resolved<QueueItem>, legacy: Bool)
+        /// Nothing to restore: no queue was stored, or the record is damaged.
+        case nothing
+        /// The store failed the read twice: what is stored is unknown.
+        case unreadable
+    }
+
     private func restoreQueue(from store: LibraryStore) async {
         var fromLegacy = false
-        do {
-            if let stored = try await storedRecord(in: store) {
-                fromLegacy = stored.legacy
-                let resolved = try await resolve(stored.record, in: store)
-                // Read after the awaits: what the user queued meanwhile joins too.
-                if !resolved.items.isEmpty {
-                    let joining = queue.count
-                    install(resolved)
-                    let place = resolved.cursor.map { "song \($0 + 1) at \(secs(resolved.offset))s" } ?? "none selected"
-                    logUX("queue restored (paused): \(resolved.items.count) song(s), \(place)"
-                        + (joining > 0 ? ", \(joining) queued before it joining after that song" : "")
-                        + (shufflePass != nil ? ", in a shuffle pass" : ""))
-                }
+        switch await readStoredQueue(from: store) {
+        case .unreadable:
+            return // the writer stays closed: this session's queue must not overwrite one it never read
+        case .nothing:
+            break
+        case let .found(resolved, legacy):
+            fromLegacy = legacy
+            if !resolved.items.isEmpty {
+                let joining = queue.count
+                install(resolved)
+                let place = resolved.cursor.map { "song \($0 + 1) at \(secs(resolved.offset))s" } ?? "none selected"
+                logUX("queue restored (paused): \(resolved.items.count) song(s), \(place)"
+                    + (joining > 0 ? ", joined by \(joining) queued before it" : "")
+                    + (shufflePass != nil ? ", in a shuffle pass" : ""))
             }
-        } catch {
-            // Left as stored: the first change of this session writes the queue then.
-            logUX("queue restore failed: \(error)")
-            queueStateBook.restored = true
-            return
         }
         // The stored state becomes the queue as it now is: restored (a gone song dropped), joined, or the
         // user's own when nothing was stored.
@@ -82,11 +93,42 @@ extension AudioViewModel {
         guard !queue.isEmpty else { return }
         queueStateChanged()
         if fromLegacy {
-            await queueStateWriter.flush()
-            if queueStateBook.written != nil {
-                forgetLegacyCursor()
+            await finishLegacyCarryOver(in: store)
+        }
+    }
+
+    /// The stored queue, its slots found again. A damaged record is nothing to restore (left as stored: the
+    /// session's first change writes the queue whole); any other failure — the store, the disk — is tried once
+    /// more, and a second one leaves what is stored unknown.
+    private func readStoredQueue(from store: LibraryStore) async -> StoredQueueRead {
+        for attempt in 1 ... 2 {
+            do {
+                guard let stored = try await storedRecord(in: store) else { return .nothing }
+                return try await .found(resolve(stored.record, in: store), legacy: stored.legacy)
+            } catch let damaged as DecodingError {
+                logUX("queue restore: the stored queue is damaged — nothing restored: \(damaged)")
+                return .nothing
+            } catch {
+                logUX(attempt == 1 ? "queue restore failed, reading once more: \(error)"
+                    : "queue restore failed again — this session's queue is not kept: \(error)")
             }
         }
+        return .unreadable
+    }
+
+    /// The carry-over's end: once the old queue is written as the record, the "current" playlist's entries
+    /// and the cursor's keys are dead data — cleared, the entries through the store's playlist API. The
+    /// built-in playlist itself stays. Nothing is cleared when the write failed: the next launch reads them
+    /// again.
+    private func finishLegacyCarryOver(in store: LibraryStore) async {
+        await queueStateWriter.flush()
+        guard queueStateBook.written != nil else { return }
+        do {
+            try await store.clearEntries(playlistID: store.currentPlaylistID())
+        } catch {
+            logUX("queue: the old \"current\" playlist's entries were not cleared: \(error)")
+        }
+        forgetLegacyCursor()
     }
 
     /// The stored record — or, in a library a build before it left, the record its "current" playlist and the
@@ -116,7 +158,7 @@ extension AudioViewModel {
     /// display adapter, so they carry the same metadata and length the live queue was built with (QA #5a —
     /// no "--:--"); loose files by their paths.
     private func resolve(_ record: QueueResumeRecord, in store: LibraryStore) async throws
-        -> QueueResumeRecord.Resolved<AudioFile> {
+        -> QueueResumeRecord.Resolved<QueueItem> {
         let ids = record.slots.compactMap { slot -> Int64? in
             if case let .track(id) = slot {
                 id
@@ -127,44 +169,41 @@ extension AudioViewModel {
         let byID = try await store.tracksDisplay(ids: ids)
         return record.resolved { slot in
             switch slot {
-            case let .track(id): byID[id].map { AudioFile($0) }
-            case let .loose(path): AudioFile(looseFileAt: URL(fileURLWithPath: path))
+            case let .track(id): byID[id].map { QueueItem(file: AudioFile($0)) }
+            case let .loose(path): QueueItem(file: AudioFile(looseFileAt: URL(fileURLWithPath: path)))
             }
         }
     }
 
-    /// Put the restored queue in place, with what was queued before it (`joining`) right after the restored
-    /// song — or at the end when none was selected — in the pass too: next, in order, counted as played
-    /// (`ShufflePass.insertNext`, Play Next's rule). A song the user started before the restore plays on, in
-    /// its new row, and what plays after it follows the joined queue (`keepOnDeck`).
+    /// Put the restored queue in place, joined by what was queued before it (`QueueJoin`: where doing the same
+    /// after the restore would put it), with the shuffle pass the join leaves. A song the user started before
+    /// the restore plays on, in its new row, and what plays after it follows the joined queue (`keepOnDeck`).
     ///
     /// Otherwise the restored song is selected PAUSED: `isPlaying` stays false. The pass first, so the
     /// selection finds it on its own song. The offset is clamped to the song's length, stashed in
     /// `resumePoint` (that slot's) so the FIRST Play resumes there, and mirrored into `playbackPosition` so the
     /// scrubber shows it rather than 0:00 (QA #5b/#5c).
-    private func install(_ resolved: QueueResumeRecord.Resolved<AudioFile>) {
-        let joining = queue
-        let started = selectedSlotID
+    private func install(_ resolved: QueueResumeRecord.Resolved<QueueItem>) {
+        let started = selectedSlotID != nil ? selectedTrackIndex : nil
         let armed = onDeckSlotID
-        let restored = resolved.items.map { QueueItem(file: $0) }
-        let joinAt = resolved.cursor.map { $0 + 1 } ?? restored.count
-        queue = Array(restored[..<joinAt]) + joining + Array(restored[joinAt...])
-        if shuffleEnabled {
-            var pass = resolved.shuffle?.relabeled { restored.indices.contains($0) ? restored[$0].id : nil }
-            pass?.insertNext(joining.map(\.id))
-            shufflePass = pass
+        let joined = resolved.joined(by: queue, started: started, shuffled: shuffleEnabled) {
+            $0.file.id == $1.file.id
         }
-        if let started {
-            selectedTrackIndex = queueRow(of: started)
+        // The pass over what came before goes first, so it never follows every restored slot (review S3).
+        shufflePass = nil
+        queue = joined.items
+        shufflePass = joined.pass
+        if started != nil {
+            selectedTrackIndex = joined.selected
             keepOnDeck(armed: armed)
             return
         }
-        guard let index = resolved.cursor else { return }
+        guard let index = joined.selected else { return }
         selectedTrackIndex = index // didSet clears the (nil) resume point first — order matters
-        let duration = restored[index].file.durationSeconds
+        let duration = queue[index].file.durationSeconds
         let offset = duration > 0 ? min(resolved.offset, duration) : resolved.offset
         if offset > 0 {
-            resumePoint = ResumePoint(slot: restored[index].id, seconds: offset)
+            resumePoint = ResumePoint(slot: queue[index].id, seconds: offset)
             playbackPosition = offset
         }
     }

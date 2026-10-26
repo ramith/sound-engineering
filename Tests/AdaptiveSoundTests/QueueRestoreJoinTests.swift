@@ -93,6 +93,73 @@ struct QueueRestoreJoinTests {
         #expect(pass.permutation.filter { !opened.contains($0) } == kept.permutation)
     }
 
+    /// A stored queue and an open on it: songs `t0…` (`stored` of them), `selected` selected — nil: none — and
+    /// the files `opened` (songs by number; a negative number is a file outside the library).
+    struct JoinCase: Sendable, CustomTestStringConvertible {
+        let testDescription: String
+        let stored: Int
+        let selected: Int?
+        let opened: [Int]
+    }
+
+    nonisolated static let joinCases = [
+        JoinCase(testDescription: "a song the stored queue holds after the selected one (BI-P03)", stored: 3,
+                 selected: 0, opened: [2]),
+        JoinCase(testDescription: "nothing selected in the stored queue (BI-P03b)", stored: 2, selected: nil,
+                 opened: [2]),
+        JoinCase(testDescription: "the stored queue's selected song itself", stored: 4, selected: 1, opened: [1]),
+        JoinCase(testDescription: "three files: one held before the selected song, a loose one, one held after",
+                 stored: 4, selected: 2, opened: [0, -1, 3]),
+    ]
+
+    @Test("VM-QS-12 (M2): opened before the restore or after it — the same queue, song, next song and record",
+          arguments: joinCases, [false, true])
+    func bothOrdersEndTheSame(_ join: JoinCase, shuffle: Bool) async throws {
+        let after = try await QueueStateWorld(songs: 4)
+        defer { after.discard() }
+        let earlier = try await after.launch(shuffle: shuffle)
+        if let selected = join.selected {
+            earlier.vm.playNow((0 ..< join.stored).map(audioFile), startAt: selected)
+            try await playing(earlier)
+            try movePlayhead(earlier, to: 30)
+            earlier.vm.pause()
+        } else {
+            earlier.vm.appendToQueue((0 ..< join.stored).map(audioFile))
+        }
+        try await earlier.vm.settled()
+        let stored = try #require(try await after.stored(after: earlier))
+        // The same record in a second library, whose files open before its restore.
+        let before = try await QueueStateWorld(songs: 4)
+        defer { before.discard() }
+        try await before.store.saveQueueState(record: stored.record, offset: stored.offset ?? 0)
+        let files = join.opened.map { $0 < 0 ? after.looseFile("Opened") : audioFile($0) }
+
+        let restoredFirst = try await after.launch(shuffle: shuffle)
+        try await open(files, in: restoredFirst)
+        let openedFirst = try await FakePlayer.launched(tracks: 0)
+        openedFirst.vm.shuffleEnabled = shuffle
+        try await open(files, in: openedFirst)
+        before.attach(openedFirst.vm)
+        openedFirst.vm.hydrateQueueOnLaunch()
+        try await openedFirst.vm.settled()
+
+        let orders = [restoredFirst.vm, openedFirst.vm]
+        #expect(orders[0].queue.map(\.file.name) == orders[1].queue.map(\.file.name),
+                "the two orders ended in different queues")
+        #expect(orders[0].selectedTrackIndex == orders[1].selectedTrackIndex && orders.allSatisfy(\.isPlaying),
+                "the two orders play different songs")
+        let records = try await [after.stored(after: restoredFirst), before.stored(after: openedFirst)]
+            .map { try QueueResumeRecord(storedQueue: #require($0).record, offset: #require($0).offset ?? 0) }
+        #expect(records[0].slots == records[1].slots && records[0].cursor == records[1].cursor
+            && records[0].offset == records[1].offset, "the two orders wrote different queues")
+        // A stored pass goes on in both orders; with none (nothing was selected), each draws a pass of its own.
+        guard !shuffle || join.selected != nil else { return }
+        #expect(orders[0].pendingNextIndex == orders[1].pendingNextIndex
+            && restoredFirst.engine.state.withLock(\.nextTracks).last
+            == openedFirst.engine.state.withLock(\.nextTracks).last, "the two orders armed different next songs")
+        #expect(records[0] == records[1], "the two orders wrote different records (the shuffle pass)")
+    }
+
     @Test("VM-QS-10: a queued song \"Use this drive\" moves plays from its new path; armed, it is armed there")
     func movedSongsAreFollowed() async throws {
         let world = try await QueueStateWorld(songs: 3)
