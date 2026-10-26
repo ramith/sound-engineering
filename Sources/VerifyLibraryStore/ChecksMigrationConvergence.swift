@@ -33,7 +33,7 @@ func migrationConvergenceCheckCases() -> [CheckCase] {
 /// character: the v8 golden was 470fa8ed1281e861, and the v9 fingerprint with that one table's v2 DDL
 /// hashes to it exactly. v10 (R1.1-B, C-65) appended the two queue-state tables: the v9 golden was
 /// 43e71785e404bffc, and `ChecksQueueState` QS-2 proves v10 adds those two and changes nothing else.
-let goldenSchemaFingerprintHashV9 = "e1d05add49df928a"
+let goldenSchemaFingerprintHash = "9fc3d8449f53f5ab"
 
 // MARK: - Fingerprint
 
@@ -89,9 +89,9 @@ func checkAdditiveMigrationConvergence(number: Int, url _: URL) -> Bool {
             return false
         }
         let freshHash = fnv1a64Hex(freshFingerprint)
-        guard freshHash == goldenSchemaFingerprintHashV9 else {
+        guard freshHash == goldenSchemaFingerprintHash else {
             printFail(number, "schema fingerprint drift — a SHIPPED migration body changed (or a new "
-                + "migration landed without updating goldenSchemaFingerprintHashV9). If this is an "
+                + "migration landed without updating goldenSchemaFingerprintHash). If this is an "
                 + "intentional NEW migration, set the golden to: \(freshHash)\nFingerprint:\n\(freshFingerprint)")
             return false
         }

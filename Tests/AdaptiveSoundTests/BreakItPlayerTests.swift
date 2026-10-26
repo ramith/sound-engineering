@@ -38,10 +38,11 @@ struct BreakItQueueRecordTests {
         try await first.vm.settled()
         _ = try await world.stored(after: first)
         // While the queue is kept: t2's file goes (a sweep, or "Use this drive" leaving it behind), and a
-        // new song is scanned in. SQLite hands the new row the highest free rowid — the removed song's.
+        // new song is scanned in. SQLite would hand the new row the highest free rowid — the removed song's;
+        // the store never reuses one (v12).
         try await world.store.delete(id: 3)
         let newcomer = try await addSong(7, to: world)
-        try #require(newcomer == 3, "precondition: the new song took the removed song's id")
+        #expect(newcomer > 3, "the new song took the removed song's id (\(newcomer))")
 
         let second = try await world.launch()
         #expect(!second.vm.queue.contains { $0.file.absoluteURL == track(7) },
@@ -59,11 +60,11 @@ struct BreakItQueueRecordTests {
         let player = try await world.launch()
         player.vm.playNow((0 ..< 3).map(audioFile), startAt: 0)
         try await playing(player)
-        // t2 (id 3) leaves the library and a new song takes id 3; t0 (id 1) really moves — the witness that
-        // the queue re-read the library.
+        // t2 (id 3) leaves the library and a new song arrives (SQLite would give it id 3; the store never
+        // reuses one, v12); t0 (id 1) really moves — the witness that the queue re-read the library.
         try await world.store.delete(id: 3)
         let newcomer = try await addSong(7, to: world)
-        try #require(newcomer == 3, "precondition: the new song took the removed song's id")
+        #expect(newcomer > 3, "the new song took the removed song's id (\(newcomer))")
         try await world.store.moveTrack(id: 1, newURL: track(8), newFolderID: nil, newRelativePath: "")
         let library = try #require(player.vm.library)
         library.libraryRevision &+= 1 // a scan or a metadata pass finished
