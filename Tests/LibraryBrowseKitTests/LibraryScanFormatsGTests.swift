@@ -78,14 +78,18 @@ struct LibraryScanFormatsGTests {
     static let formatTable: [String: RealFile] = [
         "flac": .fixture("fixture.flac"),
         "mp3": .fixture("compilation.mp3"),
+        "mpga": .fixture("compilation.mp3"), // MPEG audio's other spelling (public.mp3)
         "m4a": .fixture("fixture.m4a"),
         "ogg": .fixture("compilation.ogg"), // Ogg Vorbis
         "oga": .fixture("compilation.ogg"), // the audio-only Ogg spelling
         "opus": .fixture("compilation.opus"), // Ogg Opus
         "wav": .written(kAudioFormatLinearPCM),
+        "wave": .written(kAudioFormatLinearPCM), // WAV's other spelling
+        "bwf": .written(kAudioFormatLinearPCM), // Broadcast WAV: a WAV with a broadcast chunk
         "aiff": .written(kAudioFormatLinearPCM),
         "aif": .written(kAudioFormatLinearPCM),
         "aac": .written(kAudioFormatMPEG4AAC), // ADTS
+        "adts": .written(kAudioFormatMPEG4AAC), // ADTS, by its own name
         "alac": .written(kAudioFormatAppleLossless), // an Apple Lossless file named for its codec
     ]
 
@@ -106,11 +110,15 @@ struct LibraryScanFormatsGTests {
         return song
     }
 
-    /// 0.1 s of a 44.1 kHz stereo tone, encoded as `formatID`. ALAC is written as `.m4a` and renamed:
-    /// the file type comes from the extension when writing, and Apple opens a file by its content.
+    /// The extension a kind is written under, where the encoder does not take its own: ALAC as `.m4a`, the
+    /// other WAV and ADTS spellings as `.wav` and `.aac` — then renamed. The file type comes from the
+    /// extension when writing, and Apple opens a file by its content.
+    private static let writtenAs: [String: String] = ["alac": "m4a", "wave": "wav", "bwf": "wav", "adts": "aac"]
+
+    /// 0.1 s of a 44.1 kHz stereo tone, encoded as `formatID` (`writtenAs` the extension it takes).
     private static func write(_ formatID: AudioFormatID, to song: URL) throws {
-        let target = formatID == kAudioFormatAppleLossless
-            ? song.deletingPathExtension().appendingPathExtension("m4a") : song
+        let target = writtenAs[song.pathExtension].map { song.deletingPathExtension().appendingPathExtension($0) }
+            ?? song
         var settings: [String: Any] = [AVFormatIDKey: formatID, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 2]
         if formatID == kAudioFormatLinearPCM {
             settings[AVLinearPCMBitDepthKey] = 16

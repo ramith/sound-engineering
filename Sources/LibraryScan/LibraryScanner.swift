@@ -50,13 +50,17 @@ import LibraryStore
 /// Recursively scans a registered root and reconciles its audio files into the store.
 public struct LibraryScanner: Sendable {
     /// The audio container extensions a scan admits (lowercased) — the SINGLE
-    /// SOURCE OF TRUTH for which files reach the library (design §2). AVAudioFile and
-    /// ExtAudioFile natively open these on macOS, so none needs FFmpeg. "aif" is the spelling
-    /// Music, iTunes and Logic give every AIFF they write (S10.8 G, G-LIB-02); "opus" and "oga"
-    /// are Ogg Opus and Ogg Vorbis, which Apple's decoder opens on macOS 26 (R1.1-A, council
-    /// C-08, KI-LIB-05). The format table test opens a real file of every kind listed here.
+    /// SOURCE OF TRUTH for which files reach the library (design §2), and for what the app opens from
+    /// outside it (`LooseFiles`, Open With: Info.plist claims only the types whose every extension is here).
+    /// AVAudioFile and ExtAudioFile natively open these on macOS, so none needs FFmpeg. "aif" is the spelling
+    /// Music, iTunes and Logic give every AIFF they write (S10.8 G, G-LIB-02); "opus" and "oga" are Ogg Opus
+    /// and Ogg Vorbis, which Apple's decoder opens on macOS 26 (R1.1-A, council C-08, KI-LIB-05); "mpga"
+    /// (MP3), "wave" and "bwf" (WAV; Broadcast WAV) and "adts" (AAC) are the other spellings of the types the
+    /// app claims (R1.1-B fix round, break-it BI-P10). The format table test opens a real file of every kind
+    /// listed here.
     public static let supportedExtensions: Set<String> = [
-        "flac", "mp3", "wav", "aac", "m4a", "alac", "aiff", "aif", "ogg", "oga", "opus",
+        "flac", "mp3", "mpga", "wav", "wave", "bwf", "aac", "adts", "m4a", "alac", "aiff", "aif", "ogg", "oga",
+        "opus",
     ]
 
     /// Rows accumulated before a batch `upsert` (one `BEGIN IMMEDIATE…COMMIT` each).
