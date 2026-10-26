@@ -182,7 +182,7 @@ func allCheckCases() -> [CheckCase] {
         + playlistScanCheckCases()
         + migrationConvergenceCheckCases()
         + albumArtistCheckCases() + albumFixRoundCheckCases() + albumIdentityCheckCases()
-        + storeOpenSafetyCheckCases() + rebindCheckCases()
+        + storeOpenSafetyCheckCases() + rebindCheckCases() + rebindDriveCheckCases()
         + genreCoverCheckCases()
         + queueStateCheckCases() + trackIDCheckCases()
 }

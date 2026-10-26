@@ -93,24 +93,26 @@ struct MusicFoldersSection: View {
     }
 
     private func rootRow(_ root: LibraryFolder) -> some View {
-        let status = MusicFolderStatus(isScanning: model.scanningRootID == root.id,
+        let status = MusicFolderStatus(isCheckingDrive: library.checkingDriveFolderIDs.contains(root.id),
+                                       isScanning: model.scanningRootID == root.id,
                                        pausedBy: library.reconcileState[root.id]?.pauseReason)
         return VStack(alignment: .leading, spacing: 0) {
             folderLine(root, status: status)
-            if status?.offersUseThisDrive == true {
-                useThisDrive(root)
+            if status?.showsUseThisDrive == true {
+                useThisDrive(root, checking: status == .checkingDrive)
             }
         }
     }
 
     /// "Use This Drive…" under a folder whose drive is gone, replaced or unconfirmed (R1.1-B, LIB-VOL-1):
-    /// point it at the folder on the drive that holds its songs now. Its own VoiceOver element, a button
-    /// named for its folder; indented to the path's start.
-    private func useThisDrive(_ root: LibraryFolder) -> some View {
+    /// point it at the folder on the drive that holds its songs now. Dimmed while the drive chosen is
+    /// checked. Its own VoiceOver element, a button named for its folder; indented to the path's start.
+    private func useThisDrive(_ root: LibraryFolder, checking: Bool) -> some View {
         Button("Use This Drive…") { rebindTarget = root }
+            .disabled(checking)
             .buttonStyle(.plain)
             .font(DesignSystem.Font.caption.weight(.semibold))
-            .foregroundStyle(DesignSystem.Color.accentText)
+            .foregroundStyle(checking ? DesignSystem.Color.labelTertiary : DesignSystem.Color.accentText)
             .padding(.leading, useThisDriveIndent)
             .padding(.bottom, DesignSystem.Spacing.xSmall)
             .help("Choose this folder on the drive that holds its songs now")
@@ -152,6 +154,7 @@ struct MusicFoldersSection: View {
             } label: {
                 Image(systemName: "minus.circle")
             }
+            .disabled(status == .checkingDrive) // the rebind in flight owns the folder until it is done
             .buttonStyle(.borderless)
             .foregroundStyle(DesignSystem.Color.labelSecondary)
             .help("Remove from Library")

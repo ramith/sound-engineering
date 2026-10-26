@@ -72,4 +72,31 @@ struct MusicFolderStatusTests {
             == "That’s not the drive for “Music” — none of its songs are on it. Nothing was changed.")
         #expect(MusicFolderStatus.rebindMessage(.refused(.notAFolder), folderName: "Music") == nil)
     }
+
+    /// R1.1-B fix round (review N4): a folder whose identity can't be read is its own refusal, never "That's
+    /// not the drive"; the folders of the same drive that moved along are said after the one chosen.
+    @Test("an unreadable folder is said as such; the folders that moved along are said after the one chosen")
+    func rebindMessagesUnreadableAndAlong() {
+        #expect(MusicFolderStatus.rebindMessage(.refused(.unreadableFolder), folderName: "Music")
+            == "That folder can’t be read — is its drive connected? Nothing was changed.")
+        let jazz = MusicFolderStatus.MovedAlong(folderName: "Jazz", kept: 80, removed: 0)
+        #expect(MusicFolderStatus.rebindMessage(.rebound(kept: 12, removed: 0), folderName: "Rock", movedAlong: [jazz])
+            == "“Rock” now uses this drive — all 12 songs found. “Jazz” moved with it — all 80 songs found.")
+        let more = [jazz, .init(folderName: "Folk", kept: 20, removed: 2)]
+        #expect(MusicFolderStatus.rebindMessage(.rebound(kept: 12, removed: 1), folderName: "Rock", movedAlong: more)
+            == "“Rock” now uses this drive — 12 songs found; 1 that isn’t on it was removed. 2 more of its drive’s "
+            + "folders moved with it — 100 songs found; 2 that aren’t on it were removed.")
+    }
+
+    /// R1.1-B fix round (review N4): while "Use This Drive…" checks the drive chosen, the row says so, wins the
+    /// caption slot, and holds "Use This Drive…" dimmed — never offered a second time.
+    @Test("a drive being checked wins the caption slot and holds “Use This Drive…”")
+    func checkingDrive() throws {
+        let status = try #require(MusicFolderStatus(isCheckingDrive: true, isScanning: true, pausedBy: .rootVanished))
+        #expect(status == .checkingDrive)
+        #expect(status.caption == "Checking the drive…")
+        #expect(!status.offersUseThisDrive)
+        #expect(status.showsUseThisDrive)
+        #expect(!status.isPaused)
+    }
 }

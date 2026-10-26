@@ -49,6 +49,9 @@ public extension LibraryStore {
     private static let selectRootVolumeSQL = "SELECT volume_uuid FROM folders WHERE id = ?;"
     /// Re-stamp a root's on-disk `(dev, inode)` identity and its bound drive, by folder id.
     private static let restampRootSQL = "UPDATE folders SET dev = ?, inode = ?, volume_uuid = ? WHERE id = ?;"
+    /// The roots bound to a drive, path-ordered.
+    private static let selectRootsOnVolumeSQL =
+        "SELECT id, path FROM folders WHERE is_root = 1 AND volume_uuid = ? ORDER BY path, id;"
     /// A page of a folder's song urls, in id order after an id.
     private static let selectTrackURLPageSQL =
         "SELECT id, url FROM tracks WHERE folder_id = ? AND id > ? ORDER BY id LIMIT ?;"
@@ -56,6 +59,14 @@ public extension LibraryStore {
     /// The drive root `folderID` is bound to — nil while it is unbound (or is not a row).
     func boundVolume(ofRoot folderID: Int64) async throws -> String? {
         try await dbWriter.read { db in try Self.boundVolume(db, ofRoot: folderID) ?? nil }
+    }
+
+    /// The music folders bound to the drive `volume`, path-ordered — the folders "Use this drive" can move
+    /// along with one of them (`RootRebinder.location(of:movedFrom:to:)`).
+    func roots(onVolume volume: String) async throws -> [LibraryFolder] {
+        try await dbWriter.read { db in
+            try LibraryFolder.fetchAll(db, sql: Self.selectRootsOnVolumeSQL, arguments: [volume])
+        }
     }
 
     /// Re-stamp root `folderID` from what is at its path, after a walk that confirmed it is the root's

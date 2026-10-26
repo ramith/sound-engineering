@@ -224,17 +224,21 @@ func checkRebindRefusedWhenNoneFound(number: Int, url: URL) async -> Bool {
             try ScanFixtureBuilder.overwriteFile(at: retagged.appendingPathComponent(path), byteCount: 300)
         }
         let gone = library.base.appendingPathComponent("Unplugged/Music")
-        for newRoot in [empty, retagged, gone] {
+        let cases: [(URL, RebindRefusal)] = [
+            (empty, .noSongsFound), (retagged, .noSongsFound), (gone, .unreadableFolder),
+        ]
+        for (newRoot, refusal) in cases {
             let outcome = try await library.rebinder(at: newRoot).rebind(folderID: library.folderID, to: newRoot,
                                                                          in: library.store)
-            guard outcome == .refused(.noSongsFound), try rebindState(at: url) == before else {
-                printFail(number, "RB-2: \(newRoot.lastPathComponent) was not refused, or something was written: "
-                    + "\(outcome)"); return false
+            guard outcome == .refused(refusal), try rebindState(at: url) == before else {
+                printFail(number, "RB-2: \(newRoot.lastPathComponent) was not refused as \(refusal), or something "
+                    + "was written: \(outcome)"); return false
             }
         }
         printPass(number, "RB-2 refused with nothing written — the wrong drive: a drive holding none of the "
-            + "folder's songs, one whose copies were all re-tagged (another size), and a folder that is not there "
-            + "leave every folder, song, user datum, playlist entry and index row as it was")
+            + "folder's songs and one whose copies were all re-tagged (another size); and a folder that is not there "
+            + "is refused as unreadable, never as the wrong drive — each leaves every folder, song, user datum, "
+            + "playlist entry and index row as it was")
         return true
     } catch {
         printFail(number, "RB-2 threw: \(error)"); return false
@@ -274,7 +278,8 @@ func checkRebindSamePathAndShapes(number: Int, url: URL) async -> Bool {
         guard try await sameDriveNameKeepsEveryID(number: number, url: url),
               try await nfdNamesAndLooseDuplicate(number: number, url: url) else { return false }
         printPass(number, "RB-4 the same path on a new drive keeps every id; a folder row below the music folder "
-            + "moves with it; an untagged album regroups under the new path with its songs and their user data; "
+            + "never moves with it (and refuses a rebind it overlaps); an untagged album regroups under the new path "
+            + "with its songs and their user data; "
             + "songs stored NFC are found where the drive spells names NFD; a loose duplicate merges into the "
             + "found song, its playlist entry and plays carried over")
         return true
@@ -283,8 +288,9 @@ func checkRebindSamePathAndShapes(number: Int, url: URL) async -> Bool {
     }
 }
 
-/// The same path, another drive (`.differentVolume`): every id kept, a folder row below moved, the untagged
-/// albums regrouped under their (unchanged) folder with every song.
+/// The same path, another drive (`.differentVolume`): every id kept, the untagged albums regrouped under
+/// their (unchanged) folder with every song. A folder row below the music folder (no app writes one; a
+/// legacy nested root) is another folder: never re-pathed by the rebind, and a location it overlaps refused.
 private func sameDriveNameKeepsEveryID(number: Int, url: URL) async throws -> Bool {
     let library = try await RebindLibrary.make("rb4a", at: url, count: 8)
     let albumsBefore = try await library.store.albums(sortedBy: .title).map { "\($0.title):\($0.trackCount)" }
@@ -296,22 +302,25 @@ private func sameDriveNameKeepsEveryID(number: Int, url: URL) async throws -> Bo
         printFail(number, "RB-4: the same path on a new drive did not keep every song and album: \(outcome)")
         return false
     }
-    // At a new mount path: the folder row below moves, the untagged albums re-key with all their songs.
+    // A folder row below: the same path overlaps it (refused, nothing written); at a new mount path it stays
+    // where it was, and the untagged albums re-key with all their songs.
     let library2 = try await RebindLibrary.make("rb4b", at: url.appendingPathExtension("b"), count: 8)
-    let below2 = try await library2.store.seedFolderRow(
-        path: library2.oldRoot.appendingPathComponent("Album 1").path, isRoot: false
-    )
+    let belowPath = PathNormalizer.normalizedString(for: library2.oldRoot.appendingPathComponent("Album 1"))
+    let below2 = try await library2.store.seedFolderRow(path: belowPath, isRoot: false)
+    let samePath = try await library2.rebinder(at: library2.oldRoot).rebind(folderID: library2.folderID,
+                                                                            to: library2.oldRoot, in: library2.store)
     let newRoot = try library2.copy(to: "T7 1")
     let users = try await library2.ids.asyncMap { try await library2.store.userState(trackID: $0) }
     _ = try await library2.rebinder(at: newRoot).rebind(folderID: library2.folderID, to: newRoot, in: library2.store)
-    let moved = try await DatabaseQueue(path: url.appendingPathExtension("b").path).read { db in
+    let stayed = try await DatabaseQueue(path: url.appendingPathExtension("b").path).read { db in
         try String.fetchOne(db, sql: "SELECT path FROM folders WHERE id = ?;", arguments: [below2])
     }
     let albums = try await library2.store.albums(sortedBy: .title)
     let usersAfter = try await library2.ids.asyncMap { try await library2.store.userState(trackID: $0) }
-    guard moved == PathNormalizer.normalizedString(for: newRoot.appendingPathComponent("Album 1")),
+    guard samePath == .refused(.overlapsFolder(id: below2)), stayed == belowPath,
           albums.map(\.trackCount) == [4, 4], usersAfter == users else {
-        printFail(number, "RB-4: a folder row below did not move, or the untagged albums lost songs or user data")
+        printFail(number, "RB-4: a folder row below was re-pathed or did not refuse the location it overlaps "
+            + "(\(samePath)), or the untagged albums lost songs or user data")
         return false
     }
     return true
