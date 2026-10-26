@@ -58,6 +58,10 @@ Lane 3 is one lane again: with the Pure loan deferred, the plan check's 3a / 3b 
 
 *(filled as lanes land: the measurement named by each acceptance line, as a number)*
 
+- **Mono on the founder's XM4 (live, 2026-10-26):** a 44.1 kHz mono file opened in the sprint build plays in **both ears, centred** — the offline render's left-only result (design verify, F8) does not happen on the real device. Mono keeps today's format; the design's +3.01 LU mono correction stands.
+- **The live keyboard pass (10k test library, Full Keyboard Access on):** ⌘F from all five shell tabs lands in the Search page's field; ⌥⌘F in Songs / Albums / Artists / Genres keeps the category and focuses its own filter; "ada" shows results 0.74 s after typing starts, "ada lau" 0.43 s; idle CPU 0.7 %. A single CJK ideograph is below the 2-character gate and shows nothing — fixed in the fix round.
+- **The combined check (T3) on the player half:** 29/29, exit 0 (1,035 Swift tests, 245 C++ null tests, the main-thread stall check, VerifyLibraryStore 176/176).
+
 ## Done-done
 
 ```
