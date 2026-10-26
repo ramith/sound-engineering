@@ -116,38 +116,48 @@ public struct ShufflePass<Slot: Hashable & Sendable>: Sendable, Equatable {
             return
         }
         remove { $0 == slot }
-        insert(slot, at: cursor + 1)
+        insert([slot], at: cursor + 1)
         position += 1
     }
 
     // MARK: - Edits
 
     /// Play Next: `slots` play right after the song playing, in order, and count as played in this pass
-    /// (R1.1-B §6 shuffle 6). A slot the pass already holds moves there.
+    /// (R1.1-B §6 shuffle 6). A slot the pass already holds moves there. One splice, however many (review S3).
     public mutating func insertNext(_ slots: [Slot]) {
         let moving = Set(slots)
         remove { moving.contains($0) }
-        for (offset, slot) in slots.enumerated() {
-            insert(slot, at: cursor + 1 + offset)
-        }
+        insert(slots, at: cursor + 1)
     }
 
     /// The queue now holds `slots`. A slot it no longer holds leaves both orders (Previous skips it). A slot
     /// the pass doesn't hold yet goes to a random place in this pass after the song armed next — so it plays
     /// once in this pass, and the armed pick stands (council C-17). Played next only when nothing is left
     /// after the song playing.
+    ///
+    /// The added slots are placed as if they came one at a time, in `slots`' order, each into the pass as the
+    /// one before it left it — every place drawn first, the same draws — and the line is then built once: a
+    /// 20,000-song Add to Queue costs one pass over the queue, not a shift of it per song (review S3).
     public mutating func follow(_ slots: [Slot]) {
         let queued = Set(slots)
-        if history.contains(where: { !queued.contains($0) }) || permutation.contains(where: { !queued.contains($0) }) {
-            remove { !queued.contains($0) }
-        }
+        remove { !queued.contains($0) }
         let held = Set(history).union(permutation)
+        let added = slots.filter { !held.contains($0) }
+        guard !added.isEmpty else { return }
+        // Each place is an offset from `start`, where the first added slot may go; the songs at and before the
+        // one armed next stay where they are (none moves: every place is after the song playing).
+        let start = min(max(cursor + 2, history.count), count)
         var generator = ShuffleGenerator(state: seed)
-        for slot in slots where !held.contains(slot) {
-            let earliest = min(max(cursor + 2, history.count), count)
-            insert(slot, at: earliest + generator.below(count - earliest + 1))
+        let offsets = added.indices.map { order in
+            let length = count + order // the line as the slots added before this one left it
+            let earliest = min(max(cursor + 2, history.count), length)
+            return earliest - start + generator.below(length - earliest + 1)
         }
         seed = generator.state
+        let tail = start - history.count
+        let line = LineInterleave.interleaved(permutation[tail...], inserting: added, at: offsets)
+        ShufflePassTally.current?.add(line.count)
+        permutation.replaceSubrange(tail..., with: line)
     }
 
     /// The same pass over other identities — the stored record's row indices, the restored queue's slots. A
@@ -191,22 +201,26 @@ public struct ShufflePass<Slot: Hashable & Sendable>: Sendable, Equatable {
         cursor > 0 && (position != 0 || repeatMode == 1)
     }
 
-    /// Put `slot` at `index` on the line: in the last pass when the index is inside it, else in this pass.
-    /// The song playing stays the song playing.
-    private mutating func insert(_ slot: Slot, at index: Int) {
+    /// Put `slots` at `index` on the line, in order, in one splice: in the last pass when the index is inside
+    /// it, else in this pass. The song playing stays the song playing.
+    private mutating func insert(_ slots: [Slot], at index: Int) {
         let playing = cursor
+        ShufflePassTally.current?.add(count - index + slots.count)
         if index < history.count {
-            history.insert(slot, at: index)
+            history.insert(contentsOf: slots, at: index)
         } else {
-            permutation.insert(slot, at: index - history.count)
+            permutation.insert(contentsOf: slots, at: index - history.count)
         }
-        position = (index <= playing ? playing + 1 : playing) - history.count
+        position = (index <= playing ? playing + slots.count : playing) - history.count
     }
 
     /// Take every slot `isGone` names off the line. The song playing stays the song playing; when it goes
-    /// itself, the line stands just after the song before it, so the song that was next is still next.
+    /// itself, the line stands just after the song before it, so the song that was next is still next. The
+    /// line is rebuilt only when a slot goes.
     private mutating func remove(where isGone: (Slot) -> Bool) {
+        guard history.contains(where: isGone) || permutation.contains(where: isGone) else { return }
         let playing = cursor
+        ShufflePassTally.current?.add(count)
         var removedUpToCursor = 0
         func kept(_ slots: [Slot], from start: Int) -> [Slot] {
             var kept: [Slot] = []
