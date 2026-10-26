@@ -94,6 +94,27 @@ struct BreakItQueueRecordTests {
                 Comment(rawValue: "the launch join doubled t2 (the two orders were meant to end in the same queue): "
                     + "\(player.vm.queue.map(\.file.name))"))
     }
+
+    @Test("BI-P03b: no song selected in the stored queue — a file opened before the restore lands as it would after")
+    func openedBeforeARestoreWithoutSelectionLandsAsAfter() async throws {
+        let world = try await QueueStateWorld(songs: 3)
+        defer { world.discard() }
+        let earlier = try await world.launch()
+        earlier.vm.appendToQueue([audioFile(0), audioFile(1)]) // queued, nothing selected
+        try await earlier.vm.settled()
+        _ = try await world.stored(after: earlier)
+
+        let player = try await FakePlayer.launched(tracks: 0)
+        player.vm.playTrackNextNow(audioFile(2)) // Open With at launch, before the store is ready
+        try await playing(player)
+        world.attach(player.vm)
+        player.vm.hydrateQueueOnLaunch()
+        try await player.vm.settled()
+        // Opened AFTER the restore, nothing is selected, so `playTrackNextNow` puts t2 first: t2, t0, t1.
+        #expect(player.vm.queue.map(\.file.name) == ["t2", "t0", "t1"],
+                Comment(rawValue: "the launch join put the opened file at the end, opening after the restore puts "
+                    + "it first: \(player.vm.queue.map(\.file.name))"))
+    }
 }
 
 @MainActor
