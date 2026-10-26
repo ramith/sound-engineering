@@ -62,9 +62,9 @@ struct SearchEpochTests {
     }
 }
 
-// MARK: - SearchQueryGate (≥2-char trimmed gate)
+// MARK: - SearchQueryGate (the one search gate: 2 characters, or 1 syllable)
 
-@Suite("SearchQueryGate — ≥2-char trimmed gate")
+@Suite("SearchQueryGate — the one search gate (2 characters, or 1 syllable)")
 struct SearchQueryGateTests {
     @Test("below 2 trimmed chars does NOT query (restore full list)")
     func belowGate() {
@@ -79,5 +79,24 @@ struct SearchQueryGateTests {
         #expect(SearchQueryGate.shouldQuery("ab"))
         #expect(SearchQueryGate.shouldQuery("   ab   ")) // trims to 2
         #expect(SearchQueryGate.shouldQuery("!!!")) // 3 chars: gate is length-only; the DAO returns []
+    }
+
+    /// R1.1-B fix round (break-it BI-P09, the coordinator's live finding): one character that is a syllable
+    /// or a word in itself is a query; one Latin, Greek or Cyrillic letter, or a digit, is not.
+    @Test("one character: a syllable is past the gate — an ideograph, kana, a Hangul syllable, a Brahmic syllable",
+          arguments: ["東", "あ", "ア", "한", "මා", "ම", "क", "ก", " 東 "])
+    func oneSyllable(query: String) {
+        #expect(SearchQueryGate.shouldQuery(query), "“\(query)”")
+    }
+
+    @Test("one character that is no syllable stays below the gate — a letter, a digit, a sign",
+          arguments: ["a", "B", "1", "é", "λ", "Ж", "١", "!", "ー", "ㅎ", "\u{0DCF}"])
+    func oneLetterBelow(query: String) {
+        #expect(!SearchQueryGate.shouldQuery(query), "“\(query)”")
+    }
+
+    @Test("a decomposed Hangul syllable is one syllable, as its composed form")
+    func decomposedHangul() {
+        #expect(SearchQueryGate.shouldQuery("\u{1112}\u{1161}\u{11AB}")) // 한, written as its jamo
     }
 }

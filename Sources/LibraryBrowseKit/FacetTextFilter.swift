@@ -10,8 +10,9 @@ import LibraryStore
 /// a Latin letter's accents don't count ("beyonce" matches "Beyoncé", the S10.7 §5 queue-filter
 /// contract); every other script's marks do ("මාල" never matches "මිල"; council C-61 / P5A-04) — the same
 /// words the Songs search index reads, so one filter finds the same items in every tab. Each tab keeps its
-/// own sort: the filter only narrows. An empty or whitespace-only filter matches everything (filter off);
-/// one with no word in it (only punctuation) matches nothing, as Songs finds nothing for it.
+/// own sort: the filter only narrows. A filter below the one search gate (`SearchQueryGate`: empty, or one
+/// character that is not a syllable — "b") matches everything (filter off), as the Songs search does; one with
+/// no word in it (only punctuation) matches nothing, as Songs finds nothing for it.
 public enum FacetTextFilter {
     public static func matches(_ candidates: [String], query: String) -> Bool {
         guard isActive(query) else { return true }
@@ -33,13 +34,10 @@ public enum FacetTextFilter {
         return items.filter { compiled.matches(candidates($0)) }
     }
 
-    /// Whether `query` narrows anything: false for an empty or whitespace-only filter, which
-    /// matches everything — so a card header's count line reads "N albums", not "N results".
+    /// Whether `query` narrows anything: past the one search gate (`SearchQueryGate`) — the same gate as the
+    /// Songs search and ⌘F, so one query finds the same items in every tab. Below it the filter matches
+    /// everything — so a card header's count line reads "N albums", not "N results".
     public static func isActive(_ query: String) -> Bool {
-        !normalized(query).isEmpty
-    }
-
-    private static func normalized(_ query: String) -> String {
-        query.trimmingCharacters(in: .whitespacesAndNewlines)
+        SearchQueryGate.shouldQuery(query)
     }
 }

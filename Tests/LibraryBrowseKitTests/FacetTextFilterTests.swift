@@ -53,12 +53,14 @@ struct FacetTextFilterTests {
         #expect(FacetTextFilter.matches("Jazz", query: "  jazz  "))
     }
 
-    @Test("a filter is active only when it narrows: text beyond whitespace")
+    @Test("a filter is active only past the one search gate — as the Songs search and ⌘F (BI-P09)")
     func isActive() {
         #expect(!FacetTextFilter.isActive(""))
         #expect(!FacetTextFilter.isActive("  \n"))
         #expect(FacetTextFilter.isActive("ja"))
-        #expect(FacetTextFilter.isActive(" j "))
+        #expect(!FacetTextFilter.isActive(" j ")) // one letter: every tab shows everything
+        #expect(FacetTextFilter.isActive("東")) // one ideograph is a word
+        #expect(FacetTextFilter.filter(["Jazz", "Blues"], query: "j") { [$0] } == ["Jazz", "Blues"])
     }
 
     @Test("diacritic-insensitive (S10.7 §5 queue-filter contract)")
