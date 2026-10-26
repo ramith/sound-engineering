@@ -220,17 +220,18 @@ public extension LibraryStore {
     }
 
     /// The music folder a new location at `newPath` would overlap: one at the same path, one it is inside,
-    /// one inside it — or the same directory, by its `(dev, inode)`, on the SAME drive (st_dev numbers are
-    /// handed out again after an unmount, so a gone drive's stored pair may name a directory on another
-    /// drive now: break-it BI-P06). Never `excluding` itself. A folder row below the folder's OLD path is
-    /// another folder like any other: it does not move with it, and refuses a new location that overlaps it.
+    /// one inside it — or the same directory, by its `(dev, inode)`, on the SAME drive or one not yet bound
+    /// to a drive, as `addRoot` dedups (st_dev numbers are handed out again after an unmount, so a gone
+    /// drive's stored pair may name a directory on another drive now: break-it BI-P06). Never `excluding`
+    /// itself. A folder row below the folder's OLD path is another folder like any other: it does not move
+    /// with it, and refuses a new location that overlaps it.
     private static func folderOverlapping(_ db: Database, newPath: String, identity: RootIdentity,
                                           excluding folderID: Int64) throws -> Int64? {
         for row in try Row.fetchAll(db, sql: selectOtherFoldersSQL, arguments: [folderID]) {
             let path: String = row[1]
             let volume: String? = row[4]
             let sameDirectory = identity.dev != nil && identity.inode != nil
-                && identity.volume != nil && volume == identity.volume
+                && (volume == nil || volume == identity.volume)
                 && row[2] as Int64? == identity.dev && row[3] as Int64? == identity.inode
             if path == newPath || sameDirectory
                 || PathNormalizer.isComponentBoundaryDescendant(newPath, of: path)
