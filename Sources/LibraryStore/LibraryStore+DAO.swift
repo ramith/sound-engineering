@@ -66,12 +66,13 @@ public extension LibraryStore {
     /// fires ONLY when a content field differs (idempotency); `last_seen_scan` is bound on insert
     /// and otherwise left to `stampLastSeen`, its one writer for a seen row (it never lowers it).
     /// dev + inode are the move-signature — bound on insert AND set on the conflict UPDATE, but
-    /// DELIBERATELY absent from the no-bump WHERE predicate.
+    /// DELIBERATELY absent from the no-bump WHERE predicate. A new row takes the next id above every id
+    /// ever used (`Schema.nextTrackIDExpression`, v12): a removed song's id is never handed to another.
     private static let upsertTrackSQL = """
     INSERT INTO tracks(
-        url, folder_id, relative_path, name, format,
+        id, url, folder_id, relative_path, name, format,
         file_size, mtime, inode, dev, date_added, last_seen_scan)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (\(Schema.nextTrackIDExpression), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(url) DO UPDATE SET
         folder_id = excluded.folder_id,
         relative_path = excluded.relative_path,
