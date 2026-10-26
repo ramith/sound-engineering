@@ -12,6 +12,9 @@ import LibraryStore
 
 /// The status line of one Music Folders row.
 public enum MusicFolderStatus: Equatable, Sendable {
+    /// "Use This Drive…" is looking for the folder's songs on the drive chosen (R1.1-B, LIB-VOL-1): the row
+    /// waits — a 20,000-song folder on a USB disk takes seconds — and offers nothing meanwhile.
+    case checkingDrive
     /// A walk of the folder is running now (an add's scan).
     case scanning
     /// The folder is paused: its last walk was refused, for this reason.
@@ -20,10 +23,13 @@ public enum MusicFolderStatus: Equatable, Sendable {
     /// The paused row's tooltip: what the pause means for the folder's songs.
     public static let pausedHelp = "Its songs stay in your library and playlists, and come back when it’s back."
 
-    /// The row's status, or nil for a folder with nothing to say. A running scan wins the slot: it is
-    /// the newer fact (a walk that is evidence ends the pause).
-    public init?(isScanning: Bool, pausedBy reason: SweepRefusal.Reason?) {
-        if isScanning {
+    /// The row's status, or nil for a folder with nothing to say. A drive being checked wins the slot (the
+    /// user is waiting on it), then a running scan: it is the newer fact (a walk that is evidence ends the
+    /// pause).
+    public init?(isCheckingDrive: Bool = false, isScanning: Bool, pausedBy reason: SweepRefusal.Reason?) {
+        if isCheckingDrive {
+            self = .checkingDrive
+        } else if isScanning {
             self = .scanning
         } else if let reason {
             self = .paused(reason)
@@ -35,6 +41,7 @@ public enum MusicFolderStatus: Equatable, Sendable {
     /// The caption line under the folder's path.
     public var caption: String {
         switch self {
+        case .checkingDrive: "Checking the drive…"
         case .scanning: "Scanning…"
         case let .paused(reason): Self.caption(for: reason)
         }
@@ -47,24 +54,48 @@ public enum MusicFolderStatus: Equatable, Sendable {
     public var offersUseThisDrive: Bool {
         switch self {
         case .paused(.rootVanished), .paused(.differentVolume), .paused(.unrecognizedFolder): true
-        case .paused(.incompleteWalk), .paused(.emptyWalk), .scanning: false
+        case .paused(.incompleteWalk), .paused(.emptyWalk), .scanning, .checkingDrive: false
         }
     }
 
-    /// The words the app says after "Use This Drive…": what the rebind kept and removed, or why it did
-    /// nothing. nil for a refusal the app does not say (a folder removed meanwhile).
-    public static func rebindMessage(_ outcome: RebindOutcome, folderName: String) -> String? {
+    /// Whether the row shows "Use This Drive…" — offered, or held (dimmed, with the row's Remove) while the
+    /// drive chosen is checked, so a second choice cannot start a second rebind.
+    public var showsUseThisDrive: Bool {
+        offersUseThisDrive || self == .checkingDrive
+    }
+
+    /// A paused folder of the same drive that "Use This Drive…" moved along with the one chosen (plan check
+    /// §6, "Use this drive" (10)): its name, and what its rebind kept and removed.
+    public struct MovedAlong: Equatable, Sendable {
+        public let folderName: String
+        public let kept: Int
+        public let removed: Int
+
+        public init(folderName: String, kept: Int, removed: Int) {
+            self.folderName = folderName
+            self.kept = kept
+            self.removed = removed
+        }
+    }
+
+    /// The words the app says after "Use This Drive…": what the rebind kept and removed — and what the
+    /// folders of the same drive that moved along with it kept and removed — or why it did nothing. nil for
+    /// a refusal the app does not say (a folder removed meanwhile).
+    public static func rebindMessage(_ outcome: RebindOutcome, folderName: String,
+                                     movedAlong: [MovedAlong] = []) -> String? {
         switch outcome {
         case let .rebound(kept, removed):
-            guard removed > 0 else {
-                let all = kept == 1 ? "its song" : "all \(kept.formatted()) songs"
-                return "“\(folderName)” now uses this drive — \(all) found."
-            }
-            let found = kept == 1 ? "1 song" : "\(kept.formatted()) songs"
-            let gone = removed == 1 ? "1 that isn’t on it was" : "\(removed.formatted()) that aren’t on it were"
-            return "“\(folderName)” now uses this drive — \(found) found; \(gone) removed."
+            let chosen = "“\(folderName)” now uses this drive — \(foundPhrase(kept: kept, removed: removed))."
+            guard let first = movedAlong.first else { return chosen }
+            let kept = movedAlong.reduce(0) { $0 + $1.kept }
+            let removed = movedAlong.reduce(0) { $0 + $1.removed }
+            let along = movedAlong.count == 1 ? "“\(first.folderName)”"
+                : "\(movedAlong.count.formatted()) more of its drive’s folders"
+            return chosen + " \(along) moved with it — \(foundPhrase(kept: kept, removed: removed))."
         case .refused(.noSongsFound):
             return "That’s not the drive for “\(folderName)” — none of its songs are on it. Nothing was changed."
+        case .refused(.unreadableFolder):
+            return "That folder can’t be read — is its drive connected? Nothing was changed."
         case .refused(.overlapsFolder):
             return "That folder is already in your library, or inside or around one that is. Nothing was changed."
         case .refused(.songsChanged):
@@ -72,6 +103,16 @@ public enum MusicFolderStatus: Equatable, Sendable {
         case .refused(.notAFolder):
             return nil
         }
+    }
+
+    /// "all 1,234 songs found", "its song found", or "8 songs found; 2 that aren’t on it were removed".
+    private static func foundPhrase(kept: Int, removed: Int) -> String {
+        guard removed > 0 else {
+            return kept == 1 ? "its song found" : "all \(kept.formatted()) songs found"
+        }
+        let found = kept == 1 ? "1 song" : "\(kept.formatted()) songs"
+        let gone = removed == 1 ? "1 that isn’t on it was" : "\(removed.formatted()) that aren’t on it were"
+        return "\(found) found; \(gone) removed"
     }
 
     /// Whether the row wears the paused look: the folder-with-a-question-mark glyph and the tooltip.

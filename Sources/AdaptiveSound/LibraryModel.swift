@@ -118,6 +118,10 @@ final class LibraryModel {
     var lastReconcileError: String?
     /// Per-root live state (watching / on-demand-only / paused / catching-up).
     var reconcileState: [Int64: ReconcileState] = [:]
+    /// The music folders "Use This Drive…" is checking now (R1.1-B, LIB-VOL-1): the one chosen and the paused
+    /// folders of its drive moving along with it. Each row says "Checking the drive…" and offers nothing else
+    /// until the check is done (`useDrive`).
+    var checkingDriveFolderIDs: Set<Int64> = []
     /// NSWorkspace mount/unmount observer tokens (removed in `shutdown()`).
     var volumeMonitorTokens: [any NSObjectProtocol] = []
 

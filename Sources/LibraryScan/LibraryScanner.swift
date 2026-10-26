@@ -359,6 +359,22 @@ public struct LibraryScanner: Sendable {
         return scanned
     }
 
+    /// Whether a walk goes into `directory`, a folder below its root: a real folder — not a link — that the
+    /// enumerator's options (`.skipsHiddenFiles`, `.skipsPackageDescendants`) and the one-drive rule (a
+    /// volume mounted inside the root, `FileSignature.isMountPoint`) let it into. What "Use this drive"
+    /// counts as found must be what this walk will see (`RootRebinder`).
+    static func walkDescends(into directory: URL) -> Bool {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey, .isHiddenKey, .isPackageKey, .isVolumeKey]
+        guard let values = try? directory.resourceValues(forKeys: keys) else { return false }
+        return values.isDirectory == true && values.isSymbolicLink != true && values.isHidden != true
+            && values.isPackage != true && values.isVolume != true
+    }
+
+    /// Whether a walk passes over `url` as hidden (`.skipsHiddenFiles`: a dot-name or the hidden flag).
+    static func isHidden(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isHiddenKey]).isHidden) == true
+    }
+
     /// Admit `fileURL` under `root` — the walk's per-entry decision, which `makeScannedFile` exposes.
     /// The extension is checked first (no I/O). A listed audio file is admitted only when it is there:
     /// its attributes read AND its `lstat` succeeds (prefetched attributes outlive a file, or a drive,
