@@ -26,6 +26,18 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
 
 **Decided as recommended, unless the founder objects:** track analysis persists in a rebuildable derived-data file beside the library (keyed by file identity), never in the library DB; an album's tracks are analysed in the background once any of its tracks is queued; no library-wide sweep this sprint. Album mode before an album is fully analysed: album tags if every track has them, else the track's own gain until the next seam across silence — the level never steps at a continuous seam. A Leveling mode change mid-song applies at once with a short glide. Sinhala zero-width joiners are folded away in the index and the query (one additive index rebuild).
 
+**The sound design — the founder, 2026-10-26** (after the design note `docs/design/level-and-fold/`, its blind three-reviewer panel and the author's one revision; asked as plain-language options; all as recommended):
+
+1. **Album leveling anchors on the album's loudest song** at −18 LUFS (AES77; Tidal; Grimm 2017) — not the album's average. Either anchor can be switched later without re-analysis.
+2. **Auto in shuffle keeps the decided rule:** album level only when the neighbouring song is from the same album; shuffled songs each at their own track level.
+3. **The first play of an unmeasured surround track** plays quieter and clean (up to ~9 dB under its eventual level, the limiter never acting), the badge reading "5.1 → stereo · measuring"; exact from the second play.
+4. **Albums are measured ahead only within the next ~2 hours of the queue** — Play on a genre or artist never becomes a library sweep.
+5. **7.1 → stereo:** the four surrounds at half level each.
+6. **Unknown loudness:** −5 dB for now; revisited once the founder's named files are measured.
+7. **A never-measured song with an EQ on** starts at once; its level settles within the first second, on that first play only.
+
+Still the founder's, by ear: **the LFE include level** (−6 dB per side recommended; full level; +4 dB) — decided by the two-album listen; all three are measured, so no re-analysis. Not this sprint: a ten-minute by-ear Compare match before S14-lite's blind tests.
+
 ## How it runs (revised after the plan check)
 
 At most two agents at once. The player PR comes first.
