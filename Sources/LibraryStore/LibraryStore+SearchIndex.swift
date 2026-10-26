@@ -9,12 +9,15 @@
 // the caller's `Database` and runs INSIDE the caller's write transaction (per-track
 // metadata txn, scan batch, sweep txn) — none opens its own.
 //
-// What the index holds is each field in the search rule's form (`SearchRule.normalized`: NFKC, R1.1-A /
-// council C-61, and the zero-width joiner and non-joiner folded away, R1.1-B): the tokenizer compares
-// code points and does not normalise, so a title stored decomposed (an NFD filename from an older Mac
-// drive or a zip) would never meet what the user types, and a Sinhala conjunct written with its joiner
-// would split in two. The v9 and v11 rebuilds write every row through the same projection and
-// normalisation as a track write, so an upgraded index and a fresh one can't disagree.
+// What the index holds is each field in the search rule's form (`SearchRule.normalized` — form
+// `SearchRule.indexFormVersion`: NFKC, R1.1-A / council C-61; the zero-width joiners, variation selectors and
+// emoji modifiers folded away and stray combining marks dropped, R1.1-B): the tokenizer compares code points
+// and does not normalise, so a title stored decomposed (an NFD filename from an older Mac drive or a zip)
+// would never meet what the user types, and a Sinhala conjunct written with its joiner would split in two.
+// The re-index migrations (v9, v11, v13) write every row through the projection frozen in the migration that
+// introduced it (`Schema.searchProjectionV9`) and the rule's current form — the index is derived data, and
+// the last re-index must leave it in the form the queries use — so an upgraded index and a fresh one can't
+// disagree.
 //
 // HIDDEN PREMISE (guard at S10+): the `artist`/`album`/`genre` FTS columns are
 // DENORMALIZED copies of the facet names, correct today only because those names are
@@ -26,23 +29,10 @@ import Foundation
 import GRDB
 
 extension LibraryStore {
-    /// The searchable-field projection of tracks — `id, title, artist, album, genre` — LEFT-JOINed so a
-    /// track with no artist/genre still resolves; `title` falls back to the filename `name`, genres
-    /// are space-joined. The album text is the song's own album title (`tracks.album_title`, v7): an
-    /// album row's title IS its songs' album title (S10.8 C2) — and a metadata pass, which leaves album
-    /// assignment to its end-of-pass regroup (C2 fix round B2), still indexes the album text at the
-    /// song's own write.
-    private static let searchRowsSelect = """
-    SELECT t.id,
-           COALESCE(NULLIF(t.title, ''), t.name),
-           COALESCE(ar.name, ''),
-           COALESCE(t.album_title, ''),
-           COALESCE((SELECT group_concat(g.name, ' ')
-                     FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-                     WHERE tg.track_id = t.id), '')
-    FROM tracks t
-    LEFT JOIN artists ar ON ar.id = t.artist_id
-    """
+    /// The searchable-field projection a track write indexes: the latest re-index migration's frozen one
+    /// (`Schema.searchProjectionV9`). A new projection is a new frozen constant AND a re-index migration
+    /// that writes it — never an edit of the one in use.
+    private static let searchRowsSelect = Schema.searchProjectionV9
 
     /// One track's searchable fields (`searchRowsSelect`, by id).
     private static let searchRowSelect = searchRowsSelect + "\nWHERE t.id = ?;"
@@ -77,11 +67,12 @@ extension LibraryStore {
         }
     }
 
-    /// Rebuild the whole index from `tracks`, every row as `syncSearchRow` writes it — the v9 and v11
-    /// migrations' backfill (`Schema.migrateV8toV9`, `Schema.migrateV10toV11`), inside their transaction.
-    static func rebuildSearchIndex(_ db: Database) throws {
+    /// Rebuild the whole index from `tracks` through `projection` (a re-index migration's frozen one), every
+    /// row in the search rule's current form — the re-index migrations' backfill (`Schema.migrateV8toV9`,
+    /// `migrateV10toV11`, `migrateV12toV13`), inside their transaction.
+    static func rebuildSearchIndex(_ db: Database, projection: String) throws {
         try db.execute(sql: deleteAllSearchRowsSQL)
-        let rows = try Row.fetchCursor(db, sql: searchRowsSelect + ";")
+        let rows = try Row.fetchCursor(db, sql: projection + ";")
         while let row = try rows.next() {
             try insertSearchRow(db, row)
         }

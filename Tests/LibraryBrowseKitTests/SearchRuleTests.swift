@@ -85,6 +85,28 @@ struct SearchRuleTests {
         }
     }
 
+    /// R1.1-B fix round (break-it BI-P08, review "L2, wider"): a combining mark that follows no word character
+    /// is no word, and what only picks a glyph — a variation selector, an emoji skin-tone modifier — folds away.
+    @Test("an emoji's variation selector, a keycap, an enclosing circle, a stray low line: no word of their own")
+    func strayMarksAreNoWord() {
+        #expect(SearchRule.words(of: "\u{2600}\u{FE0F} Summer") == ["summer"])
+        #expect(SearchRule.Query("\u{2764}\u{FE0F}").isEmpty) // ❤️ — no word: finds nothing, never every emoji
+        #expect(SearchRule.words(of: "#\u{FE0F}\u{20E3} Hits") == ["hits"]) // #️⃣ keycap
+        #expect(SearchRule.words(of: "\u{25CB}\u{20DD} Ring") == ["ring"]) // an enclosing circle after a symbol
+        #expect(SearchRule.words(of: "_\u{332} Low") == ["low"]) // combining low line after punctuation
+        #expect(SearchRule.words(of: "\u{20DD}Start") == ["start"]) // a mark at the start
+        #expect(SearchRule.words(of: "\u{1F44D}\u{1F3FD} Thumbs") == ["thumbs"]) // 👍🏽: the modifier folds away
+    }
+
+    @Test("a mark after a word character stays in its word; a keycap digit is still found by its digit")
+    func marksAfterAWordStay() {
+        #expect(SearchRule.words(of: "1\u{FE0F}\u{20E3} Track") == ["1\u{20E3}", "track"]) // 1️⃣
+        #expect(SearchRule.matches(["1\u{FE0F}\u{20E3} Track"], query: "1"))
+        #expect(SearchRule.words(of: "මාල") == SearchRule.words(of: "මාල\u{FE0F}")) // a selector picks no letter
+        #expect(SearchRule.matches(["\u{845B}\u{E0100}飾"], query: "\u{845B}")) // an ideograph's variant
+        #expect(SearchRule.matches(["\u{845B}飾"], query: "\u{845B}\u{E0100}"))
+    }
+
     @Test("type-to-select keeps its own shape: the title's START, folded by the rule")
     func titleStart() {
         #expect(SearchRule.text("The Beatles", startsWith: "the b"))

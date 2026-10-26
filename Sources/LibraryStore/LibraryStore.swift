@@ -309,6 +309,7 @@ public final class LibraryStore: Sendable {
             (Schema.MigrationID.v10, { try Schema.migrateV9toV10($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v11, { try Schema.migrateV10toV11($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v12, { try Schema.migrateV11toV12($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v13, { try Schema.migrateV12toV13($0, appBuild: appBuild, timestamp: $1) }),
         ]
         let versions = steps.map { Schema.MigrationID.version(of: $0.id) ?? 0 }
         assert(versions.last == currentSchemaVersion && zip(versions, versions.dropFirst()).allSatisfy(<),
