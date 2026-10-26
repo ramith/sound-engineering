@@ -12,7 +12,9 @@ import LibraryStore
 /// Typing runs the search through the page's debounce (~120 ms, as the Songs filter): below the one search
 /// gate (`SearchQueryGate` — two characters, or one that is a syllable) nothing is searched or shown; each
 /// edit invalidates any search in flight at once and the newest search wins (`SearchEpoch`); a failed read
-/// keeps the last results. The store reads run off the main actor, and so does the ranking.
+/// keeps the last results. The store reads and the ranking run off the main actor, in the page's task: a
+/// keystroke that supersedes a search cancels it (the read stops before the ranking), so fast typing never
+/// leaves whole-library searches running behind the one the user waits for.
 @MainActor
 @Observable
 final class LibrarySearchModel {
@@ -66,7 +68,7 @@ final class LibrarySearchModel {
     }
 
     /// Search for the current text: the store's lists read and ranked off the main actor, published only
-    /// when no edit and no newer search came since.
+    /// when no edit and no newer search came since. Cancelling the caller's task cancels the search.
     func run() async {
         let read = epoch.beginRead()
         let query = text
@@ -77,9 +79,14 @@ final class LibrarySearchModel {
         }
         guard let store = library.store else { return }
         state = .searching
-        let found = try? await Task.detached(priority: .userInitiated) {
-            try await Self.search(query, in: store)
-        }.value
+        let found: LibrarySearchResults?
+        do {
+            found = try await Self.search(query, in: store)
+        } catch is CancellationError {
+            return // superseded: the newer search publishes
+        } catch {
+            found = nil // a failed read keeps the last results
+        }
         guard epoch.isCurrent(read) else { return }
         if let found {
             results = found
@@ -93,7 +100,10 @@ final class LibrarySearchModel {
         await run()
     }
 
-    /// The results for `query`: the songs the index finds, and every list as its tab lists it.
+    /// The results for `query`: the songs the index finds, and every list as its tab lists it — read and
+    /// ranked off the main actor, in the caller's task, so its cancellation reaches the reads and stops the
+    /// search before the ranking.
+    @concurrent
     private nonisolated static func search(_ query: String, in store: LibraryStore) async throws
         -> LibrarySearchResults {
         async let ids = store.searchMatchingIDs(query)
@@ -106,6 +116,7 @@ final class LibrarySearchModel {
             songs: songs, albums: albums, artists: artists, genres: genres,
             playlists: PlaylistBrowseVisibility.userVisible(playlists)
         )
+        try Task.checkCancellation()
         return LibrarySearch.results(for: query, in: lists)
     }
 }
