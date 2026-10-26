@@ -159,7 +159,10 @@ struct AdaptiveSound: App {
                     .keyboardShortcut("o")
             }
             // Find (⌘F) is the Library's search, from any tab (R1.1-B, US-R1F-14): it replaces the text
-            // Find items — the app has no document text to find in — so one ⌘F means one thing.
+            // Find items — the app has no document text to find in — so one ⌘F means one thing. SwiftUI has
+            // no placement for the Find items alone: `.textEditing` also holds Spelling and Grammar and
+            // Substitutions, which leave the Edit menu with them (review N8; a text field's own context menu
+            // still offers both). Keeping the group beside a "Search Library" ⌘F would list two ⌘F items.
             CommandGroup(replacing: .textEditing) {
                 Button("Search Library") { libraryModel.beginSearch() }
                     .keyboardShortcut("f")
