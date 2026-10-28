@@ -142,19 +142,28 @@ func assertDeviceWidths(
     return true
 }
 
+/// One M2-d case: a source layout on a device of `device` channels, rendered at `expected` channels.
+private struct DeviceWidthCase {
+    let source: AudioChannelLayoutTag
+    let device: AVAudioChannelCount
+    let expected: AVAudioChannelCount
+}
+
 /// Run the M2-d device-width matrix. Returns true only if every case passes.
 func verifyM2d() -> Bool {
-    let cases: [(source: AudioChannelLayoutTag, device: AVAudioChannelCount, expected: AVAudioChannelCount)] = [
-        (kAudioChannelLayoutTag_MPEG_5_1_A, 2, 2), // 5.1 on stereo: folds to 2
-        (kAudioChannelLayoutTag_MPEG_5_1_A, 8, 6), // 5.1 on a 7.1-capable device: M == N
-        (kAudioChannelLayoutTag_Stereo, 2, 2), // stereo on stereo: the unchanged path
-        (kAudioChannelLayoutTag_MPEG_7_1_A, 6, 2), // 7.1 on a 5.1 device: folds to stereo, never keeps six (C1)
-        (kAudioChannelLayoutTag_MPEG_3_0_A, 2, 2), // 3.0 on stereo: plays at 3, folds to 2 (was: a stereo graph)
-        (kAudioChannelLayoutTag_AAC_5_1, 6, 6), // AAC-order 5.1 on a 5.1 device: its own format, M == N
+    let cases = [
+        DeviceWidthCase(source: kAudioChannelLayoutTag_MPEG_5_1_A, device: 2, expected: 2), // 5.1 on stereo: folds
+        DeviceWidthCase(source: kAudioChannelLayoutTag_MPEG_5_1_A, device: 8, expected: 6), // 5.1 on 7.1: M == N
+        DeviceWidthCase(source: kAudioChannelLayoutTag_Stereo, device: 2, expected: 2), // the unchanged stereo path
+        // 7.1 on a 5.1 device: folds to stereo, never keeps the first six (C1).
+        DeviceWidthCase(source: kAudioChannelLayoutTag_MPEG_7_1_A, device: 6, expected: 2),
+        // 3.0 on stereo: plays at 3 and folds to 2 (before F1: a stereo graph).
+        DeviceWidthCase(source: kAudioChannelLayoutTag_MPEG_3_0_A, device: 2, expected: 2),
+        // AAC-order 5.1 on a 5.1 device: its own format, M == N.
+        DeviceWidthCase(source: kAudioChannelLayoutTag_AAC_5_1, device: 6, expected: 6),
     ]
-    for (source, device, expected) in cases
-        where !verifyDeviceWidthResolution(sourceLayout: source, deviceChannels: device,
-                                           expectedDeviceChannels: expected) {
+    for each in cases where !verifyDeviceWidthResolution(sourceLayout: each.source, deviceChannels: each.device,
+                                                         expectedDeviceChannels: each.expected) {
         return false
     }
     return true
