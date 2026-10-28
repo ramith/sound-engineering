@@ -29,8 +29,10 @@ import Synchronization
 /// decision each request carries, the output state, and what the planner made of them. Guarded by its own lock;
 /// any thread.
 final class EngineLevelingState: Sendable {
-    /// The fold's half of a plan, delivered by the spatial unit's owner (lane 2).
-    typealias FoldPlanSink = @Sendable (AsTrackPlan, AsOutputState) -> Void
+    /// The fold's half of a plan, delivered by the spatial unit's owner (lane 2), with why it came — a fresh start
+    /// snaps, a gapless seam glides 10 ms, a mode change 0.15 s, an output change is the protective re-plan — so the
+    /// fold moves exactly as the effects unit does (NI-4).
+    typealias FoldPlanSink = @Sendable (AsTrackPlan, AsOutputState, AsPlanEvent) -> Void
 
     private struct Held {
         var output = AsOutputState.unknownStereo
@@ -92,10 +94,10 @@ extension AudioEngineBridge {
         leveling.setOutputState(state)
     }
 
-    /// Where the fold's half of every plan goes (lane 2: once, where the spatial unit attaches; `nil` to detach).
-    /// The sink runs inside the leveling lock, in the same turn the effects unit gets the same plan, so it must
-    /// only hand the plan on (the spatial unit's snapshot) — never wait, never take `stateLock` for longer than a
-    /// borrow.
+    /// Where the fold's half of every plan goes (lane 2: once, where the spatial unit attaches; `nil` to detach),
+    /// with the plan's event. The sink runs inside the leveling lock, in the same turn the effects unit gets the
+    /// same plan and event, so it must only hand the plan on (the spatial unit's snapshot) — never wait, never take
+    /// `stateLock` for longer than a borrow.
     func setFoldPlanSink(_ sink: EngineLevelingState.FoldPlanSink?) {
         leveling.setFoldPlanSink(sink)
     }
