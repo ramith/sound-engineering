@@ -69,7 +69,7 @@ struct TrackDecodePass {
         var streamed = DecodeStream()
         var fed: AVAudioFramePosition = 0
         while !isCancelled() {
-            switch readChunk() {
+            switch readChunk(after: fed) {
             case .end:
                 return streamed
             case let .error(reason):
@@ -92,9 +92,13 @@ struct TrackDecodePass {
         return streamed
     }
 
-    /// Read the next chunk into `buffer` and feed it to the profiler.
-    private func readChunk() -> DecodeChunk {
-        if file.framePosition >= file.length {
+    /// Read the next chunk (`framesRead` read so far) into `buffer` and feed it to the profiler.
+    ///
+    /// The position is counted here, never asked of the file: `AVAudioFile.framePosition` raises an uncaught
+    /// NSException — fatal to the process — on a file its decoder refuses (a FLAC with blocks under 192 samples:
+    /// the corpus's tiny-block FLAC; PASS-06), even before any read. Its read throws instead, which ends the job.
+    private func readChunk(after framesRead: AVAudioFramePosition) -> DecodeChunk {
+        if framesRead >= file.length {
             return .end // a read AT the end throws rather than returning 0 frames
         }
         do {
