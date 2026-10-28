@@ -224,7 +224,7 @@ extension AudioEngineBridge {
         }
     }
 
-    // MARK: - The effects AU (one value: the graph node + the control plane's AUAudioUnit)
+    // MARK: - The two custom AUs (each one value: the graph node + the control plane's AUAudioUnit)
 
     /// Set (instantiate completion, on `engineQueue`) or clear (teardown, on `engineQueue`) the
     /// effects AU. Its `AUAudioUnit` is read here, off the main thread and before the unit is
@@ -232,19 +232,7 @@ extension AudioEngineBridge {
     /// replaced unit is released here, after every borrow in flight has ended — so the AU's last
     /// release, and its Realizer barrier, never run on the main thread.
     func setEffectsUnit(_ node: AVAudioUnit?) {
-        let value = node.map { EffectsUnit(node: $0, au: $0.auAudioUnit) }
-        let replaced = withStateLock { () -> EffectsUnit? in
-            let old = storedEffectsUnit
-            storedEffectsUnit = value
-            return old
-        }
-        guard let replaced else { return }
-        // No new borrow can find it now (the field changed under the lock); wait out the ones that
-        // did — each is one O(1) C call.
-        while effectsAUBorrows.load(ordering: .acquiring) > 0 {
-            sched_yield()
-        }
-        withExtendedLifetime(replaced) {} // the last reference, released here
+        replaceUnit(\.storedEffectsUnit, with: node, borrows: effectsAUBorrows)
     }
 
     /// The effects AU's graph node, for `engineQueue`'s graph work (connect, tap, detach). nil when
@@ -258,9 +246,50 @@ extension AudioEngineBridge {
     /// lock only for the read. The borrow keeps the AU alive across `body` and is counted, so a
     /// teardown releases the AU only after it (`setEffectsUnit`).
     func withEffectsAU<T>(_ body: (UnsafeMutableRawPointer) -> T) -> T? {
-        effectsAUBorrows.wrappingAdd(1, ordering: .acquiringAndReleasing)
-        defer { effectsAUBorrows.wrappingSubtract(1, ordering: .releasing) }
-        guard let unit = withStateLock({ storedEffectsUnit?.au }) else { return nil }
+        borrowUnit(\.storedEffectsUnit, borrows: effectsAUBorrows, body)
+    }
+
+    /// Set or clear the spatial AU — the effects AU's rules (`setEffectsUnit`): read its `AUAudioUnit`
+    /// before it is attached, release a replaced one only after every borrow in flight has ended.
+    func setSpatialUnit(_ node: AVAudioUnit?) {
+        replaceUnit(\.storedSpatialUnit, with: node, borrows: spatialAUBorrows)
+    }
+
+    /// The spatial AU's graph node, for `engineQueue`'s graph work. nil when not instantiated.
+    var spatialNode: AVAudioUnit? {
+        withStateLock { storedSpatialUnit?.node }
+    }
+
+    /// Run `body` with the spatial AU's opaque handle (our `SpatialRendererAU`, the fold's C-ABI
+    /// argument — `SpatialBridge.h`), or return nil when it isn't live. Main-thread safe, counted, as
+    /// `withEffectsAU`.
+    func withSpatialAU<T>(_ body: (UnsafeMutableRawPointer) -> T) -> T? {
+        borrowUnit(\.storedSpatialUnit, borrows: spatialAUBorrows, body)
+    }
+
+    /// Swap the unit in `slot` under the lock, then — no new borrow can find the old one — wait out the
+    /// borrows already in flight (each one O(1) C call) and release it here.
+    private func replaceUnit(_ slot: ReferenceWritableKeyPath<AudioEngineBridge, GraphUnit?>,
+                             with node: AVAudioUnit?, borrows: borrowing Atomic<Int>) {
+        let value = node.map { GraphUnit(node: $0, au: $0.auAudioUnit) }
+        let replaced = withStateLock { () -> GraphUnit? in
+            let old = self[keyPath: slot]
+            self[keyPath: slot] = value
+            return old
+        }
+        guard let replaced else { return }
+        while borrows.load(ordering: .acquiring) > 0 {
+            sched_yield()
+        }
+        withExtendedLifetime(replaced) {} // the last reference, released here
+    }
+
+    /// Borrow the `AUAudioUnit` in `slot` for `body`, counted in `borrows` (see `withEffectsAU`).
+    private func borrowUnit<T>(_ slot: KeyPath<AudioEngineBridge, GraphUnit?>, borrows: borrowing Atomic<Int>,
+                               _ body: (UnsafeMutableRawPointer) -> T) -> T? {
+        borrows.wrappingAdd(1, ordering: .acquiringAndReleasing)
+        defer { borrows.wrappingSubtract(1, ordering: .releasing) }
+        guard let unit = withStateLock({ self[keyPath: slot]?.au }) else { return nil }
         return withExtendedLifetime(unit) { body(Unmanaged.passUnretained(unit).toOpaque()) }
     }
 

@@ -7,7 +7,7 @@ import Foundation
 /// The live-graph re-width lifecycle, factored out of `AudioEngineBridge.swift` into a same-module
 /// extension to keep the core class body focused (SwiftLint `type_body_length`). The public entry
 /// point is `reconfigureGraph(to:)`; the helpers below are `private` so they stay scoped to this
-/// file. The members it touches (`avEngine`, `playerNode`, `effectsNode`, `spatialAudioUnit`, the
+/// file. The members it touches (`avEngine`, `playerNode`, `effectsNode`, `spatialNode`, the
 /// analyzer arrays, the tap install/remove) are module-internal on the base class so
 /// this extension — in a separate file — can reach them.
 /// The four live-graph node references threaded through the reconfigure lifecycle's private
@@ -54,7 +54,7 @@ extension AudioEngineBridge {
     ///   - layout: the source's channel layout (`processingFormat.channelLayout`; nil when it reports none).
     func reconfigureGraph(channelCount: AVAudioChannelCount, layout: AVAudioChannelLayout?) {
         guard let engine = avEngine, let player = playerNode,
-              let effects = effectsNode, let spatial = spatialAudioUnit else { return }
+              let effects = effectsNode, let spatial = spatialNode else { return }
 
         // 1. Resolve the graph format, falling back to stereo, then aborting gracefully.
         guard let format = resolveReconfigureFormat(channelCount: channelCount, layout: layout,
