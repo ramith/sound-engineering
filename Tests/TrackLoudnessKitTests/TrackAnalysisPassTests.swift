@@ -114,6 +114,17 @@ struct TrackAnalysisPassTests {
         #expect(TrackAnalysis.pooledLufs([], basis: 0) == nil && TrackAnalysis.pooledLufs([loud], basis: 1) == nil)
     }
 
+    @Test("PASS-09: a decoder that delivers fewer frames than the file's length is read to its real end")
+    func shortEnd() throws {
+        // The repository's Ogg Vorbis fixture reports 13 248 frames and delivers 13 120, then its next read throws
+        // instead of returning nothing — as E-AC-3, AC-3, ffmpeg-made MP3 and Vorbis files do (the corpus). A
+        // short read is the end; reading on would turn a whole track into a failure.
+        let url = Fixtures.directory.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests/Fixtures/artwork-audio/compilation.ogg")
+        let analysis = try Self.analyse(url)
+        #expect(analysis.sourceRateHz == 44100 && abs(analysis.durationSeconds - 13120.0 / 44100.0) < 0.002)
+    }
+
     private static func analyse(_ url: URL) throws -> TrackAnalysis {
         let identity = try #require(TrackIdentity(url: url))
         guard case let .analysed(analysis, _) = TrackAnalysisPass.analyse(url, identity: identity) else {
