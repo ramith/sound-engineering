@@ -92,6 +92,30 @@ private func f1Tones(format: AVAudioFormat) -> AVAudioPCMBuffer? {
     return buffer
 }
 
+/// Frames `range` of `source`, as one chunk the app's reader hands the converter.
+private func f1Chunk(of source: AVAudioPCMBuffer, frames range: Range<Int>) -> AVAudioPCMBuffer? {
+    guard let input = source.floatChannelData,
+          let piece = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: StreamingResampler.inputChunkFrames),
+          let pieceData = piece.floatChannelData else { return nil }
+    piece.frameLength = AVAudioFrameCount(range.count)
+    for channel in 0 ..< Int(source.format.channelCount) {
+        pieceData[channel].update(from: input[channel].advanced(by: range.lowerBound), count: range.count)
+    }
+    return piece
+}
+
+/// Append `chunk` to `whole` (same format). False when it does not fit.
+private func f1Append(_ chunk: AVAudioPCMBuffer, to whole: AVAudioPCMBuffer) -> Bool {
+    let length = Int(chunk.frameLength), at = Int(whole.frameLength)
+    guard at + length <= Int(whole.frameCapacity), let from = chunk.floatChannelData,
+          let into = whole.floatChannelData else { return false }
+    for channel in 0 ..< Int(whole.format.channelCount) {
+        into[channel].advanced(by: at).update(from: from[channel], count: length)
+    }
+    whole.frameLength += AVAudioFrameCount(length)
+    return true
+}
+
 /// `source` at the engine format, as the app's player receives it: through the production converter in the
 /// app's chunks, flushed — or as it is when the rates already match (the passthrough route).
 private func f1ToEngine(_ source: AVAudioPCMBuffer, engineFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
@@ -99,30 +123,17 @@ private func f1ToEngine(_ source: AVAudioPCMBuffer, engineFormat: AVAudioFormat)
         return source
     }
     guard let resampler = StreamingResampler(from: source.format, to: engineFormat),
-          let input = source.floatChannelData,
           let whole = AVAudioPCMBuffer(pcmFormat: engineFormat,
-                                       frameCapacity: AVAudioFrameCount(engineFormat.sampleRate * 2)),
-          let output = whole.floatChannelData else { return nil }
-    let channels = Int(source.format.channelCount)
+                                       frameCapacity: AVAudioFrameCount(engineFormat.sampleRate * 2))
+    else { return nil }
     let chunk = Int(StreamingResampler.inputChunkFrames)
     var start = 0
     while true {
         let count = min(chunk, Int(source.frameLength) - start)
-        guard let piece = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: AVAudioFrameCount(chunk)),
-              let pieceData = piece.floatChannelData else { return nil }
-        piece.frameLength = AVAudioFrameCount(count)
-        for channel in 0 ..< channels {
-            pieceData[channel].update(from: input[channel].advanced(by: start), count: count)
-        }
+        guard let piece = f1Chunk(of: source, frames: start ..< start + count),
+              let converted = try? resampler.convert(piece, inputEnded: count == 0),
+              f1Append(converted.buffer, to: whole) else { return nil }
         start += count
-        guard let converted = try? resampler.convert(piece, inputEnded: count == 0),
-              let convertedData = converted.buffer.floatChannelData else { return nil }
-        let length = Int(converted.buffer.frameLength)
-        guard Int(whole.frameLength) + length <= Int(whole.frameCapacity) else { return nil }
-        for channel in 0 ..< channels {
-            output[channel].advanced(by: Int(whole.frameLength)).update(from: convertedData[channel], count: length)
-        }
-        whole.frameLength += AVAudioFrameCount(length)
         if converted.endOfStream {
             return whole
         }
