@@ -54,10 +54,10 @@ extension AudioEngineBridge {
         _ = withEffectsAU { publishChannelLayoutTag($0, tag) }
     }
 
-    /// Load-time graph step (M2-d): re-width the graph to the source's channel count, THEN publish
-    /// the source layout tag to the kernel. The order matters — `reconfigureGraph` is the
-    /// same-count no-op for stereo, and publishing afterwards guarantees the kernel sees the tag
-    /// for the width the graph just settled on.
+    /// Load-time graph step (M2-d, F1): re-format the graph to the source — its own channels in its own
+    /// order (`engineFormat`, the one F1 function) — THEN publish the source layout tag to the kernel. The
+    /// order matters: `reconfigureGraph` is the same-format no-op for stereo, and publishing afterwards
+    /// guarantees the kernel sees the tag for the format the graph just settled on.
     ///
     /// - Parameters:
     ///   - channelCount: the source file's channel count N.
@@ -68,8 +68,8 @@ extension AudioEngineBridge {
     ) {
         let tag = resolveSourceLayoutTag(channelLayout: channelLayout, channelCount: channelCount)
 
-        // 1. Re-width the live graph to N (stereo -> same-count no-op; existing path untouched).
-        reconfigureGraph(to: channelCount)
+        // 1. Re-format the live graph to the source (stereo -> same-format no-op; existing path untouched).
+        reconfigureGraph(channelCount: channelCount, layout: channelLayout)
 
         // 2. Publish the layout so the kernel computes the correct BS.1770-5 per-channel weights.
         publishChannelLayout(tag)
