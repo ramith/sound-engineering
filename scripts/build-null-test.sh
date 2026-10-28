@@ -245,6 +245,7 @@ xcrun clang++ \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Planning/TrackPlan.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Spatial/FoldLfeRule.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeBridgePolicy.cpp" \
