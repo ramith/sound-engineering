@@ -889,6 +889,15 @@ namespace
         },
         // ---- end LevelPlanTests.inc ----
         // ---- FoldTests.inc (R1.1-B W4, lane 2): rows below ----
+        {"Fold_Matrix_CentreAndInPhase", testFoldMatrixCentreAndInPhase, Tier::Correctness},
+        {"Fold_StereoIn51_Null", testFoldStereoIn51Null, Tier::Correctness},
+        {"Fold_Trim_Scales", testFoldTrimScales, Tier::Correctness},
+        {"Fold_Glide_LinearThenExact", testFoldGlideLinearThenExact, Tier::Correctness},
+        {"Fold_KeepAcrossAllocate", testFoldKeepAcrossAllocate, Tier::Correctness},
+        {"Fold_Backstop_HoldsAndMeters", testFoldBackstopHoldsAndMeters, Tier::Correctness},
+        {"Fold_RejectsNonFinite", testFoldRejectsNonFinite, Tier::Correctness},
+        {"Fold_NoRenderThreadAllocation", testFoldNoRenderThreadAllocation, Tier::Correctness},
+        {"Fold_ConcurrentPublish_NoTear", testFoldConcurrentPublishNoTear, Tier::Concurrent},
         // ---- end FoldTests.inc ----
         // ---- LfeRuleTests.inc (R1.1-B W4, lane 2): rows below ----
         // ---- end LfeRuleTests.inc ----
