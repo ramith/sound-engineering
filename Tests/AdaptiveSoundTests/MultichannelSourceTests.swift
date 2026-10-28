@@ -127,6 +127,25 @@ struct MultichannelSourceTests {
         #expect(spatial.outputFormat(forBus: 0).channelCount == 2, "and renders the device boundary in stereo")
         await rig.finish()
     }
+
+    @Test("S2: the snapshot reports the fold the spatial unit plays — and none when nothing folds")
+    func snapshotReportsTheFold() async throws {
+        let rig = try await MultichannelDeviceRig.make(deviceChannels: 2)
+        let surround = try #require(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_WAVE_7_1))
+        let folded = try MultichannelFixture.write(layout: surround, rate: 48000, name: "s2-fold")
+        defer { try? FileManager.default.removeItem(at: folded) }
+        try await rig.play(folded)
+        let fold = try #require(rig.bridge.snapshot().signalPath.fold, "a 7.1 file on a stereo device folds")
+        #expect(fold.sourceChannels == 8 && fold.outputChannels == 2)
+        #expect(fold.trimDb <= 0 && fold.backstopPeakGrDb >= 0)
+
+        let stereoLayout = try #require(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_Stereo))
+        let stereo = try MultichannelFixture.write(layout: stereoLayout, rate: 48000, name: "s2-stereo")
+        defer { try? FileManager.default.removeItem(at: stereo) }
+        try await rig.play(stereo)
+        #expect(rig.bridge.snapshot().signalPath.fold == nil, "a stereo file on a stereo device does not fold")
+        await rig.finish()
+    }
 }
 
 // MARK: - The fixture: one tone per channel
