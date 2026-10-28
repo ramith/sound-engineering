@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 import SettingsKit
 
@@ -32,7 +33,10 @@ extension AudioPlaybackEngine {
     // as "one track then stop" — the pre-gapless behaviour.
 
     /// Supply (or clear, with `nil`) the track to play gaplessly after the current one. Default: no-op.
-    func setNextTrack(_: URL?, ticket _: OnDeckTicket) async {}
+    func setNextTrack(_: URL?, ticket _: OnDeckTicket, leveling _: TrackLevelingDecision?) async {}
+
+    /// Default: no-op — a conformer that does not level has nothing to re-plan.
+    func applyLevelingChange(current _: TrackLevelingDecision, next _: TrackLevelingDecision?) {}
 
     /// Default: no device targeted (0). The live engine overrides with its `currentDeviceID`.
     func currentOutputDeviceID() -> UInt32 {
@@ -85,12 +89,16 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// into it (0 = the top; a resume or a device move starts there, never from 0 then a seek).
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
     /// HAL path is used; otherwise the Enhanced (AVFAudio engine) path is used. `epoch` numbers the
-    /// request: the snapshot's transport carries it from the start of the request on.
+    /// request: the snapshot's transport carries it from the start of the request on. `leveling` is the
+    /// track's leveling decision (R1.1-B, level-and-fold §S3, B2): it travels with the request that makes
+    /// the track audible, and the engine plans from it at that moment — once (B1). Pure ignores it (leveling
+    /// in Pure is deferred, record decision 1).
     ///
     /// Newest stands (council C-15). The view model numbers its starts, stops and seeks in the order
     /// the user asks; they can reach the engine in another order. One older than a request the engine
     /// has already begun was overtaken: it returns at once and has no effect — never an error.
-    func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
+    func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64,
+                    leveling: TrackLevelingDecision) async throws
 
     /// Stop all playback immediately; the on-deck pick goes with it (a stop begins a new playback, so
     /// every on-deck request made before it is stale — invariant 5 below). `epoch` numbers the request,
@@ -155,12 +163,20 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// pre-schedules (Enhanced) / arms (Pure) it so the transition is seamless — no `stop()`, no
     /// inserted silence. Re-supply after each transition to keep one track on deck. Reuses the
     /// current path (Enhanced/Pure) and mode. Returns once the request is settled. Default impl: no-op.
+    /// `leveling` is the pick's leveling decision (`nil` with a `nil` pick): it is armed with the pick, in the
+    /// D41 order, and planned from when the pick becomes audible at the seam (R1.1-B, §S3, B2).
     ///
     /// Contract: `setNextTrack(nil)` CANCELS the on-deck track — it clears the armed slot and disarms
     /// any seam hook so no queued track silently begins later. A subsequent end-of-current-track with
     /// an empty deck sets `ended` rather than seaming. (Enhanced: clears `onDeckURL` + the EOF hooks
     /// on `resampleQueue`; Pure: `pureModeEngineClearNextTrack`, which joins the dropped source off-RT.)
-    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?) async
+
+    /// The listener changed the Leveling mode (R1.1-B, §1.3 "when the planner runs", item 2): the audible
+    /// track re-plans from `current` and both units glide there (0.15 s); `next` replaces the armed pick's
+    /// decision (N11). Automatic changes never move a playing track; this is the listener's own act.
+    /// Synchronous, non-blocking (the main-thread rule). Default impl: no-op.
+    func applyLevelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?)
 
     /// The engine's state as the main thread may read it — the ONE read the view model makes of it:
     /// the transport as the engine last sampled it off the main thread (the playhead within the
@@ -198,10 +214,11 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     /// Publish the EQ to the live DSP AU (the engine side of the Sprint EQ contract): the 31
     /// `points` (dB, one per band, `EQBands`) that are drawn, and whether the EQ plays at all.
-    /// `isOn == false` plays the flat curve whatever `points` hold. Synchronous, off-RT,
-    /// non-throwing; the engine validates its input (count, finite, ±12 dB) and coalesces bursts.
+    /// `isOn == false` plays the flat curve whatever `points` hold. `comparing`: Compare is held, so the
+    /// song plays without the EQ at the level the EQ plays at — level-matched (R1.1-B, §7). Synchronous,
+    /// off-RT, non-throwing; the engine validates its input (count, finite, ±12 dB) and coalesces bursts.
     /// No-op if no live AU (e.g. engine not initialized).
-    func publishEQ(points: [Float], isOn: Bool)
+    func publishEQ(points: [Float], isOn: Bool, comparing: Bool)
 
     /// Publish a new Reimagine intensity value ([0, 1]) to the live DSP AU.
     /// No-op if the AU is not yet instantiated. Default impl: no-op.

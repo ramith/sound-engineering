@@ -1,5 +1,6 @@
 @testable import AdaptiveSound
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 import Testing
 
@@ -59,7 +60,7 @@ struct EnhancedSeekTests {
           arguments: SubPath.allCases)
     func seekToTheEndWithATrackOnDeck(_ path: SubPath) async throws {
         let rig = try await EnhancedTransportRig(path: path, name: "seek-end-armed")
-        await rig.bridge.setNextTrack(rig.url, ticket: OnDeckTicket(session: 0, sequence: 1))
+        await rig.bridge.setNextTrack(rig.url, ticket: OnDeckTicket(session: 0, sequence: 1), leveling: .off)
         _ = try await rig.render(seconds: 0.3)
         let seams = rig.transport.transitionCount
         let (error, _) = await rig.seek(to: rig.duration)
@@ -143,7 +144,7 @@ struct EnhancedSeekTests {
     @Test("a seek keeps the gapless next track armed: a seek is not a transition", arguments: SubPath.allCases)
     func seekKeepsTheTrackOnDeck(_ path: SubPath) async throws {
         let rig = try await EnhancedTransportRig(path: path, name: "seek-keeps-deck")
-        await rig.bridge.setNextTrack(rig.url, ticket: OnDeckTicket(session: 0, sequence: 1))
+        await rig.bridge.setNextTrack(rig.url, ticket: OnDeckTicket(session: 0, sequence: 1), leveling: .off)
         _ = try await rig.render(seconds: 0.2)
         _ = await rig.seek(to: 0.9)
         let bridge = rig.bridge

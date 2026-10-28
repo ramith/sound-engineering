@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 
 // MARK: - AudioViewModel playback control (start / prime / seek)
@@ -60,8 +61,10 @@ extension AudioViewModel {
 
         work.spawn { [self] in
             do {
+                // The leveling decision travels with the start (R1.1-B, §S3). Off until lane 3's decisions
+                // land (W5): no leveling gain; the fold's trim and the peak cap still apply.
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
-                                            startAt: resumeFrom ?? 0, epoch: epoch)
+                                            startAt: resumeFrom ?? 0, epoch: epoch, leveling: .off)
                 // A stop, a pause or a newer start asked while this one ran owns the transport now
                 // (the engine dropped this start if it had begun that one first): neither prime the
                 // queue with a pick for a replaced playback nor mark playing over what was asked since.

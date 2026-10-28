@@ -70,6 +70,8 @@ namespace
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 // Borrow the off-main control owner (used by the C-ABI to post EQ/intensity intents).
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer;
+// S2: the kernel's crossfeed status (one relaxed atomic load).
+- (bool)kernelCrossfeedEngaged;
 @end
 
 @implementation AdaptiveSoundAU
@@ -145,6 +147,10 @@ namespace
 // feed-forward control now flows through it; the canonical TargetState lives inside it.
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer {
     return _realizer;
+}
+
+- (bool)kernelCrossfeedEngaged {
+    return _kernel != nullptr && _kernel->crossfeedEngaged();
 }
 
 // Off-RT control plane. Decodes the source layout tag (off-RT, allocation-free) and forwards the
@@ -280,9 +286,15 @@ int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
 }
 
 bool publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT {
+    return publishEQIntent(auUnit, pointsDb, count, isOn, false);
+}
+
+bool publishEQIntent(void* auUnit, const float* pointsDb, uint32_t count, bool isOn,
+                     bool comparing) AUDIODSP_C_NOEXCEPT {
     // Sprint EQ (engine-plan §8): the points the UI draws + On/Off. The Realizer validates (the
     // trust boundary), designs on its queue at the kernel's rate and publishes; the RT module
-    // glides to the finished coefficients.
+    // glides to the finished coefficients. Step-1 seam (R1.1-B W4): Compare plays as Off, as the
+    // view model's `plays` sent it before; the level-matched Compare lands with the planner.
     if (auUnit == nullptr) {
         AdaptiveSound::log::line("[EQ] C-ABI publishEQ SKIP — auUnit == nullptr");
         return false;
@@ -293,8 +305,8 @@ bool publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) A
         AdaptiveSound::log::line("[EQ] C-ABI publishEQ SKIP — realizer == nil");
         return false;
     }
-    AdaptiveSound::log::debug("[QW1] C-ABI publishEQ count={} on={}", count, isOn);
-    return realizer->setPendingEq(pointsDb, count, isOn);
+    AdaptiveSound::log::debug("[QW1] C-ABI publishEQ count={} on={} comparing={}", count, isOn, comparing);
+    return realizer->setPendingEq(pointsDb, count, isOn && !comparing);
 }
 
 double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT {
@@ -304,6 +316,15 @@ double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT {
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     return (realizer != nullptr) ? realizer->eqDesignSampleRate() : 0.0;
+}
+
+bool crossfeedEngaged(void* auUnit) AUDIODSP_C_NOEXCEPT {
+    // R1.1-B, S2: one relaxed load of the kernel's status — no queue, no lock.
+    if (auUnit == nullptr) {
+        return false;
+    }
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
+    return [audioUnit kernelCrossfeedEngaged];
 }
 
 // The live AU's Realizer, borrowed for one C-ABI call (nullptr when there is none).

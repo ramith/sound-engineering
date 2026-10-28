@@ -1,6 +1,7 @@
 import AudioDSP
 @preconcurrency import AVFoundation
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 
 // MARK: - AudioEngineBridge Enhanced-path gapless engine
@@ -63,7 +64,7 @@ extension AudioEngineBridge {
     /// A seek does not consume the on-deck track; a start or stop begins a new playback (every
     /// earlier request is stale). Returns once the request is settled: dropped, set, or armed / left
     /// empty. Safe to call from any thread.
-    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async {
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling _: TrackLevelingDecision?) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             engineQueue.async {
                 guard self.onDeckGate.admit(ticket) else {

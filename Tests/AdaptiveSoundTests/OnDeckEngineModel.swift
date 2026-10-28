@@ -1,5 +1,6 @@
 @testable import AdaptiveSound
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 import SettingsKit
 import Synchronization
@@ -54,7 +55,8 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
 
     // MARK: AudioPlaybackEngine — the transport
 
-    func startAudio(fileURL: URL, pureMode: Bool, startAt _: Double, epoch: UInt64) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool, startAt _: Double, epoch: UInt64,
+                    leveling _: TrackLevelingDecision) async throws {
         if await transport(.start(fileURL, pure: pureMode, epoch: epoch)) {
             throw AudioBridgeError.unsupportedFormat("flac")
         }
@@ -85,7 +87,7 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
         }
     }
 
-    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async {
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling _: TrackLevelingDecision?) async {
         await withCheckedContinuation { (settled: CheckedContinuation<Void, Never>) in
             state.withLock { model in
                 model.arrivals.append(ticket)
@@ -279,8 +281,8 @@ extension OnDeckEngineModel {
         fake.keepPureVolumeLoans(in: journal)
     }
 
-    func publishEQ(points: [Float], isOn: Bool) {
-        fake.publishEQ(points: points, isOn: isOn)
+    func publishEQ(points: [Float], isOn: Bool, comparing: Bool) {
+        fake.publishEQ(points: points, isOn: isOn, comparing: comparing)
     }
 
     func publishIntensity(_ intensity: Float) {
