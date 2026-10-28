@@ -42,10 +42,35 @@ typedef struct
     float backstopPeakGrDb;
 } AsFoldState;
 
+// NOLINTBEGIN(cppcoreguidelines-use-enum-class,performance-enum-size) PERMANENT reason="ISO C11 ABI header, Swift-visible: C has no enum class and no sized enum"
+
+/// The LFE rule's verdict for a track (§5, §8½ C4; Spatial/FoldLfeRule.h has the rule): whether its LFE goes
+/// into the fold, and why. The include LEVEL is the chosen LFE variant's, not the rule's. Stored as uint8_t.
+typedef enum
+{
+    AsLfeVerdictOmitUnknown = 0, ///< under 5 s of active LFE, or no statistics: not enough to judge
+    AsLfeVerdictOmitCopy = 1,    ///< a copy of the mains' bass (delayed, filtered or scaled alike)
+    AsLfeVerdictIncludeRedirected = 2,  ///< the mains' bass moved into the LFE behind a high-pass
+    AsLfeVerdictIncludeIndependent = 3, ///< bass the mains do not carry
+    AsLfeVerdictOmitUncertain =
+        4, ///< neither: omitted (BS.775-4 Annex 7: a wrong include combs the bass)
+} AsLfeVerdict;
+
+// NOLINTEND(cppcoreguidelines-use-enum-class,performance-enum-size)
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+    /// The LFE rule on a track's stored statistics (pure; any thread): an AsLfeVerdict. The decision builder
+    /// (LevelingKit) calls it and, on an include, plays the chosen LFE variant; on an omit, AsLfeVariantOmit.
+    ///
+    /// @param stats  The analysis's AsLfeStats; NULL reads as unknown.
+    uint8_t asFoldDecideLfe(const AsLfeStats* stats) AUDIODSP_C_NOEXCEPT;
+
+    /// Whether `verdict` (AsLfeVerdict) puts the LFE in the fold.
+    bool asLfeVerdictIncludes(uint8_t verdict) AUDIODSP_C_NOEXCEPT;
 
     /// The layout's fold for the file the graph is now configured for (lane 2's `configureGraphForSource`,
     /// with the output state it assembles): the BS.775 matrix over `output->sourceRoles` with the LFE omitted,
@@ -55,7 +80,8 @@ extern "C"
     /// @param spatialAU  Borrowed SpatialRendererAU*; false if null.
     /// @param output     The output state (N, its roles, M, the transport); false if null or out of range.
     /// @return true when published or nothing to fold.
-    bool asSpatialPublishLayoutFold(void* spatialAU, const AsOutputState* output) AUDIODSP_C_NOEXCEPT;
+    bool asSpatialPublishLayoutFold(void* spatialAU,
+                                    const AsOutputState* output) AUDIODSP_C_NOEXCEPT;
 
     /// The playing track's plan, in the same turn the effects unit gets the same value (B1, M1): the BS.775
     /// matrix over `output->sourceRoles` at the plan's LFE variant, the plan's trim, and the backstop's ceiling

@@ -900,6 +900,10 @@ namespace
         {"Fold_ConcurrentPublish_NoTear", testFoldConcurrentPublishNoTear, Tier::Concurrent},
         // ---- end FoldTests.inc ----
         // ---- LfeRuleTests.inc (R1.1-B W4, lane 2): rows below ----
+        {"LfeRule_MeasuredCases", testLfeRuleMeasuredCases, Tier::Correctness},
+        {"LfeRule_KickBalanceSweep", testLfeRuleKickBalanceSweep, Tier::Correctness},
+        {"LfeRule_RedirectedBass", testLfeRuleRedirectedBass, Tier::Correctness},
+        {"LfeRule_Thresholds", testLfeRuleThresholds, Tier::Correctness},
         // ---- end LfeRuleTests.inc ----
     });
 } // namespace
