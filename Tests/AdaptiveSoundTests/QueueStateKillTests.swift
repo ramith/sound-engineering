@@ -13,12 +13,14 @@ import Testing
 // a real `LibraryStore` file, restores the queue the last child left, then changes it at random (play verbs,
 // edits, shuffle, repeat, seams, Next, Previous, playhead moves, pauses, seeks), its one writer writing all the
 // while. Before each wait it logs the state it reached: the hash of the record the writer would write and the
-// playhead beside it (`queueStateNow`, the sink's own function), and "flushed" once a flush of the writer
-// returned. At a random point — 0 to 80 changes in — the parent sends SIGKILL, then opens the store through
-// the real open path and checks that what is stored is WHOLE (integrity, the playhead of the record's own
-// revision, a record that decodes and holds together), is a state the child reached — never a mix — and is no
-// older than the last flush (nothing written was lost). The next child must restore exactly that: the same
-// queue, song, place, permutation, position and history, loose files included.
+// playhead beside it (`queueStateNow`, the sink's own function), and "flushed" once a checkpoint returned: the
+// queue as it is asked for and written, as the quit does (`KillHarness.checkpoint`; a flush alone leaves a
+// playhead moved under the 5 s cadence unwritten — VM-KILL-02). At a random point — 0 to 80 changes in — the
+// parent sends SIGKILL, then opens the store through the real open path and checks that what is stored is WHOLE
+// (integrity, the playhead of the record's own revision, a record that decodes and holds together), is a state
+// the child reached — never a mix — and is no older than the last checkpoint (nothing written was lost). The
+// next child must restore exactly that: the same queue, song, place, permutation, position and history, loose
+// files included.
 //
 // `AS_QUEUE_KILLS` kills per run (default 100, ~10 s); `make stress TEST=QueueStateKillTests N=…` repeats the
 // run under load. Before the store is opened after a kill, its WAL is read: a kill that cut a write
@@ -166,6 +168,27 @@ struct QueueStateKillTests {
         print("VM-KILL-01: \(kills) kills, every stored state whole and one the child reached; \(tally)")
     }
 
+    @Test("VM-KILL-02: a checkpoint leaves stored the state the child logged — a playhead under the cadence too")
+    func checkpointStoresTheLoggedState() async throws {
+        let world = try await QueueStateWorld(songs: 3)
+        defer { world.discard() }
+        let player = try await world.launch()
+        player.vm.playNow((0 ..< 3).map(audioFile), startAt: 0)
+        try await playing(player)
+        // The second move of each pair is under the cadence from the first, so it asks for no write: forward from
+        // a start, and back after a seek — the shapes VM-KILL-01 once failed on (stored @0.0 with @4.7 logged at
+        // the checkpoint; stored @61.5 with @58.8).
+        for (asked, moved) in [(0.0, 4.7), (61.5, 58.8)] {
+            try movePlayhead(player, to: asked)
+            await KillHarness.checkpoint(player.vm)
+            try movePlayhead(player, to: moved)
+            await KillHarness.checkpoint(player.vm)
+            let stored = try LoggedState(#require(try await world.store.queueState()))
+            let logged = KillHarness.state(of: player.vm)
+            #expect(stored == logged, "at \(moved) s (from \(asked) s): stored \(stored), logged \(logged)")
+        }
+    }
+
     /// Wait for `child` to restore the queue, and check it restored `expected` — what the last kill left.
     private func restore(_ child: Child, _ number: Int, expecting expected: LoggedState?) async throws -> LoggedState {
         try await until("child \(number) to restore the queue") { child.logged.restored != nil || !child.isRunning }
@@ -196,14 +219,13 @@ struct QueueStateKillTests {
     }
 
     /// What kill `number` left: whole — the record's own playhead, a record that decodes and holds together —
-    /// a state the child reached, and none older than its last flush (nothing written was lost). Returns it:
-    /// what the next child must restore.
+    /// a state the child reached, and none older than its last checkpoint (nothing written was lost). Returns
+    /// it: what the next child must restore.
     private func checkStore(after number: Int, _ log: ChildLog, restored: LoggedState, world: World,
                             tally: inout KillTally) async throws -> LoggedState {
         guard let stored = try await world.stored() else {
-            // Nothing written yet: so no flush returned after the queue had changed from what was restored.
-            let flushed = log.states.prefix(log.flushedAt.last ?? 0)
-            #expect(flushed.allSatisfy { $0 == restored }, "kill \(number): nothing stored after a flush returned")
+            // Nothing written yet: so no checkpoint returned — each one writes the queue as it is.
+            #expect(log.flushedAt.isEmpty, "kill \(number): nothing stored after a checkpoint returned")
             return restored
         }
         let state = LoggedState(stored)
@@ -212,8 +234,8 @@ struct QueueStateKillTests {
         #expect(record != nil, "kill \(number): the stored record does not decode or hold together")
         let lastFlush = log.flushedAt.last.map { max(0, $0 - 1) }
         let since = lastFlush.map { Array(log.states[$0...]) } ?? [restored] + log.states
-        let lost = "kill \(number): stored \(state) is no state reached since the last flush "
-            + "(\(log.states.count) states, flushes at \(log.flushedAt))"
+        let lost = "kill \(number): stored \(state) is no state reached since the last checkpoint "
+            + "(\(log.states.count) states, checkpoints at \(log.flushedAt))"
         #expect(since.contains(state), Comment(rawValue: lost))
         tally.count(log, stored: state, record: record)
         return state
@@ -248,7 +270,7 @@ private struct KillTally: CustomStringConvertible {
     }
 
     var description: String {
-        "\(changes) changes and \(flushes) flushes logged; \(torn) kills cut a write transaction short (its "
+        "\(changes) changes and \(flushes) checkpoints logged; \(torn) kills cut a write transaction short (its "
             + "frames in the WAL, uncommitted); \(behind) kills left a state behind the child's last "
             + "(a write in flight or waiting); stored queues held a loose file after \(withLooseFile) kills and a "
             + "shuffle pass after \(withShufflePass); the longest queue \(songs) songs"

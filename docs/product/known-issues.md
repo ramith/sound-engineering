@@ -971,8 +971,10 @@ live queue follows the library: a song "Use this drive" moved plays from its new
 cadence: the playhead at 4.9 s writes nothing, at 5.0 s the playhead alone, a pause at once); the process-level kill
 harness, VM-KILL-01 (`QueueStateKillTests`: a child process runs the real view model over a real store file and is
 sent SIGKILL at a random point, 100 times a run; every stored state must be whole, one the child reached and no older
-than its last flush, and the next child must restore exactly it); VerifyLibraryStore QS-1…QS-5 (the v9 → v10 upgrade
-keeps every user row; v10 is additive; a round trip; no half write; no mixed read). *The fix round:*
+than its last checkpoint — the queue asked for and written, as the quit does; a flush alone leaves a playhead moved
+under the cadence unwritten, VM-KILL-02 — and the next child must restore exactly it); VerifyLibraryStore
+QS-1…QS-5 (the v9 → v10 upgrade keeps every user row; v10 is additive; a round trip; no half write; no mixed read).
+*The fix round:*
 - **The launch join is a Kit rule** ("the launch join ends where opening after the restore would", review M2; BI-P03,
   BI-P03b). What was queued before the restore — a file opened at launch — joins the restored queue where the same
   open after it would put it (`QueueJoin`, `Sources/PlaybackQueueKit/QueueJoin.swift`, through
