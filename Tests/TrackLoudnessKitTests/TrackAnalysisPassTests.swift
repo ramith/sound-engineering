@@ -146,3 +146,98 @@ enum ToneFixtures {
         return url
     }
 }
+
+@Suite("A FLAC Apple's decoder refuses (blocks under 192 samples) fails cleanly", .timeLimit(.minutes(1)))
+struct TinyBlockFlacTests {
+    /// `AVAudioFile.framePosition` raises an uncaught NSException on such a file — its very first read of the
+    /// getter, before any decode (the corpus's 26-voice_5.1_48k_flac-tiny-blocks.flac; reproduced here). The decode
+    /// pass counts the frames it has read instead, so the read's own error ends the job: no crash.
+    @Test("PASS-06: the analysis pass refuses a 128-sample-block FLAC without asking the decoder its position")
+    func analysisPass() throws {
+        let url = try TinyFlac.write(named: "pass-tiny-blocks", blockSize: 128)
+        let identity = try #require(TrackIdentity(url: url))
+        guard case .failed = TrackAnalysisPass.analyse(url, identity: identity) else {
+            Issue.record("a file the decoder cannot read was analysed")
+            return
+        }
+    }
+
+    @Test("PASS-07: the same encoder at 256-sample blocks decodes — the fixture is valid FLAC")
+    func controlDecodes() throws {
+        let url = try TinyFlac.write(named: "pass-256-blocks", blockSize: 256)
+        let identity = try #require(TrackIdentity(url: url))
+        guard case let .analysed(analysis, _) = TrackAnalysisPass.analyse(url, identity: identity) else {
+            Issue.record("a valid FLAC was not analysed")
+            return
+        }
+        #expect(abs(analysis.durationSeconds - 1) < 0.001)
+    }
+
+    @Test("ANALYZER-07: the track loudness analyzer reports the 128-sample-block FLAC as a failure")
+    func loudnessAnalyzer() async throws {
+        let url = try TinyFlac.write(named: "analyzer-tiny-blocks", blockSize: 128)
+        let identity = try #require(TrackIdentity(url: url))
+        let sink = RecordingSink()
+        let analyzer = TrackLoudnessAnalyzer(log: { _ in })
+        analyzer.analyze(url, identity: identity, as: .current, sink: sink)
+        let events = await sink.wait(keeping: analyzer) { $0.contains { $0.isFailure } }
+        #expect(events.contains { $0.isFailure && $0.token == identity.token })
+    }
+}
+
+/// A minimal FLAC (RFC 9639): 16-bit mono at 48 kHz, one second of a 440 Hz tone, VERBATIM subframes in blocks of
+/// `blockSize` samples (an 8-bit "block size − 1" in each frame header).
+enum TinyFlac {
+    static func write(named name: String, blockSize: Int) throws -> URL {
+        try FileManager.default.createDirectory(at: Fixtures.directory, withIntermediateDirectories: true)
+        let url = Fixtures.directory.appendingPathComponent("\(name).flac")
+        let rate = 48000
+        let samples = (0 ..< rate).map { Int16(8000 * sin(2 * Double.pi * 440 * Double($0) / Double(rate))) }
+        var out = [UInt8]("fLaC".utf8)
+        // Block sizes (min, max), frame sizes unknown (0, 0); then 20 bits rate, 3 bits channels − 1 (0), 5 bits
+        // bits-per-sample − 1 (15), 36 bits total samples; no MD5.
+        var info = bigEndian(UInt64(blockSize), bytes: 2) + bigEndian(UInt64(blockSize), bytes: 2)
+        info += [UInt8](repeating: 0, count: 6)
+        info += bigEndian((UInt64(rate) << 44) | (15 << 36) | UInt64(samples.count), bytes: 8)
+        info += [UInt8](repeating: 0, count: 16)
+        out += [0x80] + bigEndian(UInt64(info.count), bytes: 3) + info // the last metadata block: STREAMINFO
+        for (number, start) in stride(from: 0, to: samples.count, by: blockSize).enumerated() {
+            let block = samples[start ..< min(start + blockSize, samples.count)]
+            // Sync + fixed blocking; block size "8 bits − 1 at the end", 48 kHz; mono, 16 bits.
+            var frame: [UInt8] = [0xFF, 0xF8, 0x6A, 0x08] + utf8(number) + [UInt8(block.count - 1)]
+            frame.append(crc8(frame))
+            frame.append(0x02) // a VERBATIM subframe
+            for sample in block {
+                frame += bigEndian(UInt64(UInt16(bitPattern: sample)), bytes: 2)
+            }
+            frame += bigEndian(UInt64(crc16(frame)), bytes: 2)
+            out += frame
+        }
+        try Data(out).write(to: url)
+        return url
+    }
+
+    private static func bigEndian(_ value: UInt64, bytes: Int) -> [UInt8] {
+        (0 ..< bytes).reversed().map { UInt8(truncatingIfNeeded: value >> (8 * UInt64($0))) }
+    }
+
+    private static func utf8(_ number: Int) -> [UInt8] {
+        number < 0x80 ? [UInt8(number)]
+            : number < 0x800 ? [UInt8(0xC0 | (number >> 6)), UInt8(0x80 | (number & 0x3F))]
+            : [UInt8(0xE0 | (number >> 12)), UInt8(0x80 | ((number >> 6) & 0x3F)), UInt8(0x80 | (number & 0x3F))]
+    }
+
+    private static func crc8(_ bytes: [UInt8]) -> UInt8 {
+        bytes.reduce(UInt8(0)) { crc, byte in
+            (0 ..< 8).reduce(crc ^ byte) { value, _ in value & 0x80 != 0 ? (value << 1) ^ 0x07 : value << 1 }
+        }
+    }
+
+    private static func crc16(_ bytes: [UInt8]) -> UInt16 {
+        bytes.reduce(UInt16(0)) { crc, byte in
+            (0 ..< 8).reduce(crc ^ (UInt16(byte) << 8)) { value, _ in
+                value & 0x8000 != 0 ? (value << 1) ^ 0x8005 : value << 1
+            }
+        }
+    }
+}
