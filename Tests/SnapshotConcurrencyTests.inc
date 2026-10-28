@@ -6,7 +6,7 @@
 //
 // TWO independent tear detectors (the transport is generic, so we verify it from two angles):
 //   1. RACE1 (below) — a REALISTIC TargetState payload; the producer stamps a monotonic generation
-//      into several fields (sequenceNumber = gen, intensityLinear = gen, loudness.makeupGainLinear =
+//      into several fields (sequenceNumber = gen, intensityLinear = gen, clarity.thresholdLinear =
 //      2·gen, eq.m1[30] = gen%11) and every accepted copy must satisfy those relations for a
 //      SINGLE gen. Generation 0 is the constructor's IDENTITY seed (default members, e.g.
 //      intensityLinear = 1.0 — NOT zeros), which a reader may legitimately claim before it observes
@@ -34,11 +34,11 @@ static auto acceptedTargetStateConsistent(const AdaptiveSound::TargetState& out)
     {
         const AdaptiveSound::TargetState seed{};
         return (out.intensityLinear == seed.intensityLinear) &&
-               (out.loudness.makeupGainLinear == seed.loudness.makeupGainLinear) &&
+               (out.clarity.thresholdLinear == seed.clarity.thresholdLinear) &&
                (out.eq.m1.back() == seed.eq.m1.back());
     }
     return (out.intensityLinear == static_cast<float>(gen)) &&
-           (out.loudness.makeupGainLinear == static_cast<float>(2U * gen)) &&
+           (out.clarity.thresholdLinear == static_cast<float>(2U * gen)) &&
            (out.eq.m1.back() == static_cast<double>(gen % 11U));
 }
 
@@ -64,7 +64,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
     {
         uint64_t refGen;       // out.sequenceNumber
         uint64_t intensityGen; // out.intensityLinear decoded back to a gen
-        uint64_t makeupGen;    // out.loudness.makeupGainLinear / 2 decoded to a gen
+        uint64_t thresholdGen; // out.clarity.thresholdLinear / 2 decoded to a gen
         uint32_t eqWord;       // out.eq.m1[30] (a later payload word)
     };
     std::array<TearSample, 16> tearSamples{};
@@ -72,38 +72,40 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
 
     // RT consumer: hammer copySnapshot and verify each accepted copy is internally consistent
     // and monotonically non-decreasing in sequenceNumber.
-    std::thread reader([&] {
-        AdaptiveSound::TargetState out{};
-        uint64_t lastSeq = 0U;
-        while (!readerStop.load(std::memory_order_relaxed))
+    std::thread reader(
+        [&]
         {
-            snapshot.copySnapshot(out);
-            acceptedReads.fetch_add(1U, std::memory_order_relaxed);
+            AdaptiveSound::TargetState out{};
+            uint64_t lastSeq = 0U;
+            while (!readerStop.load(std::memory_order_relaxed))
+            {
+                snapshot.copySnapshot(out);
+                acceptedReads.fetch_add(1U, std::memory_order_relaxed);
 
-            const uint64_t gen = out.sequenceNumber;
-            // gen-0 identity-seed vs gen>=1 stamped check lives in the helper (keeps this reader under
-            // the complexity gate); a torn/partial copy fails it. See the file header for the CI story.
-            if (!acceptedTargetStateConsistent(out))
-            {
-                tornReads.fetch_add(1U, std::memory_order_relaxed);
-                const size_t idx = tearSampleCount.fetch_add(1U, std::memory_order_relaxed);
-                if (idx < tearSamples.size())
+                const uint64_t gen = out.sequenceNumber;
+                // gen-0 identity-seed vs gen>=1 stamped check lives in the helper (keeps this reader under
+                // the complexity gate); a torn/partial copy fails it. See the file header for the CI story.
+                if (!acceptedTargetStateConsistent(out))
                 {
-                    tearSamples[idx] = TearSample{
-                        gen,
-                        static_cast<uint64_t>(out.intensityLinear),
-                        static_cast<uint64_t>(out.loudness.makeupGainLinear / 2.0F),
-                        static_cast<uint32_t>(out.eq.m1.back()),
-                    };
+                    tornReads.fetch_add(1U, std::memory_order_relaxed);
+                    const size_t idx = tearSampleCount.fetch_add(1U, std::memory_order_relaxed);
+                    if (idx < tearSamples.size())
+                    {
+                        tearSamples[idx] = TearSample{
+                            gen,
+                            static_cast<uint64_t>(out.intensityLinear),
+                            static_cast<uint64_t>(out.clarity.thresholdLinear / 2.0F),
+                            static_cast<uint32_t>(out.eq.m1.back()),
+                        };
+                    }
                 }
+                if (gen < lastSeq)
+                {
+                    staleForward.fetch_add(1U, std::memory_order_relaxed);
+                }
+                lastSeq = gen;
             }
-            if (gen < lastSeq)
-            {
-                staleForward.fetch_add(1U, std::memory_order_relaxed);
-            }
-            lastSeq = gen;
-        }
-    });
+        });
 
     // Off-RT producer: publish distinct, self-consistent generations as fast as possible.
     for (uint64_t gen = 1U; gen <= kPublishCount; ++gen)
@@ -111,7 +113,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
         AdaptiveSound::TargetState state{};
         state.sequenceNumber = gen;
         state.intensityLinear = static_cast<float>(gen);
-        state.loudness.makeupGainLinear = static_cast<float>(2U * gen);
+        state.clarity.thresholdLinear = static_cast<float>(2U * gen);
         state.eq.m1.back() = static_cast<double>(gen % 11U);
         snapshot.publish(state);
     }
@@ -129,19 +131,21 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
         for (size_t i = 0; i < sampleCount; ++i)
         {
             const auto& s = tearSamples[i];
-            logInfo("  [tear] refGen=" + std::to_string(s.refGen) + " intensityGen=" +
-                    std::to_string(s.intensityGen) + " makeupGen=" + std::to_string(s.makeupGen) +
-                    " eqWord=" + std::to_string(s.eqWord) + " (expected " +
-                    std::to_string(s.refGen % 11U) + ")\n");
+            logInfo("  [tear] refGen=" + std::to_string(s.refGen) +
+                    " intensityGen=" + std::to_string(s.intensityGen) + " thresholdGen=" +
+                    std::to_string(s.thresholdGen) + " eqWord=" + std::to_string(s.eqWord) +
+                    " (expected " + std::to_string(s.refGen % 11U) + ")\n");
         }
-        logFail(kName, "torn read: " + std::to_string(tornReads.load()) +
-                           " accepted snapshot(s) mixed parameter generations (seqlock broken)");
+        logFail(kName,
+                "torn read: " + std::to_string(tornReads.load()) +
+                    " accepted snapshot(s) mixed parameter generations (seqlock broken)");
         return;
     }
     if (staleForward.load() != 0U)
     {
-        logFail(kName, "sequenceNumber went backwards on " +
-                           std::to_string(staleForward.load()) + " accepted read(s)");
+        logFail(kName,
+                "sequenceNumber went backwards on " + std::to_string(staleForward.load()) +
+                    " accepted read(s)");
         return;
     }
     // Sanity: the reader must actually have observed some snapshots (else the test proves nothing).
@@ -173,8 +177,9 @@ struct GenStampedPayload
     static constexpr size_t kWords = 40U; // ~320 B, on the order of TargetState's footprint
     std::array<uint64_t, kWords> words;   // producer sets EVERY word == the generation
 };
-static_assert(std::is_trivially_copyable_v<GenStampedPayload>,
-              "the transport publishes/consumes each slot by a plain memcpy of a trivially-copyable T");
+static_assert(
+    std::is_trivially_copyable_v<GenStampedPayload>,
+    "the transport publishes/consumes each slot by a plain memcpy of a trivially-copyable T");
 
 // Scan an accepted whole-payload copy: every word must equal words[0] (the generation). A torn read
 // leaves some words on the old generation and some on the new, so a mismatch in ANY word is a tear.
@@ -219,27 +224,29 @@ static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
     std::atomic<uint64_t> firstTornRefGen{0U};
     std::atomic<uint64_t> firstTornWordGen{0U};
 
-    std::thread reader([&] {
-        GenStampedPayload out{};
-        uint64_t last = 0U;
-        readerRunning.store(true, std::memory_order_release);
-        while (!readerStop.load(std::memory_order_relaxed))
+    std::thread reader(
+        [&]
         {
-            snapshot.copySnapshot(out);
-            accepted.fetch_add(1U, std::memory_order_relaxed);
-            const PayloadWordScan scan = scanWholePayload(out);
-            if (!scan.consistent && torn.fetch_add(1U, std::memory_order_relaxed) == 0U)
+            GenStampedPayload out{};
+            uint64_t last = 0U;
+            readerRunning.store(true, std::memory_order_release);
+            while (!readerStop.load(std::memory_order_relaxed))
             {
-                firstTornRefGen.store(scan.refGen, std::memory_order_relaxed);
-                firstTornWordGen.store(scan.tornWordGen, std::memory_order_relaxed);
+                snapshot.copySnapshot(out);
+                accepted.fetch_add(1U, std::memory_order_relaxed);
+                const PayloadWordScan scan = scanWholePayload(out);
+                if (!scan.consistent && torn.fetch_add(1U, std::memory_order_relaxed) == 0U)
+                {
+                    firstTornRefGen.store(scan.refGen, std::memory_order_relaxed);
+                    firstTornWordGen.store(scan.tornWordGen, std::memory_order_relaxed);
+                }
+                if (scan.refGen < last)
+                {
+                    backwards.fetch_add(1U, std::memory_order_relaxed);
+                }
+                last = scan.refGen;
             }
-            if (scan.refGen < last)
-            {
-                backwards.fetch_add(1U, std::memory_order_relaxed);
-            }
-            last = scan.refGen;
-        }
-    });
+        });
 
     // On a busy machine the writer can finish every publish before the reader thread is even
     // scheduled (it then reads nothing and the round "accepts zero"): start publishing only once
@@ -274,7 +281,7 @@ static auto testSnapshotTripleBufferWholePayloadNoTear() -> void
     static const char* const kName = "Snapshot_TripleBuffer_WholePayloadNoTear";
 
     constexpr uint64_t kPublishesPerRound = 150000U; // bounded for TSan; ×rounds below
-    constexpr int kRounds = 8;                        // 8 fresh snapshots → 8× the start-of-life race
+    constexpr int kRounds = 8; // 8 fresh snapshots → 8× the start-of-life race
 
     uint64_t totalAccepted = 0U;
     for (int round = 0; round < kRounds; ++round)
@@ -285,20 +292,23 @@ static auto testSnapshotTripleBufferWholePayloadNoTear() -> void
             logInfo("  [tear] round=" + std::to_string(round) +
                     " refGen(word0)=" + std::to_string(r.firstTornRefGen) +
                     " tornWordGen=" + std::to_string(r.firstTornWordGen) + "\n");
-            logFail(kName, "torn read: " + std::to_string(r.torn) +
-                               " accepted copy(ies) spanned >1 generation (transport tears)");
+            logFail(kName,
+                    "torn read: " + std::to_string(r.torn) +
+                        " accepted copy(ies) spanned >1 generation (transport tears)");
             return;
         }
         if (r.backwards != 0U)
         {
-            logFail(kName, "word0 generation went backwards on " + std::to_string(r.backwards) +
-                               " accepted read(s)");
+            logFail(kName,
+                    "word0 generation went backwards on " + std::to_string(r.backwards) +
+                        " accepted read(s)");
             return;
         }
         if (r.accepted == 0U)
         {
-            logFail(kName, "reader accepted zero snapshots in round " + std::to_string(round) +
-                               " — did not exercise the transport");
+            logFail(kName,
+                    "reader accepted zero snapshots in round " + std::to_string(round) +
+                        " — did not exercise the transport");
             return;
         }
         totalAccepted += r.accepted;

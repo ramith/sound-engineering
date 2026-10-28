@@ -406,7 +406,6 @@ static auto testLimiterLinkedGainLockstep() -> void
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;
     kernel.publishTargetState(state);
     TestABLN prime(kNumCh, kLimiterLookaheadFrames);
@@ -1054,7 +1053,6 @@ static auto largeBufferLimiterTailCheckForSize(uint32_t bufSize) -> std::string
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;
     kernel.publishTargetState(state);
 
@@ -1162,7 +1160,6 @@ static auto testLargeBufferEQGainNoCutoff() -> void
     state.eq = EQParams{};
     state.eq.outputGainDb = 20.0 * std::log10(2.0);
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = 10.0F; // bypass limiter
     kernel.publishTargetState(state);
 
@@ -1239,7 +1236,6 @@ static auto testLargeBufferConsecutiveBuffers() -> void
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;
     kernel.publishTargetState(state);
 

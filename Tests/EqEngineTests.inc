@@ -12,14 +12,11 @@
 //   EQ_ResponseIndependentOfIntensity — EQ on / EQ off at r ∈ {0, 0.2, 0.5, 1} == the read-back
 //                                    (≤ 0.05 dB): the graph is honest at every Intensity
 //   EQ_Off_BitExact                — an EQ turned Off (or flat) settles into a bit-exact pass-through
-//   EQ_BitPerfect_P0               — Intensity 0 + EQ off is bit-perfect even with the limiter and
-//                                    the normaliser active; leaving it is immediate, re-entering
+//   EQ_BitPerfect_P0               — Intensity 0 + EQ off is bit-perfect even with the limiter
+//                                    active; leaving it is immediate, re-entering
 //                                    waits the 2 s hysteresis
 //   Kernel_PathSwitch_NoGlitch     — P0 ↔ P1 (EQ toggles at Intensity 0) and P0/P1 ↔ P3 (Intensity
 //                                    0 ↔ 0.2): no sample step > 1.2× the endpoints' own max step
-//   Path_Switch_AfterNormaliserAdapted — 12 s of a loud tone at r = 0.3 (the normaliser adapts to
-//                                    ~−11 dB), then r → 0 and back: no level step > 0.5 dB
-//                                    (amendment 2; 13–15 dB before the fade)
 //   EQ_PublishRejectsNonFinite     — the Realizer's trust boundary
 //   EQ_RT_IgnoresBadSnapshot       — non-finite / non-positive coefficients and a design for
 //                                    another rate are ignored; the last good target keeps playing
@@ -149,31 +146,6 @@ namespace
     auto engineBlocksFor(double seconds) -> uint32_t
     {
         return static_cast<uint32_t>(std::ceil(seconds * kEngineFs / kEngineBlock));
-    }
-
-    // How often a measured render (engineRunSineMeasured) waits for the normaliser's meter: every
-    // 8 blocks, 85 ms of audio — under one 100 ms gated block, so the makeup the render applies
-    // never trails the programme by more than a block, and the 2.7 s ring never fills.
-    constexpr uint32_t kMeterCatchUpBlocks = 8U;
-
-    // engineRunSine, with the normaliser's meter keeping up: every kMeterCatchUpBlocks the render
-    // waits until the meter has measured everything rendered (the state the old 1 ms-per-block
-    // pacing only hoped for). False if the hang cap passed: the test has failed, the caller returns.
-    [[nodiscard]] auto engineRunSineMeasured(DSPKernel& kernel,
-                                             EngineSine& sine,
-                                             uint32_t blocks,
-                                             std::vector<float>& outLeft) -> bool
-    {
-        for (uint32_t done = 0U; done < blocks; done += kMeterCatchUpBlocks)
-        {
-            engineRunSine(kernel, sine, std::min(kMeterCatchUpBlocks, blocks - done), outLeft);
-            if (!rig::waitUntil("the normaliser's meter measured everything rendered",
-                                [&kernel] { return kernel.loudnessMeterCaughtUp(); }))
-            {
-                return false;
-            }
-        }
-        return true;
     }
 
     // The largest |y[n] − y[n−1]| over [begin, end).
@@ -465,76 +437,6 @@ static auto testKernelPathSwitchNoGlitch() -> void
 }
 
 // ---------------------------------------------------------------------------
-// Path_Switch_AfterNormaliserAdapted — amendment 2. After ≥ 10 s of a loud programme the
-// normaliser holds a large cut; leaving the blend for the normaliser-free EQ-only path (and coming
-// back) must glide, not step. The breaker measured +13.4 / −15.5 dB in one block before the fade.
-// Level steps are read per sample from the tone's exact amplitude (y[n], y[n−1] of a known ω).
-// The normaliser's meter keeps up with the render by state, not by pacing (engineRunSineMeasured).
-// ---------------------------------------------------------------------------
-static auto testPathSwitchAfterNormaliserAdapted() -> void
-{
-    static const char* const kName = "Path_Switch_AfterNormaliserAdapted";
-    constexpr double kStepBoundDb = 0.5;
-    constexpr double kMinAdaptedCutDb = 6.0;
-    TargetState state{}; // normaliser ON (−16 LUFS), limiter ON
-    state.clarity.enabled = 0U;
-    state.intensityLinear = 0.3F;
-    DSPKernel kernel;
-    kernel.publishTargetState(state);
-    kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
-    EngineSine sine; // 1 kHz at −6 dBFS: ≈ −4 LUFS through the r = 0.3 blend
-    std::vector<float> out;
-    // ≥ 10 s of programme, the meter measuring all of it.
-    if (!engineRunSineMeasured(kernel, sine, engineBlocksFor(12.0), out))
-    {
-        return;
-    }
-    const auto amplitudeAt = [&](size_t n)
-    {
-        const double omega = 2.0 * std::numbers::pi * sine.hz / kEngineFs;
-        const double cosPart = ((out[n] * std::cos(omega)) - out[n - 1U]) / std::sin(omega);
-        return std::hypot(static_cast<double>(out[n]), cosPart);
-    };
-    const double adaptedDb = 20.0 * std::log10(amplitudeAt(out.size() - 1U) / sine.amplitude);
-    const double blendDb =
-        20.0 * std::log10(std::cos(0.15 * std::numbers::pi) + std::sin(0.15 * std::numbers::pi));
-    const double cutDb = blendDb - adaptedDb;
-    if (!(cutDb >= kMinAdaptedCutDb))
-    {
-        logFail(kName,
-                std::format(
-                    "the normaliser did not adapt (cut {:.2f} dB < {})", cutDb, kMinAdaptedCutDb));
-        return;
-    }
-    const size_t switchAt = out.size();
-    state.intensityLinear = 0.0F;
-    kernel.publishTargetState(state);
-    engineRunSine(kernel, sine, engineBlocksFor(3.0), out); // P3 → P1 → (2 s) → P0
-    state.intensityLinear = 0.3F;
-    kernel.publishTargetState(state);
-    engineRunSine(kernel, sine, engineBlocksFor(1.0), out); // P0 → P3
-    double worstStep = 0.0;
-    for (size_t n = switchAt; n < out.size(); ++n)
-    {
-        worstStep =
-            std::max(worstStep, std::abs(20.0 * std::log10(amplitudeAt(n) / amplitudeAt(n - 1U))));
-    }
-    logInfo(
-        std::format("[info] {}: normaliser cut {:.2f} dB; worst per-sample level step across "
-                    "r 0.3 → 0 → 0.3 {:.4f} dB (≤ {})\n",
-                    kName,
-                    cutDb,
-                    worstStep,
-                    kStepBoundDb));
-    if (!(worstStep <= kStepBoundDb))
-    {
-        logFail(kName, std::format("a {:.3f} dB level step at a path switch", worstStep));
-        return;
-    }
-    logPass(kName);
-}
-
-// ---------------------------------------------------------------------------
 // EQ_PublishRejectsNonFinite — the Realizer's trust boundary (engine-plan §7, guard layer 1).
 // ---------------------------------------------------------------------------
 static auto testEqPublishRejectsNonFinite() -> void
@@ -717,11 +619,10 @@ static auto testEqFzOnWhileRendering() -> void
 #ifdef __aarch64__
     constexpr uint64_t kFz = 1ULL << 24U;
     constexpr float kSubnormal = 1e-40F; // < FLT_MIN (1.18e-38)
-    const EQParams params = makeEqParams(eqFlatCurveWith(17U, 6.0F), static_cast<uint32_t>(kEngineFs));
+    const EQParams params =
+        makeEqParams(eqFlatCurveWith(17U, 6.0F), static_cast<uint32_t>(kEngineFs));
     const auto anyNonZero = [](const TestABL& abl)
-    {
-        return std::ranges::any_of(abl.left, [](float v) { return v != 0.0F; });
-    };
+    { return std::ranges::any_of(abl.left, [](float v) { return v != 0.0F; }); };
 
     // Each probe on a fresh thread: FZ off until something on it turns it on.
     bool controlPassesSubnormals = false;
@@ -747,7 +648,7 @@ static auto testEqFzOnWhileRendering() -> void
         {
             DSPKernel kernel;
             TargetState state = makeIdentityState(); // limiter bypassed, normaliser off
-            state.intensityLinear = 0.0F;            // P1: EQ → crossfeed (off) → limiter (bypassed)
+            state.intensityLinear = 0.0F; // P1: EQ → crossfeed (off) → limiter (bypassed)
             state.eq = params;
             kernel.publishTargetState(state);
             kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
@@ -764,12 +665,13 @@ static auto testEqFzOnWhileRendering() -> void
     if (!controlPassesSubnormals || kernelPassesSubnormals || before != 0U || after != 0U)
     {
         logFail(kName,
-                std::format("control passes subnormals {} (want true); the kernel's EQ passes them {} "
-                            "(want false: FZ on while rendering); FPCR.FZ before {} after {} (want 0, 0)",
-                            controlPassesSubnormals,
-                            kernelPassesSubnormals,
-                            before,
-                            after));
+                std::format(
+                    "control passes subnormals {} (want true); the kernel's EQ passes them {} "
+                    "(want false: FZ on while rendering); FPCR.FZ before {} after {} (want 0, 0)",
+                    controlPassesSubnormals,
+                    kernelPassesSubnormals,
+                    before,
+                    after));
         return;
     }
     logPass(kName);
@@ -1029,14 +931,15 @@ static auto testCrossfeedRederivedOnRateChange() -> void
     if (at96k.crossPole == at48k.crossPole || at96k.enabled != 1U ||
         std::memcmp(&at96k, &fresh96k, sizeof(CrossfeedParams)) != 0)
     {
-        logFail(kName,
-                std::format("crossfeed after 48 → 96 kHz: cross pole {} (48 kHz {}, fresh 96 kHz {}), "
-                            "shelf pole {} (fresh {})",
-                            at96k.crossPole,
-                            at48k.crossPole,
-                            fresh96k.crossPole,
-                            at96k.directPole,
-                            fresh96k.directPole));
+        logFail(
+            kName,
+            std::format("crossfeed after 48 → 96 kHz: cross pole {} (48 kHz {}, fresh 96 kHz {}), "
+                        "shelf pole {} (fresh {})",
+                        at96k.crossPole,
+                        at48k.crossPole,
+                        fresh96k.crossPole,
+                        at96k.directPole,
+                        fresh96k.directPole));
         return;
     }
     logPass(kName);
@@ -1105,8 +1008,9 @@ static auto testRealizerReinitDuringDrain() -> void
             }
         });
     // The race needs the burst running: wait for its first drain (a positive witness).
-    const bool burstRunning = rig::waitUntil("the intent burst posted a drain", [&]
-                                             { return realizer->drainsPosted() > postedBeforeBurst; });
+    const bool burstRunning =
+        rig::waitUntil("the intent burst posted a drain",
+                       [&] { return realizer->drainsPosted() > postedBeforeBurst; });
     double burstWorstMs = 0.0;
     double burstTotalMs = 0.0;
     for (int round = 0; round < kRounds && burstRunning; ++round)

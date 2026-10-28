@@ -20,7 +20,6 @@ namespace AdaptiveSound
 {
     class EQModule;
     class ClarityModule;
-    class LoudnessModule;
     class BRIRModule;
     class CrossfeedModule;
     class LimiterModule;
@@ -30,7 +29,11 @@ namespace AdaptiveSound
 
     // DSP Kernel: the signal chain, EQ FIRST (Sprint EQ decision 25):
     //
-    //   EQ → [dry tap] → Clarity → BRIR → [Intensity blend] → Loudness → Crossfeed → Limiter
+    //   EQ (with the level stage's gain) → [dry tap] → Clarity → BRIR → [Intensity blend] → Crossfeed → Limiter
+    //
+    // The session's own loudness normaliser (LoudnessModule, the makeup AGC) is gone (R1.1-B, the level-and-fold
+    // design §7, M8): the level is the planner's leveling gain, applied in the EQ module's output gain with the
+    // loudness-neutral gain under the peak cap (Loudness/TrackLoudnessGain.h).
     //
     // The EQ sits ahead of the Intensity blend, so what the EQ graph draws is what plays at every
     // Intensity; the blend's dry signal is the EQ'd signal. The crossfeed is an output stage of
@@ -40,13 +43,11 @@ namespace AdaptiveSound
     //   P0 bit-perfect  Intensity settled at 0, the EQ settled at its identity AND crossfeed off
     //                   (its glide out ended), for ≥ 2 s: the input is returned untouched (the
     //                   limiter's look-ahead ring is primed).
-    //   P1 EQ-only      Intensity settled at 0 otherwise: EQ → Crossfeed → Limiter (no normaliser,
+    //   P1 EQ-only      Intensity settled at 0 otherwise: EQ → Crossfeed → Limiter (no coloration,
     //                   so EQ On ↔ Off stays level-fair against the bit-perfect Off).
-    //   P2 full         Intensity settled at 1: EQ → coloration → Loudness → Crossfeed → Limiter.
-    //   P3 blend        otherwise: EQ → dry snapshot → coloration → equal-power blend → Loudness
-    //                   (its contribution faded as min(1, r/0.1), amendment 2, gliding at most a
-    //                   full 0 ↔ 1 per 2 s, decision 33) → Crossfeed → Limiter. P1 and P2 wait for
-    //                   that glide: until it ends the blend runs at the endpoint.
+    //   P2 full         Intensity settled at 1: EQ → coloration → Crossfeed → Limiter.
+    //   P3 blend        otherwise: EQ → dry snapshot → coloration → equal-power blend → Crossfeed →
+    //                   Limiter.
     //
     // P0 ↔ P1/P3 switches cross-fade the undelayed input and the limiter's 3 ms-delayed output over
     // 5 ms at constant power (correlation-compensated, amendment 17), so a switch neither skips nor
@@ -72,9 +73,8 @@ namespace AdaptiveSound
         // Publish new parameter state from the off-RT (control/Realizer) thread. Single producer.
         void publishTargetState(const TargetState& newState) noexcept;
 
-        // Off-RT (control thread): forward decoded BS.1770-5 per-channel weights to
-        // the loudness measurement worker.  S2 calls this when the source file's layout
-        // tag changes.  Harmless no-op if loudnessModule_ is not yet initialised.
+        // Off-RT (control thread): the source's decoded channel layout (its BS.1770-5 weights), for the causal
+        // loudness estimate. Called when the source file's layout tag changes.
         void publishChannelLayout(const ChannelLayout& layout) noexcept;
 
         // Off-RT (the Realizer's queue): the causal running loudness estimate of the kernel's input
@@ -87,13 +87,10 @@ namespace AdaptiveSound
         void stopCausalLoudness() noexcept;
         // Diagnostics (any thread): the frames the current causal estimate has analysed.
         [[nodiscard]] uint64_t causalLoudnessFedFrames() const noexcept;
-        // Diagnostics (any thread): both analysis workers — the normaliser's meter and the causal
-        // estimate — are parked (blocked until handed work), and how often they have woken in all.
+        // Diagnostics (any thread): the analysis worker — the causal estimate's — is parked (blocked until
+        // handed work), and how often it has woken in all.
         [[nodiscard]] bool analysisWorkersParked() const noexcept;
         [[nodiscard]] uint64_t analysisWorkerWakes() const noexcept;
-        // Tests, on the render thread between process() calls: the normaliser's meter has measured
-        // everything rendered so far (LoudnessModule::meterCaughtUp).
-        [[nodiscard]] bool loudnessMeterCaughtUp() const noexcept;
 
         // Any thread (R1.1-B, S2): whether the crossfeed played on the last rendered block — on, or
         // still gliding out, on a stereo block. False on any other width (a 5.1 file folds: no
@@ -122,7 +119,7 @@ namespace AdaptiveSound
                               const MultichannelView& block,
                               bool intensityAtZero,
                               bool intensityAtOne) noexcept;
-        // P3: EQ'd dry tap → coloration → equal-power blend → weighted Loudness → output stages.
+        // P3: EQ'd dry tap → coloration → equal-power blend → output stages.
         void runBlendPath(const TargetState& state, const MultichannelView& block) noexcept;
         // Copy the block into a planar scratch (channel ch at scratch + ch·maxFrames_).
         void copyBlock(const MultichannelView& block, std::vector<float>& scratch) const noexcept;
@@ -133,8 +130,6 @@ namespace AdaptiveSound
                                               uint32_t frames) const noexcept;
         // S2: record whether the crossfeed plays on this block (RT; stores only on a change).
         void publishCrossfeedEngaged(bool engaged) noexcept;
-        // The normaliser's contribution an Intensity asks for: min(1, r/0.1).
-        [[nodiscard]] static float loudnessContributionAt(float intensity) noexcept;
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
@@ -144,7 +139,6 @@ namespace AdaptiveSound
         std::unique_ptr<ClarityModule> clarityModule_;
         std::unique_ptr<BRIRModule> brirModule_;
         std::unique_ptr<CrossfeedModule> crossfeedModule_;
-        std::unique_ptr<LoudnessModule> loudnessModule_;
         std::unique_ptr<LimiterModule> limiterModule_;
         std::unique_ptr<CausalLoudnessTap> causalTap_; // the input, for the causal estimate
 
@@ -166,15 +160,9 @@ namespace AdaptiveSound
         std::vector<float> dryScratch_;
         std::vector<float> bypassScratch_;
 
-        // Per-sample scratch (maxFrames_ each): the equal-power gains and the normaliser's
-        // contribution weight.
+        // Per-sample scratch (maxFrames_ each): the equal-power gains.
         std::vector<float> wetGainBuf_;
         std::vector<float> dryGainBuf_;
-        std::vector<float> loudnessWeightBuf_;
-
-        // The normaliser's contribution (0 … 1) and its largest per-sample move (decision 33).
-        float loudnessContribution_ = 1.0F;
-        float loudnessContributionStep_ = 0.0F;
 
         // --- The bit-perfect path (P0) ---
         float bypassMix_ = 0.0F;          // weight of the undelayed input: 1 = P0, 0 = processed

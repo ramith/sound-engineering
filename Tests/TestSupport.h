@@ -124,6 +124,10 @@ namespace TestConstants
     // (GoldenMaster_StereoN2_v1, and Crossfeed_Bypass_BitExact_GoldenMaster with crossfeed present
     // but off). Re-baseline ONLY on a deliberate DSP change — history in GoldenMaster_StereoN2_v1.
     constexpr uint64_t kGoldenMasterStereoN2Hash = 0xF0E1D4EF83763709ULL;
+    // The shipping path's signature (R1.1-B, level-and-fold §7, architect N8): the same chirp at Intensity 0
+    // (P1), the EQ Off, through the Realizer with a plan whose leveling gain is −7.07 dB (§4's worked example's
+    // g) on a Bluetooth output (GoldenMaster_StereoN2_P1Leveled_v1). Re-baseline ONLY on a deliberate DSP change.
+    constexpr uint64_t kGoldenMasterStereoP1LeveledHash = 0xE6D871E710A80759ULL;
 
     // Multichannel per-channel independence test constants (S1-A2 T-C3).
     constexpr uint32_t kNChannels4 = 4U;
@@ -358,7 +362,6 @@ struct TestABL
 // Each real module that could alter the signal is set to its bypass/identity
 // condition so chain null-tests measure only EQ identity:
 //   clarity.enabled = 0       — stub, no-op
-//   loudness.enabled = 0      — stub, no-op
 //   limiter.truePeakCeilingLinear = 2.0F — ceiling ≥ 1.0 → zero-latency bypass
 //     (the limiter's ring-based path is only entered when ceiling < 1.0; at 2.0
 //      process() returns immediately after the null-guard, giving bit-exact output)
@@ -368,7 +371,6 @@ static auto makeIdentityState() -> TargetState
     state.intensityLinear = 1.0F; // documentary clarity; matches the struct default
     state.eq = EQParams{};
     state.clarity.enabled = 0U;                 // stub module -- no-op
-    state.loudness.enabled = 0U;                // stub module -- no-op
     state.limiter.truePeakCeilingLinear = 2.0F; // bypass: ceiling ≥ 1.0 → identity
     return state;
 }

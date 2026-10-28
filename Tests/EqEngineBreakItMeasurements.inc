@@ -16,7 +16,6 @@
 //   calm-pair-search       a TD search over pairs the rule sends to 10 / 40 ms
 //   cpu                    the EQ module's cost by rate × channels × block, settled / gliding
 //   app-safety-clamp-gap   graph vs played while AudioEngineBridge still sends EQSafetyClamp
-//   normaliser-poison      one NaN / +Inf sample into the loudness normaliser
 //   p0-switch              the P1 → P0 level step on a loud master; the 5 ms fade's dip
 //   intensity-zero-swing   the Intensity-0 boundary as a level-vs-time trace
 //   designer-accuracy      extra rates, fresh Rämö seeds, a hill-climb
@@ -24,8 +23,6 @@
 //   storm                  render + intent storm + re-allocations: RT allocations, finiteness
 //   rt-vs-readback         the settled RT module vs the read-back: low bands at 192 / 768 kHz,
 //                          the top band near Nyquist at 44.1 kHz
-
-#include "../Sources/AudioDSP/Loudness/LoudnessModule.h"
 
 namespace
 {
@@ -945,61 +942,6 @@ namespace
     }
 
     // ---------------------------------------------------------------------------------------------
-    // M7 normaliser-poison
-    // ---------------------------------------------------------------------------------------------
-
-    auto bkFeedTone(LoudnessModule& module, uint64_t& n, double seconds, float poison) -> TestABL
-    {
-        constexpr uint32_t kBlock = 512U;
-        TestABL abl(kBlock);
-        const auto blocks = static_cast<uint32_t>(seconds * kBkFs / kBlock);
-        const LoudnessParams params;
-        for (uint32_t b = 0U; b < blocks; ++b)
-        {
-            for (uint32_t i = 0U; i < kBlock; ++i, ++n)
-            {
-                abl.left[i] = static_cast<float>(0.5 * std::sin(2.0 * std::numbers::pi * 1000.0 *
-                                                                static_cast<double>(n) / kBkFs));
-                abl.right[i] = abl.left[i];
-            }
-            abl.left[100] = (b == 0U && poison != 0.0F) ? poison : abl.left[100];
-            module.process(params, MultichannelView::fromABL(abl.abl(), kBlock));
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
-        }
-        return abl;
-    }
-
-    auto measureNormaliserPoison() -> void
-    {
-        for (const float bad :
-             {std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
-        {
-            LoudnessModule module;
-            module.initialize(static_cast<uint32_t>(kBkFs), 512U);
-            uint64_t n = 0U;
-            (void)bkFeedTone(module, n, 6.0, 0.0F);
-            const float makeupBefore = module.currentMakeupGainLinear();
-            const float lufsBefore = module.measuredLufsIntegrated();
-            (void)bkFeedTone(module, n, 0.02, bad);
-            const TestABL last = bkFeedTone(module, n, 6.0, 0.0F);
-            const bool finite =
-                std::ranges::all_of(last.left, [](float v) { return std::isfinite(v); });
-            bkLine(
-                std::format("  {}: before: makeup {:.4f} ({:.2f} dB), integrated {:.2f} LUFS | 6 s "
-                            "after: makeup {:.4f}, integrated {:.2f} LUFS, short-term {:.2f}, "
-                            "output finite={}",
-                            std::isinf(bad) ? "+Inf" : "NaN",
-                            makeupBefore,
-                            20.0 * std::log10(makeupBefore),
-                            lufsBefore,
-                            module.currentMakeupGainLinear(),
-                            module.measuredLufsIntegrated(),
-                            module.measuredLufsShortTerm(),
-                            finite));
-        }
-    }
-
-    // ---------------------------------------------------------------------------------------------
     // M10 p0-switch
     // ---------------------------------------------------------------------------------------------
 
@@ -1626,7 +1568,8 @@ namespace
         const int r = pick(rng);
         if (r >= 85)
         {
-            realizer.setPendingCrossfeed(static_cast<uint32_t>(r % 2), static_cast<uint32_t>(r % 3));
+            realizer.setPendingCrossfeed(static_cast<uint32_t>(r % 2),
+                                         static_cast<uint32_t>(r % 3));
             return;
         }
         if (r >= 60)
@@ -1721,7 +1664,6 @@ namespace
             {"calm-pair-search", measureCalmPairSearch},
             {"cpu", measureCpu},
             {"app-safety-clamp-gap", measureAppSafetyClampGap},
-            {"normaliser-poison", measureNormaliserPoison},
             {"p0-switch", measureP0Switch},
             {"intensity-zero-swing", measureIntensityZeroSwing},
             {"designer-accuracy", measureDesignerAccuracy},
