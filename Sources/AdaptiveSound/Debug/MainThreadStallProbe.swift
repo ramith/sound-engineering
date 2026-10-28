@@ -53,7 +53,7 @@
                     _ = bridge.readMonitorBands(.after, channel: channel, into: &bands)
                 }
             }
-            measure("vm.publishEQ") { viewModel.publishEQ(points: flatPoints, isOn: flip) }
+            measure("vm.publishEQ") { viewModel.publishEQ(points: flatPoints, isOn: flip, comparing: !flip) }
             measure("vm.intensity didSet") { viewModel.intensity = flip ? 0.3 : 0.2 }
             measure("vm.crossfeedEnabled didSet") { viewModel.crossfeedEnabled = flip }
             measure("vm.selectedDevice didSet (EQ identity, transport)") {

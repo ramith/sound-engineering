@@ -2,6 +2,7 @@
 import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 import RigKit
 import Testing
@@ -180,7 +181,7 @@ struct EnhancedSeamTests {
         let bridge = rig.bridge
         let nextURL = try rig.writeTrack([1000], named: "seam-format-next", rate: next.rate,
                                          frames: 0 ..< Int(next.rate), channels: next.channels)
-        await bridge.setNextTrack(nextURL, ticket: OnDeckTicket(session: 0, sequence: 1))
+        await bridge.setNextTrack(nextURL, ticket: OnDeckTicket(session: 0, sequence: 1), leveling: .off)
         let first = try #require(bridge.resampleQueue.sync { bridge.resampleSession })
 
         let output = try #require(await rig.samples(frames: Self.seamFrame(lengthA) + 24000))

@@ -95,6 +95,9 @@ namespace AdaptiveSound
         identityHeldFrames_ = 0U;
         bypassMix_ = 0.0F;
         firstBlock_ = true;
+        // A fresh crossfeed module plays nothing until its first block says otherwise (S2).
+        crossfeedEngagedSeen_ = 0U;
+        crossfeedEngaged_.store(0U, std::memory_order_relaxed);
     }
 
     void DSPKernel::publishTargetState(const TargetState& newState) noexcept
@@ -207,8 +210,10 @@ namespace AdaptiveSound
         // previous output to stay continuous with, so it snaps to its path. Crossfeed is an output
         // stage of its own: while it plays (or glides out) the kernel is off the bit-perfect path,
         // whatever Intensity is (founder decision 2026-10-14).
-        const bool identity = atZero && eqModule_->isIdentity() &&
-                              crossfeedModule_->isBypassed(state.crossfeed, block.channels());
+        const bool crossfeedBypassed =
+            crossfeedModule_->isBypassed(state.crossfeed, block.channels());
+        const bool identity = atZero && eqModule_->isIdentity() && crossfeedBypassed;
+        publishCrossfeedEngaged(!crossfeedBypassed);
         identityHeldFrames_ = identity ? (identityHeldFrames_ + block.frames()) : 0U;
         if (firstBlock_ && identity)
         {
@@ -239,6 +244,16 @@ namespace AdaptiveSound
         if (crossfading)
         {
             crossfadeWithBypass(block, wantBypass ? 1.0F : 0.0F);
+        }
+    }
+
+    void DSPKernel::publishCrossfeedEngaged(bool engaged) noexcept
+    {
+        const uint8_t value = engaged ? 1U : 0U;
+        if (value != crossfeedEngagedSeen_)
+        {
+            crossfeedEngagedSeen_ = value;
+            crossfeedEngaged_.store(value, std::memory_order_relaxed);
         }
     }
 

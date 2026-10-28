@@ -1,6 +1,7 @@
 @testable import AdaptiveSound
 import EQEditKit
 import Foundation
+import LevelingKit
 import OutputDeviceKit
 import PlaybackQueueKit
 import SettingsKit
@@ -20,13 +21,14 @@ final class FakeEngine: AudioPlaybackEngine {
     enum Call: Equatable {
         case initialize
         case shutdown
-        case start(URL, pure: Bool, startAt: Double, epoch: UInt64)
+        case start(URL, pure: Bool, startAt: Double, epoch: UInt64, leveling: TrackLevelingDecision)
         case stop(epoch: UInt64, pausing: Bool)
         case seek(Double, epoch: UInt64)
-        case setNextTrack(URL?, ticket: OnDeckTicket)
+        case setNextTrack(URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?)
+        case levelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?)
         case masterGain(Float)
         case keepPureVolumeLoans([PureVolumeLoan])
-        case eq(points: [Float], isOn: Bool)
+        case eq(points: [Float], isOn: Bool, comparing: Bool)
         case intensity(Float)
         case outputTransport(UInt32)
         case crossfeed(enabled: Bool, strength: CrossfeedStrength)
@@ -65,9 +67,10 @@ final class FakeEngine: AudioPlaybackEngine {
         record(.shutdown)
     }
 
-    func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64,
+                    leveling: TrackLevelingDecision) async throws {
         let error = state.withLock { state in
-            state.calls.append(.start(fileURL, pure: pureMode, startAt: startAt, epoch: epoch))
+            state.calls.append(.start(fileURL, pure: pureMode, startAt: startAt, epoch: epoch, leveling: leveling))
             return state.startError
         }
         if let error {
@@ -79,8 +82,12 @@ final class FakeEngine: AudioPlaybackEngine {
         record(.stop(epoch: epoch, pausing: pausing))
     }
 
-    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async {
-        record(.setNextTrack(fileURL, ticket: ticket))
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?) async {
+        record(.setNextTrack(fileURL, ticket: ticket, leveling: leveling))
+    }
+
+    func applyLevelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?) {
+        record(.levelingChange(current: current, next: next))
     }
 
     func snapshot() -> EngineSnapshot {
@@ -105,8 +112,8 @@ final class FakeEngine: AudioPlaybackEngine {
         record(.keepPureVolumeLoans(journal.loans()))
     }
 
-    func publishEQ(points: [Float], isOn: Bool) {
-        record(.eq(points: points, isOn: isOn))
+    func publishEQ(points: [Float], isOn: Bool, comparing: Bool) {
+        record(.eq(points: points, isOn: isOn, comparing: comparing))
     }
 
     func publishIntensity(_ intensity: Float) {
@@ -255,7 +262,7 @@ extension FakeEngine.State {
     /// Every `startAudio` call's start position.
     var starts: [Double] {
         recorded { call in
-            guard case let .start(_, _, startAt, _) = call else { return nil }
+            guard case let .start(_, _, startAt, _, _) = call else { return nil }
             return startAt
         }
     }
@@ -263,7 +270,7 @@ extension FakeEngine.State {
     /// Every `startAudio` call's file.
     var startedURLs: [URL] {
         recorded { call in
-            guard case let .start(url, _, _, _) = call else { return nil }
+            guard case let .start(url, _, _, _, _) = call else { return nil }
             return url
         }
     }
@@ -271,7 +278,7 @@ extension FakeEngine.State {
     /// Every `startAudio` call's `pureMode`.
     var pureModes: [Bool] {
         recorded { call in
-            guard case let .start(_, pure, _, _) = call else { return nil }
+            guard case let .start(_, pure, _, _, _) = call else { return nil }
             return pure
         }
     }
@@ -295,8 +302,24 @@ extension FakeEngine.State {
     /// Every on-deck request's pick (`nil`: a clear).
     var nextTracks: [URL?] {
         recorded { call in
-            guard case let .setNextTrack(url, _) = call else { return nil }
+            guard case let .setNextTrack(url, _, _) = call else { return nil }
             return .some(url)
+        }
+    }
+
+    /// Every `startAudio` call's leveling decision (R1.1-B, B2: every start carries one).
+    var startLevelings: [TrackLevelingDecision] {
+        recorded { call in
+            guard case let .start(_, _, _, _, leveling) = call else { return nil }
+            return leveling
+        }
+    }
+
+    /// Every on-deck request's leveling decision (`nil` with a clear).
+    var nextLevelings: [TrackLevelingDecision?] {
+        recorded { call in
+            guard case let .setNextTrack(_, _, leveling) = call else { return nil }
+            return .some(leveling)
         }
     }
 

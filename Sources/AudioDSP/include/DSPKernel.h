@@ -8,6 +8,7 @@
 #include "ParameterRamp.h"
 #include "TargetState.h"
 #include "TripleBufferSnapshot.h"
+#include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
 #include <cstdint>
 #include <functional>
@@ -94,6 +95,15 @@ namespace AdaptiveSound
         // everything rendered so far (LoudnessModule::meterCaughtUp).
         [[nodiscard]] bool loudnessMeterCaughtUp() const noexcept;
 
+        // Any thread (R1.1-B, S2): whether the crossfeed played on the last rendered block — on, or
+        // still gliding out, on a stereo block. False on any other width (a 5.1 file folds: no
+        // crossfeed) and on the bit-perfect path. The "XF" chip reads it, so it shows what plays,
+        // not what is asked for. A status, not a synchronisation: relaxed.
+        [[nodiscard]] bool crossfeedEngaged() const noexcept
+        {
+            return crossfeedEngaged_.load(std::memory_order_relaxed) != 0U;
+        }
+
         // Read-only view of the EQ stage between process() calls (tests/diagnostics only).
         [[nodiscard]] const EQModule* eqModule() const noexcept
         {
@@ -121,6 +131,8 @@ namespace AdaptiveSound
         // The correlation (clamped to [0, 1]) of the processed block and the bypass copy.
         [[nodiscard]] float streamCorrelation(const MultichannelView& block,
                                               uint32_t frames) const noexcept;
+        // S2: record whether the crossfeed plays on this block (RT; stores only on a change).
+        void publishCrossfeedEngaged(bool engaged) noexcept;
         // The normaliser's contribution an Intensity asks for: min(1, r/0.1).
         [[nodiscard]] static float loudnessContributionAt(float intensity) noexcept;
 
@@ -171,6 +183,12 @@ namespace AdaptiveSound
         uint64_t identityHeldFrames_ = 0; // frames Intensity 0 + EQ identity has held so far
         uint64_t bypassHoldFrames_ = 0;   // the 2 s hysteresis before P0
         bool firstBlock_ = true;          // the first block after initialize() snaps the path
+
+        // S2: whether the crossfeed played on the last block (crossfeedEngaged()). The render thread
+        // stores it only when it changes (crossfeedEngagedSeen_ is its own copy), so the atomic is
+        // written a few times per session, not per block.
+        std::atomic<uint8_t> crossfeedEngaged_{0U};
+        uint8_t crossfeedEngagedSeen_ = 0U;
     };
 
 } // namespace AdaptiveSound

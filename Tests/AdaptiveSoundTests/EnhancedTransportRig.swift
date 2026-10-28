@@ -2,6 +2,7 @@
 import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 import RigKit
 import Synchronization
@@ -250,7 +251,7 @@ final class EnhancedTransportRig: @unchecked Sendable {
         let rig = try await EnhancedTransportRig(path: rate == graphRate ? .passthrough : .resampler, name: name,
                                                  tones: tones, frames: frames, rate: rate)
         let next = try rig.writeTrack(tones, named: "\(name)-next", rate: rate, frames: frames ..< frames + nextFrames)
-        await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 1))
+        await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 1), leveling: .off)
         return rig
     }
 
