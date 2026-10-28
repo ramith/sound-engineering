@@ -117,12 +117,30 @@ extern "C"
     /// Off-RT; called by the track analyzer only. No-op if `auUnit` is null or the token is 0.
     void reportTrackLoudnessFailure(void* auUnit, uint64_t trackToken) AUDIODSP_C_NOEXCEPT;
 
-    /// Tell the live AdaptiveSoundAU which track is audible now: at a gapless seam
-    /// (`gaplessSeam` true — the gain steps by at most 0.2 dB where the music is continuous) or by
-    /// a fresh start. The same token again is a no-op. Off-RT; called by the playback bridge only
-    /// (at the audible seam and at a fresh start — never when the next track is merely
-    /// scheduled). No-op if `auUnit` is null.
-    void setCurrentTrack(void* auUnit, uint64_t trackToken, bool gaplessSeam) AUDIODSP_C_NOEXCEPT;
+    /// Hand the live AdaptiveSoundAU a track's SAVED −ΔL profile (R1.1-B, §8½ C2): the persisted compact
+    /// profile, rebuilt by the playback bridge from the request that makes the track audible, and
+    /// published before it is. It is final: the analyzer's later profiles for the token change nothing, so
+    /// the loudness-neutral gain is right at the fresh start and never moves inside the track. Off-RT;
+    /// called by the playback bridge only.
+    ///
+    /// @return true if accepted; false on a null AU or profile, or a zero token.
+    bool publishSavedLoudnessProfile(void* auUnit,
+                                     uint64_t trackToken,
+                                     const AsLoudnessProfile* profile) AUDIODSP_C_NOEXCEPT;
+
+    /// Hand the live AdaptiveSoundAU the planner's plan for `trackToken` (R1.1-B, §1.3; B1): the track
+    /// became audible (AsPlanEventFreshStart — the gain snaps; AsPlanEventGaplessSeam — 10 ms, and the
+    /// same token at a seam is a new play), the listener changed the Leveling mode (ModeChange, 0.15 s),
+    /// or the output changed (OutputChange, the protective re-plan). The level stage plays g + G with
+    /// G = min(−ΔL, C_cap). `continuousWithPrevious` is the continuity judge's verdict for a seam. The
+    /// bridge sends the same plan to the spatial unit in the same turn. Off-RT; called by the playback
+    /// bridge only — at audibility, a mode change, an output change; never when a track is merely
+    /// scheduled. No-op if `auUnit` or `plan` is null, or `event` is out of range.
+    void applyTrackPlan(void* auUnit,
+                        uint64_t trackToken,
+                        uint8_t event,
+                        const AsTrackPlan* plan,
+                        bool continuousWithPrevious) AUDIODSP_C_NOEXCEPT;
 
     /// Publish the source file's channel layout tag to the live AdaptiveSoundAU (Sprint 5b M2).
     /// Off-RT control plane: decodes `tag` into the per-channel BS.1770-5 loudness weights and

@@ -84,11 +84,13 @@ namespace AdaptiveSound
     class Realizer : public std::enable_shared_from_this<Realizer>
     {
       public:
-        // The EQ intent: the 31 points the UI draws (already clamped to ±12) and On/Off.
+        // The EQ intent: the 31 points the UI draws (already clamped to ±12), On/Off, and whether
+        // Compare is held (the curve's identity plays, level-matched — R1.1-B, §7).
         struct EqIntent
         {
             std::array<float, kEqBandCount> points{};
             bool isOn = false;
+            bool comparing = false;
         };
 
         struct IntensityIntent
@@ -117,10 +119,10 @@ namespace AdaptiveSound
 
         // --- Control-plane entry points (off-RT, single control thread) -----------------
 
-        // The EQ: `count` (must be 31) points in dB, and On/Off. The trust boundary (engine-plan
-        // §7, guard layer 1): a NULL pointer, a wrong count or any non-finite point is rejected
-        // (false; the last good EQ keeps playing); finite points are clamped to ±12 dB.
-        bool setPendingEq(const float* pointsDb, uint32_t count, bool isOn);
+        // The EQ: `count` (must be 31) points in dB, On/Off, and Compare held. The trust boundary
+        // (engine-plan §7, guard layer 1): a NULL pointer, a wrong count or any non-finite point is
+        // rejected (false; the last good EQ keeps playing); finite points are clamped to ±12 dB.
+        bool setPendingEq(const float* pointsDb, uint32_t count, bool isOn, bool comparing = false);
 
         // Intensity, clamped to [0,1].
         void setPendingIntensity(float value);
@@ -128,17 +130,24 @@ namespace AdaptiveSound
         // Crossfeed: on/off, and the preset (clamped to the valid CrossfeedPreset range).
         void setPendingCrossfeed(uint32_t enabled, uint32_t preset);
 
-        // --- Track loudness (any thread; each posts to the queue) ------------------------
-        // A track's loudness profile from the analyzer (a prefix, then the whole track; the
-        // engine keeps this reference, so the caller may drop its own). token 0 or a null
+        // --- Track loudness and the plan (any thread; each posts to the queue) ----------------
+        // A track's loudness profile (the engine keeps this reference, so the caller may drop its
+        // own). `saved`: the persisted compact profile (C2), published before the track becomes
+        // audible — final. Otherwise the analyzer's prefix, then its whole track. token 0 or a null
         // profile is ignored.
         void publishTrackLoudnessProfile(uint64_t token,
-                                         std::shared_ptr<const TrackLoudnessProfile> profile);
+                                         std::shared_ptr<const TrackLoudnessProfile> profile,
+                                         bool saved = false);
         // The analyzer could not profile `token` at all: it falls back to the causal estimate.
         void reportTrackLoudnessFailure(uint64_t token);
-        // `token` became the audible track: at a gapless seam (`gaplessSeam`), or by a fresh
-        // start. The same token again is a no-op (a re-establish of the same file).
-        void setCurrentTrack(uint64_t token, bool gaplessSeam);
+        // The planner's plan for `token` (R1.1-B, B1): it became audible (a fresh start, or a
+        // gapless seam — `continuousWithPrevious` is the continuity judge's verdict), or the
+        // listener changed the mode, or the output changed. The playback bridge sends the same plan
+        // to the spatial unit in the same turn.
+        void applyTrackPlan(uint64_t token,
+                            AsPlanEvent event,
+                            const AsTrackPlan& plan,
+                            bool continuousWithPrevious);
 
         // --- The output (any thread; posts to the queue) ----------------------------------
         // The output's transport (kAudioDevicePropertyTransportType FourCC; 0 = unknown): sets

@@ -293,8 +293,8 @@ bool publishEQIntent(void* auUnit, const float* pointsDb, uint32_t count, bool i
                      bool comparing) AUDIODSP_C_NOEXCEPT {
     // Sprint EQ (engine-plan §8): the points the UI draws + On/Off. The Realizer validates (the
     // trust boundary), designs on its queue at the kernel's rate and publishes; the RT module
-    // glides to the finished coefficients. Step-1 seam (R1.1-B W4): Compare plays as Off, as the
-    // view model's `plays` sent it before; the level-matched Compare lands with the planner.
+    // glides to the finished coefficients. While Compare is held the curve's identity plays at the
+    // level the curve plays at (R1.1-B, §7).
     if (auUnit == nullptr) {
         AdaptiveSound::log::line("[EQ] C-ABI publishEQ SKIP — auUnit == nullptr");
         return false;
@@ -306,7 +306,7 @@ bool publishEQIntent(void* auUnit, const float* pointsDb, uint32_t count, bool i
         return false;
     }
     AdaptiveSound::log::debug("[QW1] C-ABI publishEQ count={} on={} comparing={}", count, isOn, comparing);
-    return realizer->setPendingEq(pointsDb, count, isOn && !comparing);
+    return realizer->setPendingEq(pointsDb, count, isOn, comparing);
 }
 
 double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT {
@@ -353,9 +353,24 @@ void reportTrackLoudnessFailure(void* auUnit, uint64_t trackToken) AUDIODSP_C_NO
     }
 }
 
-void setCurrentTrack(void* auUnit, uint64_t trackToken, bool gaplessSeam) AUDIODSP_C_NOEXCEPT {
+bool publishSavedLoudnessProfile(void* auUnit, uint64_t trackToken,
+                                 const AsLoudnessProfile* profile) AUDIODSP_C_NOEXCEPT {
+    // R1.1-B, C2: the persisted profile, final — the shared reference is copied, not the blocks.
+    std::shared_ptr<AdaptiveSound::Realizer> realizer = borrowRealizer(auUnit);
+    if (realizer == nullptr || profile == nullptr || trackToken == 0U || !profile->profile) {
+        return false;
+    }
+    realizer->publishTrackLoudnessProfile(trackToken, profile->profile, true);
+    return true;
+}
+
+void applyTrackPlan(void* auUnit, uint64_t trackToken, uint8_t event, const AsTrackPlan* plan,
+                    bool continuousWithPrevious) AUDIODSP_C_NOEXCEPT {
+    if (plan == nullptr || event > static_cast<uint8_t>(AsPlanEventOutputChange)) {
+        return;
+    }
     if (std::shared_ptr<AdaptiveSound::Realizer> realizer = borrowRealizer(auUnit)) {
-        realizer->setCurrentTrack(trackToken, gaplessSeam);
+        realizer->applyTrackPlan(trackToken, static_cast<AsPlanEvent>(event), *plan, continuousWithPrevious);
     }
 }
 
