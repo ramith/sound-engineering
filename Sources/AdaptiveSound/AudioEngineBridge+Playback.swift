@@ -7,7 +7,7 @@ import PlaybackQueueKit
 
 extension AudioEngineBridge {
     func startAudio(fileURL: URL, pureMode: Bool, startAt requested: Double, epoch: UInt64,
-                    leveling _: TrackLevelingDecision) async throws {
+                    leveling: TrackLevelingDecision) async throws {
         // The one place rule (`SeekTarget`): a start must start somewhere, so a place that is not a
         // number is the top. Pure and Enhanced both take it from here.
         let startAt = SeekTarget.place(requested) ?? 0
@@ -36,13 +36,18 @@ extension AudioEngineBridge {
                     self.resampleQueue.sync {
                         self.gaplessPlaybackEnded = false
                         self.onDeckURL = nil
+                        self.armLeveling(nil) // the armed decision goes with its pick
                     }
 
                     // Try the Pure path first; if it fully starts we're done. Otherwise it records
                     // the fall-back flag and we continue to the Enhanced path below.
                     if self.attemptPureStart(fileURL: fileURL, pureMode: pureMode, startAt: startAt) {
                         self.loudnessAnalyzer.cancel(nil) // Pure Mode bypasses the EQ: no analysis
+                        self.holdStartDecision(nil, for: fileURL) // nor leveling (deferred, record decision 1)
                     } else {
+                        // The decision travels with the start (B2) and is planned from when the track becomes
+                        // audible, inside playFile.
+                        self.holdStartDecision(leveling, for: fileURL)
                         try self.startEnhancedPlayback(fileURL: fileURL, startAt: startAt)
                     }
                     self.startTransportClock()
@@ -250,6 +255,7 @@ extension AudioEngineBridge {
                 // seam handler. Both writes are batched in one sync to avoid a second crossing.
                 self.resampleQueue.sync {
                     self.onDeckURL = nil
+                    self.armLeveling(nil) // the armed decision goes with its pick
                     self.enhancedPlayIntent = false
                 }
                 self.removeSpectrumTap()

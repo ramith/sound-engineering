@@ -1,13 +1,15 @@
 #if DEBUG
     import AudioToolbox
     import Foundation
+    import LevelingKit
     import SettingsKit
 
     // MARK: - Every main-thread entry into the engine, timed (`make main-thread-stall`)
 
     /// One round = every way the main thread reaches the engine: the 20 Hz transport and spectrum
-    /// ticks (the snapshot), the monitoring reads, the control-plane publishes the UI fires (EQ,
-    /// intensity, crossfeed, the output's transport through `selectedDevice`), Master Gain on both
+    /// ticks (the snapshot), the monitoring reads, the control-plane publishes the UI fires (EQ with
+    /// Compare, a Leveling mode change, intensity, crossfeed, the output's transport through
+    /// `selectedDevice`), Master Gain on both
     /// paths, the pin switch and the chosen device (handed back, read back), a scrub. Each is timed;
     /// the slowest of each is kept — printed as information; what decides the verdict is that the rounds
     /// FINISH while the engine lock is held (`rounds`), and `progress` names the entry main is inside if
@@ -24,6 +26,11 @@
         let progress = StallProgress()
         private var toggle = false
         private let flatPoints = [Float](repeating: 0, count: 31)
+        /// A leveled decision with nothing measured (the unknown-loudness rule): the mode-change entry's other side.
+        private let unknownLoudness = TrackLevelingDecision(
+            mode: .unknownCut, source: .unknownCut, continuousWithPrevious: false,
+            unfolded: .init(loudness: nil, truePeak: nil), folded: nil, roles: []
+        )
         private var bands = [Float](repeating: 0, count: 64)
         /// Pure's loan journal, over the view model's own (isolated) defaults.
         private var loanJournal: PureVolumeLoanJournal {
@@ -54,6 +61,9 @@
                 }
             }
             measure("vm.publishEQ") { viewModel.publishEQ(points: flatPoints, isOn: flip, comparing: !flip) }
+            measure("engine.applyLevelingChange") {
+                bridge.applyLevelingChange(current: flip ? .off : unknownLoudness, next: flip ? nil : .off)
+            }
             measure("vm.intensity didSet") { viewModel.intensity = flip ? 0.3 : 0.2 }
             measure("vm.crossfeedEnabled didSet") { viewModel.crossfeedEnabled = flip }
             measure("vm.selectedDevice didSet (EQ identity, transport)") {
