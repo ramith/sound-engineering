@@ -150,3 +150,37 @@ extension TrackAnalysis.LfeStatistics {
                   explainGainDb: measured(stats.explainGainDb))
     }
 }
+
+extension TrackAnalysis {
+    /// An album's POOLED loudness (§3, the ReplayGain / libebur128 `global_multiple` anchor): BS.1770's gates over
+    /// every block of `members` on `basis` (0 as decoded, 1 + v the fold at LFE variant v), from their
+    /// histograms (`asLoudnessPoolHistograms`). nil when no block passes the gates.
+    public static func pooledLufs(_ members: [TrackAnalysis], basis: Int) -> Double? {
+        let lists = members.map { member -> [AsLoudnessBin] in
+            guard member.histograms.indices.contains(basis) else { return [] }
+            return member.histograms[basis].map { AsLoudnessBin(bin: $0.bin, count: $0.count, energy: $0.energy) }
+        }
+        let counts = lists.map { UInt32($0.count) }
+        let pooled = Self.withPointers(to: lists) { pointers in
+            counts.withUnsafeBufferPointer { asLoudnessPoolHistograms(pointers, $0.baseAddress, UInt32(lists.count)) }
+        }
+        return pooled.isNaN ? nil : pooled
+    }
+
+    /// `body` with one stable pointer per list.
+    private static func withPointers<Result>(to lists: [[AsLoudnessBin]],
+                                             _ body: (UnsafePointer<UnsafePointer<AsLoudnessBin>?>?) -> Result)
+        -> Result {
+        var pointers: [UnsafePointer<AsLoudnessBin>?] = []
+        func nest(_ index: Int) -> Result {
+            guard index < lists.count else {
+                return pointers.withUnsafeBufferPointer { body($0.baseAddress) }
+            }
+            return lists[index].withUnsafeBufferPointer { list in
+                pointers.append(list.baseAddress)
+                return nest(index + 1)
+            }
+        }
+        return nest(0)
+    }
+}
