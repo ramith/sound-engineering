@@ -1,42 +1,88 @@
 #pragma once
 
-// SpatialRenderKernel — host-agnostic C++ DSP core for SpatialRendererAU.
+// SpatialRenderKernel — host-agnostic C++ DSP core for SpatialRendererAU, the device-boundary stage.
 //
 // Topology:
-//   The existing AdaptiveSoundAU / DSPKernel is the N->N effects unit
-//   (EQ->Clarity->Loudness->Limiter, in-place on source channels).  This kernel
-//   is a SEPARATE device-boundary stage that maps N source channels -> M device
-//   channels.  It is NOT in-place: input and output are distinct buffer sets with
-//   (potentially) different channel counts.  The AU wrapper (SpatialRendererAU)
-//   and graph wiring drive it.
+//   The AdaptiveSoundAU / DSPKernel is the N->N effects unit (in place on the source channels). This
+//   kernel is a SEPARATE device-boundary stage that maps the N source channels to the M device channels.
+//   It is NOT in place: input and output are distinct buffer sets with (potentially) different channel
+//   counts. The AU wrapper (SpatialRendererAU) and the graph wiring drive it.
 //
-// Current behaviour (identity / passthrough / route):
-//   out >= in  — copy input channel ch -> output channel ch for ch in [0, in).
-//                Zero-fill output channels [in, out).
-//                Implemented with vDSP_mmov per channel (bit-exact copy).
-//   out < in   — S4 binaural stub; see TODO(S4) in SpatialRenderKernel.cpp.
+// Routes (chosen per block from configure()'s N and M):
+//   M >= N        — identity: source channel ch -> device channel ch for ch in [0, N), device channels
+//                   [N, M) zero. vDSP_mmov per channel: BIT-EXACT. No fold, no backstop.
+//   M < N, N > 2  — the interim fold (R1.1-B, level-and-fold §S1b/§S2/M1; architecture §7 "The fold"):
+//                   L′/R′ = the per-track FoldParams' BS.775 rows (the LFE variant's gain included) × the
+//                   per-track trim, ramped per sample at a change; then the BACKSTOP — a true-peak limiter
+//                   (the effects chain's LimiterModule, reused unchanged: its own 3 ms look-ahead, the
+//                   ceiling by scope, linked gain) that the trim keeps asleep; its gain reduction is
+//                   metered. M is 2 by the device-width rule (deviceWidthFormat); any device channel past
+//                   L′ and R′ is zero.
+//   M < N, N <= 2 — a stereo source on a mono device: the first M channels (today's behaviour; no fold).
+//
+// The fold's parameters:
+//   - `publishFold` (off-RT, any control thread; serialized by a producer-side mutex the render never
+//     touches) hands the plan's FoldParams to the render through a TripleBufferSnapshot, copied once per
+//     block. They are kept across an allocate (keep-across-allocate, M1): a set made for this N plays.
+//   - `setLayoutFold` (off-RT, at allocate) supplies the fold for the current layout to play when no set
+//     matches N — the matrix at its worst-case trim, NEVER trim 0 (M1). With neither, the fold plays
+//     silence: the device boundary never truncates.
+//   - A change glides linearly over the set's `glideSeconds` (0: snap), per sample, from the coefficients
+//     in force; a change of N or M (configure) snaps.
 //
 // RT-safety contract:
-//   process() is REAL-TIME SAFE: no allocation, no lock, no syscall, no Obj-C
-//   runtime.  All scratch is sized in initialize() (off-RT).  vDSP_mmov and
-//   vDSP_vclr are RT-safe Accelerate calls (no internal allocation).
+//   process() is REAL-TIME SAFE: no allocation, no lock, no syscall, no Obj-C runtime. All scratch,
+//   the backstop's rings and the meter's ring are sized in initialize() (off-RT). Flush-to-zero is set
+//   for the call only (ScopedFlushToZero).
 //
-// Interface design for S4 extensibility:
-//   configure() accepts inChannels + outChannels and stores them.  When S4 adds
-//   HRIR convolution, it will supply per-channel impulse-response buffers via a
-//   new configureBIR() (or equivalent) off-RT entry point; process() already
-//   branches on (outChannels_ < inChannels_) so S4 replaces only the stub body
-//   without touching the M >= N path.
-//
-// No Obj-C, no AVFoundation, no AudioUnit headers — fully host-agnostic.
-// Callers include only AudioConstants.h and MultichannelView.h.
+// No Obj-C, no AVFoundation, no AudioUnit object — host-agnostic. (The reused LimiterModule includes the
+// AudioToolbox C headers for its types, as DSPKernel does.)
 
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
+#include "../include/TripleBufferSnapshot.h"
+#include "../Limiting/LimiterModule.h"
+#include <array>
+#include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <vector>
 
 namespace AdaptiveSound
 {
+
+    // The fold's per-track parameters (level-and-fold §8 M1): what the plan sends the spatial unit.
+    // Trivially copyable and one cache line apart, like TargetState (it rides a TripleBufferSnapshot).
+    struct alignas(kCacheLineBytes) FoldParams
+    {
+        // The source width this fold is for; 0 = none. A fold for another width is never played.
+        uint32_t inChannels = 0U;
+        // The two output rows (0 = L′, 1 = R′): a gain per source slot, the LFE variant's gain included.
+        std::array<std::array<float, kMaxChannels>, 2> rows{};
+        // The per-track trim, dB (≤ 0): min(0, C_work − TP_F[v]), or the matrix's worst case.
+        float trimDb = 0.0F;
+        // The LFE's gain per side in `rows` (0 = omitted), for the read-out.
+        float lfeGain = 0.0F;
+        // The backstop's ceiling by scope (linear): −0.1 dBTP lossless at the engine rate, else −1 dBTP.
+        float ceilingLinear = kTruePeakCeilingLinear;
+        // How long a change glides, in seconds (0: snap — a fresh start).
+        float glideSeconds = 0.0F;
+        // Numbered by publishFold (callers leave it 0): a new number is a new fold for the render.
+        uint32_t generation = 0U;
+    };
+
+    // What the fold plays now, for the read-out (off-RT, any thread; from atomics).
+    struct FoldReadout
+    {
+        uint32_t sourceChannels = 0U;
+        uint32_t outputChannels = 0U;
+        bool folding = false;  // M < N with N > 2
+        bool fromPlan = false; // false: the layout's worst-case fold (no set for this N)
+        float trimDb = 0.0F;
+        float lfeGain = 0.0F;
+        float backstopPeakGrDb =
+            0.0F; // ≥ 0: the deepest backstop gain reduction since this fold began
+    };
 
     class SpatialRenderKernel
     {
@@ -49,43 +95,33 @@ namespace AdaptiveSound
         SpatialRenderKernel(SpatialRenderKernel&&) = delete;
         auto operator=(SpatialRenderKernel&&) -> SpatialRenderKernel& = delete;
 
-        // -----------------------------------------------------------------------
-        // Off-RT: store config (sample rate, max frame capacity) and enable
-        // flush-to-zero on the init thread. No heap allocation — process() zeroes
-        // silent output channels in place via vDSP_vclr. Must be called once from
-        // the control/setup thread before any process() call; safe to call again
-        // on sample-rate or buffer-size change.
-        // -----------------------------------------------------------------------
+        // Off-RT: the rate and per-call frame ceiling. Sizes the backstop and its meter (the only
+        // allocations). Safe to call again on a rate or buffer-size change; leaves FPCR alone.
         auto initialize(uint32_t sampleRate, uint32_t maxFramesToRender) noexcept -> void;
 
-        // -----------------------------------------------------------------------
-        // Off-RT: set channel routing.
-        //
-        // Clamps both counts to [0, kMaxChannels].  Call from the control thread
-        // whenever the source or device channel layout changes.
-        // -----------------------------------------------------------------------
+        // Off-RT: the routing — N source channels, M device channels (each clamped to kMaxChannels).
+        // Call whenever the bus formats change (allocate). The published fold is kept; the next block
+        // snaps to whatever fold now applies.
         auto configure(uint32_t numInChannels, uint32_t numOutChannels) noexcept -> void;
 
-        // -----------------------------------------------------------------------
-        // RT: process one block.  NON-IN-PLACE.  const: no mutable state touched.
-        //
-        // `input`  — source bus (N channels, inChannels_ of which are valid).
-        // `output` — device bus (M channels, outChannels_ of which are valid).
-        //
-        // `input` and `output` MUST be different buffer sets; aliasing is
-        // undefined behaviour (the underlying vDSP_mmov is undefined for
-        // overlapping regions).
-        //
-        // Preconditions checked via early return (RT-safe, no assert/throw):
-        //   - input.frames() == output.frames() and both > 0.
-        //   - inChannels_ == 0 or outChannels_ == 0  → silent output (vDSP_vclr).
-        // -----------------------------------------------------------------------
-        auto process(const MultichannelView& input, const MultichannelView& output) const noexcept
+        // Off-RT (allocate; not rendering): the fold to play for the current layout when no published
+        // set is for this N — its matrix at the worst-case trim. Ignored when a value is not finite.
+        auto setLayoutFold(const FoldParams& fold) noexcept -> void;
+
+        // Off-RT, any control thread: the plan's fold for the next blocks. False — nothing changes — when
+        // any of its values is not finite.
+        [[nodiscard]] auto publishFold(const FoldParams& fold) noexcept -> bool;
+
+        // RT: process one block. NON-IN-PLACE: `input` (N channels) and `output` (M channels) must be
+        // different buffer sets (vDSP_mmov is undefined for overlapping regions).
+        // Preconditions checked by early return (RT-safe): equal non-zero frame counts within the
+        // initialize() ceiling; a zero-channel route renders silence.
+        auto process(const MultichannelView& input, const MultichannelView& output) noexcept
             -> void;
 
-        // -----------------------------------------------------------------------
-        // Read-only accessors (off-RT convenience; not used from process()).
-        // -----------------------------------------------------------------------
+        // Off-RT, any thread: what the fold plays now.
+        [[nodiscard]] auto readout() const noexcept -> FoldReadout;
+
         [[nodiscard]] auto inChannels() const noexcept -> uint32_t
         {
             return inChannels_;
@@ -100,14 +136,69 @@ namespace AdaptiveSound
         }
 
       private:
-        // Routing config — written off-RT by configure(), read on-RT by process().
-        // No atomic needed: configure() must complete (with a memory barrier at
-        // the calling thread's scheduler boundary) before process() is called.
-        // The AU wrapper (SpatialRendererAU) is responsible for this ordering guarantee.
+        // One fold's coefficients: rows × the trim's linear gain.
+        using Coefficients = std::array<std::array<float, kMaxChannels>, 2>;
+
+        auto foldBlock(const MultichannelView& input,
+                       const MultichannelView& output,
+                       uint32_t frames) noexcept -> void;
+        auto adoptFold(const FoldParams& fold, bool fromPlan, bool snap) noexcept -> void;
+        auto mixRamped(const MultichannelView& input,
+                       const MultichannelView& output,
+                       uint32_t frames) noexcept -> uint32_t;
+        auto mixSteady(const MultichannelView& input,
+                       const MultichannelView& output,
+                       uint32_t from,
+                       uint32_t frames) const noexcept -> void;
+        auto runBackstop(const MultichannelView& output, uint32_t frames) noexcept -> void;
+
+        // Ordered by alignment (the cache-line-aligned snapshot and folds first), so nothing pads.
+
+        // The plan's fold: published off-RT (producer mutex), copied once per block on-RT.
+        TripleBufferSnapshot<FoldParams> published_;
+        // The layout's fold (no set for this N): written off-RT at allocate, read on-RT.
+        FoldParams layoutFold_{};
+        // RT: the last copied snapshot.
+        FoldParams latest_{};
+
+        // The backstop's meter: a copy of the limiter's input delayed by its look-ahead, so the gain it
+        // applied is output ÷ delayed input.
+        std::array<std::vector<float>, 2> meterRing_{};
+        std::mutex publishMutex_; // producer side only: two control threads never publish at once
+        // The backstop: the limiter on L′/R′.
+        LimiterModule backstop_;
+
+        // RT: the fold's coefficients in force this sample, where a glide ends, and its per-sample step.
+        Coefficients coeff_{};
+        Coefficients target_{};
+        Coefficients step_{};
+        LimiterParams backstopParams_{};
+
+        // Routing — written off-RT by configure(), read on-RT (the v3 contract orders allocate before
+        // render).
         uint32_t inChannels_ = 0U;
         uint32_t outChannels_ = 0U;
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
+        uint32_t publishCount_ = 0U; // producer-owned, under publishMutex_
+        uint32_t appliedGeneration_ =
+            0U;                   // RT: which publish is in force (0 with the layout's fold)
+        uint32_t glideLeft_ = 0U; // RT
+        uint32_t meterLookahead_ = 0U;
+        uint32_t meterHead_ = 0U; // RT
+        float peakGrDb_ = 0.0F;   // RT-owned; mirrored into readoutPeakGrDb_
+
+        // Read-out atomics (RT writes on change, any thread reads).
+        std::atomic<float> readoutPeakGrDb_{0.0F};
+        std::atomic<float> readoutTrimDb_{0.0F};
+        std::atomic<float> readoutLfeGain_{0.0F};
+        std::atomic<uint32_t> readoutIn_{0U};
+        std::atomic<uint32_t> readoutOut_{0U};
+
+        bool appliedFromPlan_ = false; // RT
+        bool needsSnap_ = true;        // set by configure(): the next fold snaps
+        bool haveFold_ = false;        // RT: a fold for this N is in force
+        std::atomic<bool> readoutFromPlan_{false};
     };
 
 } // namespace AdaptiveSound
