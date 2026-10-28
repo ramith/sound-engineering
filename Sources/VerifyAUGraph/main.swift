@@ -25,13 +25,18 @@
 //     immutable while running), which is exactly the branch `reconfigureGraph` takes when it
 //     detects `engine.isInManualRenderingMode`.
 //
-//   M2-d (Sprint 5b M2-d, file-load device-width resolution) — the file-load trigger re-widths the
-//     graph to the SOURCE width N and resolves the device width M = min(N, deviceChannels). With a
-//     simulated STEREO device (offline manual-rendering width 2), reconfiguring to a synthetic 6ch
-//     source must leave the effects-AU input + spatial-AU input at N = 6 (process at full width)
-//     and the spatial-AU output + mixer + output at M = min(6, 2) = 2 (the device boundary). This
-//     mirrors `AudioEngineBridge.applyReconfigure` + `deviceWidthFormat` exactly: a 5.1 file on a
-//     stereo device processes at 6 and the spatial AU renders 6->2 (its S4 device<N stub).
+//   M2-d (Sprint 5b M2-d; R1.1-B §8½ C1, file-load device-width resolution) — the file-load trigger
+//     re-formats the graph to the SOURCE (width N, its own layout) and resolves the device boundary: M = N
+//     when the device takes every channel, stereo when it is narrower than a multichannel source. With a
+//     simulated STEREO device, a 5.1 source must leave the effects-AU input + spatial-AU input at N = 6
+//     and the spatial-AU output + mixer + output at 2; a 7.1 source on a 5.1 device folds to 2 as well,
+//     never keeping six. This mirrors `AudioEngineBridge.applyReconfigure` + `deviceWidthFormat` exactly.
+//
+//   F1 (R1.1-B, level-and-fold §2 / §10) — channel identity: a tone per channel in WAVE 7.1, MPEG 7.1 C,
+//     AAC 5.1, WAVE 5.0 B, labelled 3/4/5/7-channel and unlabelled 5/8-channel layouts, at 44.1 / 48 /
+//     96 kHz, through the production converter (`StreamingResampler`) to the source's own engine format
+//     (`engineFormat`) and the two-AU graph: each channel in its own slot (±0.05 dB), others < −80 dB
+//     (VerifyF1ChannelIdentity.swift).
 //
 //   M3-2 (Sprint 5b M3-2) — SpatialRendererAU register + instantiate smoke check.
 //
@@ -354,8 +359,21 @@ if !verifyM2d() {
     exit(1)
 }
 
-print("ALL M2-d CHECKS PASSED — file-load reconfigure processes at N and resolves device width "
-    + "M = min(N, deviceChannels): 5.1-on-stereo -> 6/2, 5.1-on-7.1 -> 6/6, stereo-on-stereo -> 2/2")
+print("ALL M2-d CHECKS PASSED — file-load reconfigure processes at N and renders at the device boundary: "
+    + "5.1-on-stereo -> 6/2, 5.1-on-7.1 -> 6/6, stereo-on-stereo -> 2/2, 7.1-on-5.1 -> 8/2, 3.0-on-stereo -> 3/2, "
+    + "AAC 5.1-on-5.1 -> 6/6")
+
+// =====================================================================================
+// F1 — channel identity through the converter and the graph, every layout and rate.
+// Implementation in VerifyF1ChannelIdentity.swift; orchestrated below.
+// =====================================================================================
+
+if !verifyF1ChannelIdentity() {
+    print("VERIFY FAIL: channel identity (F1) check failed")
+    exit(1)
+}
+
+print("ALL F1 CHECKS PASSED — every channel of every layout plays in its own slot at 44.1 / 48 / 96 kHz")
 
 // =====================================================================================
 // DEV-UID — the device-identity bridge (UID / model UID / transport per output).
@@ -370,7 +388,8 @@ if !verifyDeviceIdentity() {
 print("ALL DEV-UID CHECKS PASSED — every output reports its own UID through the C copy contract")
 print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PASS + "
     + "M2-c (live reconfigure stereo->6->stereo) PASS + EQ1b (EQ survives re-allocation) PASS + "
-    + "M2-d (device width M=min(N,device)) PASS + "
+    + "M2-d (device boundary: M = N, or stereo) PASS + "
+    + "F1 (channel identity, every layout and rate) PASS + "
     + "M3-2 (SpatialRendererAU register) PASS + "
     + "M3-3 (two-AU graph + spatial-AU bit-exact identity, 2/6/8) PASS + "
     + "DEV-UID (device identity) PASS ===")
