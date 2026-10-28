@@ -42,6 +42,10 @@
 // API to the Swift TrackLoudnessAnalyzer. Pure C11; #pragma once guards double-include.
 #include "TrackLoudnessBridge.h"
 
+// Re-export the pure-C fold surface (R1.1-B, level-and-fold §S2) so `import AudioDSP` exposes the
+// spatial unit's C-ABI to the Swift bridge. Lane 2's file. Pure C11; #pragma once guards double-include.
+#include "SpatialBridge.h"
+
 // MARK: - CDeviceInfo
 
 /// Flat C struct representing one audio output device.

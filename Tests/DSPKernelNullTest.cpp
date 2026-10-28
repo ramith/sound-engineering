@@ -98,6 +98,10 @@
 #include "EqEngineFixTests.inc"     // after EqEngineBreakItTests.inc (helpers)
 #include "DeviceListPolicyTests.inc"
 #include "RenderGateTests.inc"
+#include "AnalyzerTests.inc"   // R1.1-B W4, lane 1
+#include "LevelPlanTests.inc"  // R1.1-B W4, lane 1
+#include "FoldTests.inc"       // R1.1-B W4, lane 2
+#include "LfeRuleTests.inc"    // R1.1-B W4, lane 2
 #include "NullTestRunner.h" // after every *.inc: the runner registers their bodies
 // clang-format on
 
@@ -866,6 +870,14 @@ namespace
             testSnapshotTripleBufferWholePayloadNoTear,
             Tier::Concurrent,
         },
+        // ---- AnalyzerTests.inc (R1.1-B W4, lane 1): rows below ----
+        // ---- end AnalyzerTests.inc ----
+        // ---- LevelPlanTests.inc (R1.1-B W4, lane 1): rows below ----
+        // ---- end LevelPlanTests.inc ----
+        // ---- FoldTests.inc (R1.1-B W4, lane 2): rows below ----
+        // ---- end FoldTests.inc ----
+        // ---- LfeRuleTests.inc (R1.1-B W4, lane 2): rows below ----
+        // ---- end LfeRuleTests.inc ----
     });
 } // namespace
 
