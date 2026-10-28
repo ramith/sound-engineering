@@ -36,6 +36,9 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
 6. **Unknown loudness:** −5 dB for now; revisited once the founder's named files are measured.
 7. **A never-measured song with an EQ on** starts at once; its level settles within the first second, on that first play only.
 
+**Test data — the founder, 2026-10-28:** the sprint proceeds on the test corpus as it stands; the gaps are recorded
+below ([Test material](#test-material)), and the founder supplies the missing data later. No lane waits for data.
+
 Still the founder's, by ear: **the LFE include level** (−6 dB per side recommended; full level; +4 dB) — decided by the two-album listen; all three are measured, so no re-analysis. Not this sprint: a ten-minute by-ear Compare match before S14-lite's blind tests.
 
 ## How it runs (revised after the plan check)
@@ -61,6 +64,85 @@ Lane 3 is one lane again: with the Pure loan deferred, the plan check's 3a / 3b 
 - **Mono on the founder's XM4 (live, 2026-10-26):** a 44.1 kHz mono file opened in the sprint build plays in **both ears, centred** — the offline render's left-only result (design verify, F8) does not happen on the real device. Mono keeps today's format; the design's +3.01 LU mono correction stands.
 - **The live keyboard pass (10k test library, Full Keyboard Access on):** ⌘F from all five shell tabs lands in the Search page's field; ⌥⌘F in Songs / Albums / Artists / Genres keeps the category and focuses its own filter; "ada" shows results 0.74 s after typing starts, "ada lau" 0.43 s; idle CPU 0.7 %. A single CJK ideograph is below the 2-character gate and shows nothing — fixed in the fix round.
 - **The combined check (T3) on the player half:** 29/29, exit 0 (1,035 Swift tests, 245 C++ null tests, the main-thread stall check, VerifyLibraryStore 176/176).
+- **The player fix round (2026-10-26)** — review + break-it gave 16 library/store and 6 transport findings.
+  - **Transport:** 6/6 fixed: the launch join as a Kit rule, a bulk shuffle edit writes once, a playhead-only write
+    builds no record, a failed restore read retried once and the writer kept closed after a second failure, removing
+    the selected song under shuffle selects the pass's next, and the old "current" playlist entries cleared after
+    the first record write.
+  - **Library and store:** 15/16 fixed:
+    - **Migration v12:** a removed song's id is never handed to another.
+    - **"Use this drive":** keeps the drive's own path spelling and (dev, inode), deletes the missing songs
+      first, refuses any other clash, says "Checking the drive…", and rebinds the other paused folders on the
+      same old drive.
+    - **Migration v13:** a lone combining mark is no word; variation selectors are ignored. The index form is pinned
+      and VerifyLibraryStore checks it.
+    - **One search gate everywhere:** two characters, or one ideograph, kana, Hangul syllable or Brahmic syllable.
+    - **⌘F:** a superseded search is cancelled.
+    - **Open With and drops:** they wait for the store to open, then match the library, off the main thread and in order.
+    - **File types:** `.mpga`, `.wave`, `.bwf` and `.adts` play; Info.plist no longer claims `public.mpeg-4-audio`.
+  - **Not fixed:** N8. SwiftUI has no placement for the Find menu items alone; the reason is recorded beside the command.
+  - **Two break-it tests changed at the fix, as their lane reported.** BI-P05 was rewritten: its stand-in store meant both
+    "opening" and "never opens", so it now opens while the store is opening and checks that the open waits. BI-P01/P02's
+    precondition required the reused id, which is the bug itself.
+- **The combined check (T3) after the fix round (2026-10-26):** 29/29, exit 0 — 1,082 Swift tests, 245 C++ null
+  tests, the main-thread stall check, VerifyLibraryStore (schema v13, 182 checks). Both fix branches applied cleanly.
+
+## Test material
+
+The sound half is measured on the test corpus at `~/music-test-data`. It lives outside the repo and is never
+committed or shared. Its `README.md` maps every file to the lane, acceptance line or check that uses it. The parts:
+
+- `manifest.json`: what Apple's decoder reports, per-channel level, BS.1770 loudness and true peak as is and on the
+  BS.775 fold.
+- `conformance.json`: the loudness answer key.
+- `tools/`: rebuild and re-measure everything.
+
+The corpus was gathered 2026-10-26 and is not the founder's library. Agents may use it, playing only through the
+test-library app. What it covers:
+
+- **The IAA channel test:** a voice per channel. It is the ground truth that Apple's decoder labels every channel
+  correctly in every codec order, so a voice in the wrong ear is our bug.
+- **The official loudness signals:** EBU Tech 3341/3342 v05 and ITU-R BS.2217. The 65 signals with published answers
+  all pass on a BS.1770-4 meter, and **the analyzer must match them**.
+- **Real music:**
+  - Pavlik Records stereo and 5.0 classical, up to 352.8 kHz
+  - Dolby and THX trailers
+  - five loud tracks the founder named from their own collection, −7.2 to −12.4 LUFS. They are MP3s, and their
+    decoded samples reach +2 dBFS.
+  - the founder's 37.5-minute live orchestral show, cut into a nine-piece live album
+- **Generated material:** loud masters (limited, hard-clipped to +4.3 dBTP, float with peaks above full scale), a
+  continuous album in seven variants (ReplayGain complete, partial, none, wrong; gapless MP3; gapless and padded AAC),
+  a mixed-level album, every rate from 8 to 384 kHz and every bit depth, and broken files.
+
+**The gaps, recorded 2026-10-28.** The founder supplies these later; `~/music-test-data/WANTED.md` is the search brief.
+Until they arrive, **any acceptance result that rests on a stand-in is marked "provisional (stand-in data)"** in this
+record and re-run when the real file arrives.
+
+| Missing | Stand-in now | What stays provisional |
+|---|---|---|
+| A lossless 5.1 music album whose LFE carries music | The Atmos music tracks decoded to 24-bit 5.1 FLAC; THX *Amazing Life* (film LFE) | The founder's LFE include-level listen, and the LFE rule's measured cases |
+| A lossless loud master | The founder's loud MP3s; the generated lossless loud masters | Leveling's loud-master acceptance (turn-down, the cap, the limiter never acting) on a lossless real master |
+| A lossless real album whose tracks run into each other | The live show cut into nine pieces (the source is an MP3); the generated continuous album | Album leveling and the seam checks on a lossless real album |
+| Report ITU-R BS.2217; EBU Tech 3341 | The 65 judged signals; true-peak answers for 3341 signals 15–23 from memory (all pass) | The 8/10/12/24-channel conformance signals: no verdict until the channel maps arrive |
+
+**Corpus findings for the sound build and its break-it** (the README has the files):
+
+1. **F1 can be reproduced on demand.** Three sets of files trigger it:
+   - AAC and ALAC 5.1 at 44.1 kHz, in the C L R Ls Rs LFE order
+   - voice files at 3–8 channels and 44.1 kHz
+   - real 5.0 music at 88.2, 96 and 352.8 kHz
+2. **Many multichannel WAVs carry no layout at all** (the ITU and EBU signals arrive as D0…Dn), so the role
+   resolver's count fallback must assume WAV order.
+3. **The fold overloads on real music:** Schumann 5.0 +0.7 dBTP, *Vienna 1728* 5.0 +0.9, *Live up the Night* +0.1;
+   trailers reach +2.0. The per-track trim is not optional.
+4. **A suspected crash.** On a FLAC with blocks under 192 samples, Apple's decoder throws on read, and setting
+   `AVAudioFile.framePosition` raises an uncaught NSException. The app sets it in `AudioEngineBridge+EnhancedResampler.swift`
+   and `+GaplessRoll.swift`. The whole-app break-it proves or clears it.
+5. **The other broken files fail softly.** 5.1 Opus won't open on macOS 26, although the scanner admits `.opus`.
+   Truncated files open with their full length and fail at the cut.
+6. **Gapless depends on the encoder.** LAME MP3 and Apple-encoded AAC are sample-exact. ffmpeg-made AAC comes back
+   padded to whole packets, which the app cannot fix.
+7. **ReplayGain's album gain is not the app's album anchor.** It differs by 1.3 dB on a mixed-level album, by design.
 
 ## Done-done
 
