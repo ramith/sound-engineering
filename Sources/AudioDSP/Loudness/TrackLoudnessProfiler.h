@@ -54,12 +54,16 @@ namespace AdaptiveSound
     class TrackLoudnessProfiler
     {
       public:
-        // The decoded stream: its rate, channel count and per-channel BS.1770-5 weights.
+        // The decoded stream: its rate, channel count and per-channel BS.1770-5 weights; the profile's
+        // band grid and its first block stride (the analysis pass's compact profile: 1/12 octave on
+        // non-overlapping blocks, stride 4; today's profile: 1/24 octave, every block).
         struct Format
         {
             double sampleRate = 0.0;
             uint32_t channelCount = 0U;
             std::array<double, kMaxChannels> channelWeights{}; // the first channelCount are used
+            uint32_t bandsPerOctave = TrackLoudness::kBandsPerOctave;
+            uint32_t blockStrideHops = 1U; // kept block j starts at j·blockStrideHops hops
         };
 
         // The decimation cap: 6000 blocks = 10 minutes at the 100 ms block rate.
@@ -70,7 +74,8 @@ namespace AdaptiveSound
         // A profiler for `format`, or nullptr when the format is invalid: a rate outside
         // [TrackLoudness::kMinSampleRateHz, kMaxSampleRateHz] or non-finite; 0 or more than
         // kMaxChannels channels; a used weight that is negative or non-finite, or no positive
-        // weight at all; an odd `maxBlocks` or one below kMinMaxBlocks; or a failed FFT setup.
+        // weight at all; a grid other than 1/12 or 1/24 octave; a block stride of 0; an odd
+        // `maxBlocks` or one below kMinMaxBlocks; or a failed FFT setup.
         [[nodiscard]] static std::unique_ptr<TrackLoudnessProfiler>
         create(const Format& format, uint32_t maxBlocks = kDefaultMaxBlocks) noexcept;
 

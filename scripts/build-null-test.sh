@@ -243,6 +243,8 @@ xcrun clang++ \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessBridge.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelRoles.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/LfeStatistics.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackAnalyzer.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Planning/TrackPlan.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Spatial/FoldLfeRule.cpp" \
