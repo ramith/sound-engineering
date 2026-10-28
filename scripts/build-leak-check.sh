@@ -69,6 +69,7 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessProfile.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessProfiler.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessGain.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Planning/TrackPlan.cpp" # TrackLoudnessGain dep: the level plan
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessBridge.cpp" # under test (the AsLoudnessProfiler/Profile handles)
     # --- ADDED for the leak harness (NOT compiled by build-null-test.sh) ---
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp" # under test

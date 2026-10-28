@@ -11,7 +11,8 @@ private enum CTrackLoudnessABI {
     static let publish: @Sendable (UnsafeMutableRawPointer?, UInt64, OpaquePointer?) -> Bool =
         publishTrackLoudnessProfile
     static let fail: @Sendable (UnsafeMutableRawPointer?, UInt64) -> Void = reportTrackLoudnessFailure
-    static let current: @Sendable (UnsafeMutableRawPointer?, UInt64, Bool) -> Void = setCurrentTrack
+    static let plan: @Sendable (UnsafeMutableRawPointer?, UInt64, UInt8, UnsafePointer<AsTrackPlan>?, Bool) -> Void =
+        applyTrackPlan
 }
 
 /// The loudness-neutral EQ gain follows the AUDIBLE track (amendments item 3), and so does the
@@ -30,7 +31,12 @@ extension AudioEngineBridge: TrackLoudnessSink {
     func trackBecameAudible(_ url: URL, gaplessSeam: Bool) {
         let identity = TrackIdentity(url: url)
         let token = identity?.token ?? 0
-        withLoudnessAU { CTrackLoudnessABI.current($0, token, gaplessSeam) }
+        // Step 4 of R1.1-B lane 1: the level stage plans from the output state alone (no decision yet: Off,
+        // the fold's worst-case trim). The decisions with start and arm land at step 5.
+        var output = leveling.outputState
+        var plan = asPlanTrack(nil, &output, nil)
+        let event = UInt8((gaplessSeam ? AsPlanEventGaplessSeam : AsPlanEventFreshStart).rawValue)
+        withLoudnessAU { CTrackLoudnessABI.plan($0, token, event, &plan, false) }
         if let meter = tapAnalysis.meter {
             withExtendedLifetime(meter) { loudnessMeterBeginTrack(meter.handle, token) }
         }
