@@ -130,7 +130,8 @@ extension AudioViewModel {
     /// Seek to `seconds` from the start of the current file (`SeekRoute`, S10.8 G). Playing: the
     /// engine seeks. Paused: only the resume point moves, and Play resumes there — the engine is
     /// stopped, and a segment scheduled onto it would play ahead of the next song. Stopped: nothing
-    /// is loaded, so nothing moves. Updates `playbackPosition` immediately to avoid UI jitter.
+    /// is loaded, so nothing moves. Updates `playbackPosition` immediately to avoid UI jitter, and keeps the
+    /// place at once, playing or paused: a crash comes back where the listener scrubbed to (+QueueMirror).
     ///
     /// A start or a stop on its way (council C-15) is not "playing" here: a seek numbered after it was
     /// meant for the playback it replaces, and could overtake it and drop it at the engine. A pause on
@@ -167,6 +168,9 @@ extension AudioViewModel {
             return
         }
         playbackPosition = seconds
+        // A place the listener chose: written at once, not at the cadence the song's own progress keeps (founder,
+        // 2026-10-28). Paused, the resume point's move asked too; asks in one turn are one write.
+        queuePlayheadMoved(cadenced: false)
         onNowPlayingRefresh?() // re-anchor the Control Center scrubber to the new position (S10.4)
     }
 }

@@ -23,8 +23,9 @@ public struct QueueResumeRecord: Equatable, Sendable {
     /// The stored form's version. A record of a higher version is not read (`DecodingError`).
     public static let format = 1
 
-    /// How far the playhead moves before its new place is written while a song plays, in seconds: the
-    /// most a crash can lose. A pause, a seek, a stop, a song change and every edit are written at once.
+    /// How far a playing song's own progress moves the playhead before its new place is written, in seconds:
+    /// the most a crash can lose. A pause, a seek (playing or paused), a stop, a song change and every edit are
+    /// written at once.
     /// 5 s: a crash restarts at most one musical phrase early, for one row of a few dozen bytes per write.
     public static let playheadCadenceSeconds = 5.0
 
