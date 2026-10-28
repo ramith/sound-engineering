@@ -224,7 +224,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
 
     /// The leveling state for the audible track and the one on deck (R1.1-B, level-and-fold §S3). Its type is
     /// lane 1's (`AudioEngineBridge+Leveling.swift`); this line is the coordinator's, so lane 2, which owns
-    /// this file in W4, never touches it. Confined to `engineQueue`.
+    /// this file in W4, never touches it. Guarded by its own lock; any queue (a track becomes audible on `engineQueue`
+    /// and on `resampleQueue`; a mode change arrives from main).
     var leveling = EngineLevelingState()
 
     /// Whether the Enhanced path is INTENDED to be playing — set when Enhanced playback starts,

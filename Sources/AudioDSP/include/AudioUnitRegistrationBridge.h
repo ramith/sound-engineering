@@ -52,30 +52,21 @@ extern "C"
     /// AVAudioUnit.instantiate(with:options:).
     AudioComponentDescription spatialRendererComponentDescription(void) AUDIODSP_C_NOEXCEPT;
 
-    /// Publish the EQ to the live AdaptiveSoundAU (Sprint EQ, engine-plan §8): the 31 points the
-    /// UI draws (dB) and On/Off. Off-RT control plane: the trust boundary validates, then the
-    /// Realizer designs the cascade on its queue at the kernel's own sample rate and publishes
-    /// the finished coefficients; the RT module glides to them. Off is a true bypass (the
-    /// identity). Must be called from a single control thread (the main actor).
+    /// Publish the EQ to the live AdaptiveSoundAU (Sprint EQ, engine-plan §8; Compare, R1.1-B level-and-fold §7):
+    /// the 31 points the UI draws (dB), whether the EQ is on, and whether Compare is held. Off-RT control
+    /// plane: the trust boundary validates, then the Realizer designs the cascade on its queue at the kernel's
+    /// own sample rate and publishes the finished coefficients; the RT module glides to them. Off is a true
+    /// bypass (the identity). While Compare is held the EQ plays its identity at the level the EQ-on curve plays
+    /// at, so the comparison is level-matched; the engine keeps the last EQ-on design for that. Must be called
+    /// from a single control thread (the main actor).
     ///
-    /// @param auUnit    Borrowed (passUnretained) AUAudioUnit*; false if null.
-    /// @param pointsDb  `count` points in dB; non-null.
-    /// @param count     Must be exactly 31.
-    /// @param isOn      false plays the identity (the points are kept for the next On).
+    /// @param auUnit     Borrowed (passUnretained) AUAudioUnit*; false if null.
+    /// @param pointsDb   `count` points in dB; non-null.
+    /// @param count      Must be exactly 31.
+    /// @param isOn       false plays the identity (the points are kept for the next On).
+    /// @param comparing  Compare is held: the identity, level-matched to the EQ-on curve.
     /// @return true if accepted; false — the last good EQ keeps playing — on a null pointer, a
     ///         wrong count or any non-finite point. Finite points are clamped to ±12 dB.
-    ///
-    /// publishEQIntent with Compare released. The app calls publishEQIntent; this form stays for
-    /// VerifyAUGraph's offline re-allocation check until it moves to publishEQIntent.
-    bool
-    publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT;
-
-    /// Publish the EQ with Compare (R1.1-B, level-and-fold §7; replaces publishEQ for the app): the
-    /// 31 points, whether the EQ is on, and whether Compare is held. While Compare is held the EQ
-    /// plays its identity at the level the EQ-on curve plays at, so the comparison is level-matched;
-    /// the engine keeps the last EQ-on design for that. The trust boundary is publishEQ's.
-    ///
-    /// @return true if accepted; false — the last good EQ keeps playing — as for publishEQ.
     bool publishEQIntent(void* auUnit,
                          const float* pointsDb,
                          uint32_t count,

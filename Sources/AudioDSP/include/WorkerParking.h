@@ -2,8 +2,8 @@
 
 //
 // WorkerParking.h — an analysis worker's sleep while nothing reaches it (council C-46 / KI-UI-03;
-// DSP-09). The kernel's two ring-fed workers — the normaliser's meter (LoudnessModule) and the causal
-// loudness estimate (CausalLoudnessTap) — used to poll their ring forever, every 5–50 ms, also while
+// DSP-09). The kernel's ring-fed worker — the causal loudness estimate (CausalLoudnessTap; the session
+// normaliser's meter went with the normaliser, R1.1-B) — used to poll their ring forever, every 5–50 ms, also while
 // playback was paused, on the bit-perfect path and with leveling off: about 200 wake-ups a second for
 // nothing. Now a worker NAPS briefly while audio flows (its ring empties between render blocks) and,
 // after a stretch longer than any render interval with nothing, PARKS: it blocks with no timeout and

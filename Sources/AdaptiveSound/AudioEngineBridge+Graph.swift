@@ -47,13 +47,12 @@ extension AudioEngineBridge {
 
     /// Hand the fold's half of every plan to the spatial unit (lane 1's `setFoldPlanSink`; level-and-fold M1):
     /// the same plan the effects unit gets, in the same turn. The sink only publishes into the unit's snapshot
-    /// through the counted borrow — no wait. The plan event does not reach the sink yet, so every plan snaps
-    /// (a fresh start's rule; a group's members share one trim, so a seam does not step); lane 2's report asks
-    /// for the event.
+    /// through the counted borrow — no wait. The plan's event says how the fold moves to it: a fresh start or an
+    /// output change snaps, a gapless seam and a mode change glide (`asSpatialPublishPlan`).
     private func attachFoldPlanSink() {
-        setFoldPlanSink { [weak self] plan, output in
+        setFoldPlanSink { [weak self] plan, output, event in
             var (plan, output) = (plan, output)
-            _ = self?.withSpatialAU { asSpatialPublishPlan($0, &plan, &output, UInt8(AsPlanEventFreshStart.rawValue)) }
+            _ = self?.withSpatialAU { asSpatialPublishPlan($0, &plan, &output, UInt8(event.rawValue)) }
         }
     }
 
@@ -167,16 +166,14 @@ extension AudioEngineBridge {
             )
 
             // Feed the BS.1770-5 loudness meter from the same buffer (non-interleaved).
-            // S6 MC-1 (UI-only, tracked as ENH-002 in docs/product/known-issues.md): this UI
-            // READOUT meter measures L/R only. It is CORRECT for the common stereo device width
-            // (M == 2, where L/R IS every channel) and does NOT drive makeup gain — the audible
-            // loudness normalization is the DSP kernel's own N-channel-weighted LoudnessModule
-            // (S1/S2), not this tap. For a >2-channel DEVICE output the integrated LUFS shown reads
-            // slightly low (surround energy unmeasured). A correct N-channel UI meter needs the
-            // device-width BS.1770-5 weights (surround ×1.41, LFE excluded) configured on the meter
-            // and all M planar channels fed here — deferred with the multichannel-output path (S4
-            // binaural fold is DEFERRED) to avoid plumbing channel-layout weights into the RT tap
-            // for an edge that is not yet a primary path.
+            // S6 MC-1 (UI-only, tracked as ENH-002 in docs/product/known-issues.md): this UI READOUT meter measures L/R
+            // only. It is CORRECT for the common stereo device width (M == 2, where L/R IS every channel) and does NOT
+            // drive any gain — the audible level is the planner's leveling gain (R1.1-B), not this tap. For a
+            // >2-channel DEVICE output the integrated LUFS shown reads slightly low (surround energy unmeasured). A
+            // correct N-channel UI meter needs the device-width BS.1770-5 weights (surround ×1.41, LFE excluded)
+            // configured on the meter and all M planar channels fed here — deferred with the multichannel-output path
+            // (S4 binaural fold is DEFERRED) to avoid plumbing channel-layout weights into the RT tap for an edge that
+            // is not yet a primary path.
             if let meterHandle, let channels = buffer.floatChannelData {
                 let left = channels[0]
                 let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
