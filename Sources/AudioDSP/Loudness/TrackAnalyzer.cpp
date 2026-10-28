@@ -13,6 +13,7 @@
 #include <cmath>
 #include <limits>
 #include <new>
+#include <numeric>
 
 namespace AdaptiveSound
 {
@@ -191,11 +192,7 @@ namespace AdaptiveSound
             ++hops_;
             if (hops_ >= hopEnergy_.size())
             {
-                double blockSum = 0.0;
-                for (const double each : hopEnergy_)
-                {
-                    blockSum += each;
-                }
+                const double blockSum = std::accumulate(hopEnergy_.begin(), hopEnergy_.end(), 0.0);
                 blocks_.push_back(
                     blockSum / (static_cast<double>(hopFrames_) * static_cast<double>(kBlockHops)));
             }
