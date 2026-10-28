@@ -274,15 +274,16 @@ enum TrackLoudnessDecoder {
                 url.stopAccessingSecurityScopedResource()
             }
         }
-        let source: DecodeSource
-        switch DecodeSource.open(url) {
+        let pass: TrackDecodePass
+        switch TrackDecodePass.open(url, profile: true, measureAt: nil) {
         case let .success(opened):
-            source = opened
+            pass = opened
         case let .failure(failure):
             return .failed(failure.reason)
         }
-        defer { asLoudnessProfilerDestroy(source.profiler) }
-        let streamed = source.stream(prefixSeconds: prefixSeconds, isCancelled: isCancelled, onPrefix: onPrefix)
+        guard let profiler = pass.profiler else { return .failed("no profiler") }
+        defer { asLoudnessProfilerDestroy(profiler) }
+        let streamed = pass.stream(prefixSeconds: prefixSeconds, isCancelled: isCancelled, onPrefix: onPrefix)
         if streamed.cancelled {
             return .cancelled
         }
@@ -290,109 +291,9 @@ enum TrackLoudnessDecoder {
         if let error = streamed.error, streamed.prefixed {
             return .prefixOnly(error)
         }
-        if let whole = TrackLoudnessProfileHandle(taking: asLoudnessProfilerFinishFull(source.profiler)) {
+        if let whole = TrackLoudnessProfileHandle(taking: asLoudnessProfilerFinishFull(profiler)) {
             return .whole(whole)
         }
         return .failed(streamed.error ?? "shorter than one 400 ms block")
-    }
-}
-
-/// Why a track could not be opened for analysis.
-private struct DecodeFailure: Error {
-    let reason: String
-}
-
-/// How a decode stream ended.
-private struct DecodeStream {
-    var prefixed = false
-    var cancelled = false
-    var error: String?
-}
-
-/// One read's result.
-private enum DecodeChunk {
-    case data
-    case end
-    case error(String)
-}
-
-/// An opened track: the file, its profiler (destroyed by the caller) and the decode buffer.
-private struct DecodeSource {
-    /// Frames per read.
-    static let chunkFrames: AVAudioFrameCount = 65536
-
-    let file: AVAudioFile
-    let profiler: OpaquePointer
-    let buffer: AVAudioPCMBuffer
-
-    static func open(_ url: URL) -> Result<DecodeSource, DecodeFailure> {
-        let file: AVAudioFile
-        do {
-            file = try AVAudioFile(forReading: url)
-        } catch {
-            return .failure(DecodeFailure(reason: "cannot open: \(error.localizedDescription)"))
-        }
-        let format = file.processingFormat
-        let tag = format.channelLayout?.layoutTag ?? kAudioChannelLayoutTag_Unknown
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
-            return .failure(DecodeFailure(reason: "no decode buffer"))
-        }
-        guard let profiler = asLoudnessProfilerCreate(format.sampleRate, format.channelCount, tag) else {
-            return .failure(DecodeFailure(reason: "\(Int(format.sampleRate)) Hz × \(format.channelCount) ch is "
-                    + "outside the profiler"))
-        }
-        return .success(DecodeSource(file: file, profiler: profiler, buffer: buffer))
-    }
-
-    /// Feed the whole file, publishing the prefix once `prefixSeconds` are in.
-    func stream(prefixSeconds: Double, isCancelled: () -> Bool,
-                onPrefix: (TrackLoudnessProfileHandle) -> Void) -> DecodeStream {
-        let prefixFrames = AVAudioFramePosition(prefixSeconds * file.processingFormat.sampleRate)
-        var streamed = DecodeStream()
-        var fed: AVAudioFramePosition = 0
-        while !isCancelled() {
-            switch readChunk() {
-            case .end:
-                return streamed
-            case let .error(reason):
-                streamed.error = reason
-                return streamed
-            case .data:
-                fed += AVAudioFramePosition(buffer.frameLength)
-            }
-            if !streamed.prefixed, fed >= prefixFrames,
-               let prefix = TrackLoudnessProfileHandle(taking: asLoudnessProfilerFinishPrefix(profiler)) {
-                streamed.prefixed = true
-                onPrefix(prefix)
-            }
-        }
-        streamed.cancelled = true
-        return streamed
-    }
-
-    /// Read the next chunk into `buffer` and feed it to the profiler.
-    private func readChunk() -> DecodeChunk {
-        if file.framePosition >= file.length {
-            return .end // a read AT the end throws rather than returning 0 frames
-        }
-        do {
-            try file.read(into: buffer)
-        } catch {
-            return .error("the read failed: \(error.localizedDescription)")
-        }
-        if buffer.frameLength == 0 {
-            return .end
-        }
-        return feedBuffer() ? .data : .error("the decoder produced non-finite samples")
-    }
-
-    /// Feed the buffer (planar float32) to the profiler.
-    private func feedBuffer() -> Bool {
-        guard let channels = buffer.floatChannelData else { return false }
-        let count = Int(buffer.format.channelCount)
-        let pointers: [UnsafePointer<Float>?] = (0 ..< count).map { UnsafePointer(channels[$0]) }
-        return pointers.withUnsafeBufferPointer { list in
-            asLoudnessProfilerFeed(profiler, list.baseAddress, UInt32(count), buffer.frameLength)
-        }
     }
 }

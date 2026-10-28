@@ -6,7 +6,7 @@ import Foundation
 ///
 /// `token` is the 64-bit name the engine knows the track by (`setCurrentTrack`,
 /// `publishTrackLoudnessProfile`): FNV-1a over the three fields, never 0 (the engine's "no track").
-public struct TrackIdentity: Hashable, Sendable {
+public struct TrackIdentity: Hashable, Sendable, Codable {
     public let path: String
     public let size: UInt64
     public let modified: Double // seconds since 1970
