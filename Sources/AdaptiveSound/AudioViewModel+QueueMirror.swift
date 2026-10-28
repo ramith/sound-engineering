@@ -15,9 +15,10 @@ import PlaybackQueueKit
 // quit), which a crash could leave from two moments, or lose the place altogether.
 //
 // When it writes (the cadence): every change to the queue, the selected song or the shuffle pass asks for a
-// write at once (the didSets in AudioViewModel.swift), and so does a pause, a scrub while paused or a stop (the
-// resume point). While a song plays, the playhead asks each time it has moved `playheadCadenceSeconds` (5 s)
-// of the song — so a crash comes back at most 5 s early, for one row of a few dozen bytes per write. A request
+// write at once (the didSets in AudioViewModel.swift), and so does a pause or a stop (the resume point) and a
+// scrub, playing or paused (`seek`): a place the listener chose (founder, 2026-10-28). While a song plays on, its
+// own progress asks each time it has moved `playheadCadenceSeconds` (5 s) of the song — so a crash comes back
+// where the listener last scrubbed to, or at most 5 s early, for one row of a few dozen bytes per write. A request
 // made while a write is in flight waits, and requests made meanwhile coalesce into one: the sink writes the
 // queue AS IT IS when its turn comes, never a state from the middle of a verb. A request whose record has not
 // changed since the last write moves the playhead alone — a number, not the queue — and builds no record: a
@@ -63,8 +64,8 @@ extension AudioViewModel {
         askForQueueStateWrite()
     }
 
-    /// The playhead moved. A pause, a scrub while paused or a stop (`cadenced: false`) is written at once; a
-    /// playing song's playhead each time it has moved `playheadCadenceSeconds`.
+    /// The playhead moved. A pause, a stop or a scrub — playing or paused (`cadenced: false`) — is written at once;
+    /// a playing song's own progress each time it has moved `playheadCadenceSeconds`.
     func queuePlayheadMoved(cadenced: Bool) {
         // A playhead back at 0 is a stop or a new song: written at once, so a stop never resumes mid-song.
         let moved = abs(playbackPosition - queueStateBook.playheadAsked)

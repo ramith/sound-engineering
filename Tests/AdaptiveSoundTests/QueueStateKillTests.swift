@@ -175,9 +175,9 @@ struct QueueStateKillTests {
         let player = try await world.launch()
         player.vm.playNow((0 ..< 3).map(audioFile), startAt: 0)
         try await playing(player)
-        // The second move of each pair is under the cadence from the first, so it asks for no write: forward from
-        // a start, and back after a seek — the shapes VM-KILL-01 once failed on (stored @0.0 with @4.7 logged at
-        // the checkpoint; stored @61.5 with @58.8).
+        // The second move of each pair, the song's own progress as the engine reports it, is under the cadence from
+        // the first, so it asks for no write: forward from a start, and back — the shapes VM-KILL-01 once failed on
+        // (stored @0.0 with @4.7 logged at the checkpoint; stored @61.5 with @58.8).
         for (asked, moved) in [(0.0, 4.7), (61.5, 58.8)] {
             try movePlayhead(player, to: asked)
             await KillHarness.checkpoint(player.vm)

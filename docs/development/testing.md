@@ -92,7 +92,7 @@ these**; the semgrep rule `test-no-raw-time` bans `Thread.sleep`, `Task.sleep`, 
   `ShuffleBulkEditTests`.
 - **The queue writer's book**: `AudioViewModel.queueStateBook` (`QueueStateBook`). Its `recordsBuilt` counts the whole
   resume records `queueStateNow()` built, so a test proves that a write of the playhead alone (the 5 s cadence, a pause,
-  a scrub) builds none: `QueueStateEdgeTests` VM-QS-15.
+  a scrub) builds none: `QueueStateEdgeTests` VM-QS-15, VM-QS-16.
 - **An open waiting for the store**: `LibraryModel.isWaitingForStore` is true while a file open (Open With, a drop)
   waits in `openedStore()` for the library store to open. Wait for it before the test opens the store: BI-P05
   (`BreakItPlayerTests`).

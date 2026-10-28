@@ -955,11 +955,12 @@ adds (`Sources/LibraryStore/Schema+QueueState.swift`): `queue_state`, the record
 `queue_playhead`, the offset into the selected song and the revision of its record. Each write is one transaction
 (`LibraryStore+QueueState.swift`), and a playhead for another revision is refused, so a kill at any instant leaves the
 previous state or the next, never a mix. One writer: a `CoalescingWriter` whose sink, `writeQueueState`
-(`Sources/AdaptiveSound/AudioViewModel+QueueMirror.swift:87`), is the only caller of the two writes. It writes at once
-on every change to the queue, the selected song or the pass, at a pause, a scrub while paused, a stop and the quit;
-while a song plays it writes the playhead alone each time it has moved 5 s of the song
-(`QueueResumeRecord.playheadCadenceSeconds`, `Sources/PlaybackQueueKit/QueueResumeRecord.swift:29`), so after a crash
-the queue comes back paused at most 5 s early. Nothing is written before the launch's restore has read the store — the
+(`Sources/AdaptiveSound/AudioViewModel+QueueMirror.swift:88`), is the only caller of the two writes. It writes at once
+on every change to the queue, the selected song or the pass, at a pause, a scrub (playing or paused: a place the
+listener chose), a stop and the quit; while a song plays on, it writes the playhead alone each time the song's own
+progress has moved it 5 s (`QueueResumeRecord.playheadCadenceSeconds`,
+`Sources/PlaybackQueueKit/QueueResumeRecord.swift:30`), so after a crash the queue comes back paused where the listener
+last scrubbed to, or at most 5 s early. Nothing is written before the launch's restore has read the store — the
 launch's empty queue never overwrites it — nor after the quit's last write. The restore
 (`AudioViewModel+QueueHydration.swift`) brings back the songs, loose files included, the selected one at its place, and
 the shuffle pass; a song gone since is dropped, and when it was the selected one the queue starts at the top (under
@@ -967,8 +968,9 @@ shuffle, at the pass's next song), never another song at the old offset. A libra
 old way — the "current" playlist and the `queue.cursor.*` keys — and written as the record. From the restore on, the
 live queue follows the library: a song "Use this drive" moved plays from its new path (VM-QS-10). Tests: in the Kit,
 `QueueResumeRecordTests` VM-RR-01…07 and `QueueJoinTests` VM-QJ-01…07; on the real view model over a real
-`LibraryStore`, `QueueRestoreTests`, `QueueRestoreJoinTests` and `QueueStateEdgeTests`, VM-QS-01…15 (VM-QS-03, the
-cadence: the playhead at 4.9 s writes nothing, at 5.0 s the playhead alone, a pause at once); the process-level kill
+`LibraryStore`, `QueueRestoreTests`, `QueueRestoreJoinTests` and `QueueStateEdgeTests`, VM-QS-01…16 (VM-QS-03, the
+cadence: the playhead at 4.9 s writes nothing, at 5.0 s the playhead alone, a pause at once; VM-QS-16, a scrub while
+playing at once, 2 s back too); the process-level kill
 harness, VM-KILL-01 (`QueueStateKillTests`: a child process runs the real view model over a real store file and is
 sent SIGKILL at a random point, 100 times a run; every stored state must be whole, one the child reached and no older
 than its last checkpoint — the queue asked for and written, as the quit does; a flush alone leaves a playhead moved
@@ -994,6 +996,10 @@ QS-1…QS-5 (the v9 → v10 upgrade keeps every user row; v10 is additive; a rou
   are cleared and the cursor keys removed; the built-in playlist row stays (VM-QS-05).
 - **A playhead write builds no record** (review S5): the 5 s cadence, a pause and a scrub write the number alone,
   without rebuilding the whole record on the main actor (VM-QS-15, counted through `QueueStateBook.recordsBuilt`).
+- **A scrub while playing is kept at once** (founder, 2026-10-28): a seek the listener makes is written at once, alone,
+  playing or paused (`AudioViewModel.seek`); only the song's own progress waits for the 5 s cadence. A scrub of under
+  5 s while playing used to wait for it, so a crash could come back up to 5 s from where the listener chose, ahead or
+  behind (VM-QS-16).
 
 Also at the combine: a start keeps its slot, not its row, so a join that moves a song's row while it starts still
 primes what follows it (integration, "a start keeps its slot"; VM-QS-11, whose name still says "known issue"). And an

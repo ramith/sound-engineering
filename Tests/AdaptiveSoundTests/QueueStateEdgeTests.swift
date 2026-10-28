@@ -12,7 +12,9 @@ import Testing
 // The shipped `AudioViewModel` over `FakeEngine`, its library a real `LibraryStore` (`QueueStateWorld`). A store
 // read that fails — not a damaged record — is read once more, and when it fails again the writer stays closed,
 // so this session's queue never overwrites one it never read (review N1). A write of the playhead alone builds
-// no record (review S5), counted through the writer's book (`QueueStateBook.recordsBuilt`).
+// no record (review S5), counted through the writer's book (`QueueStateBook.recordsBuilt`). A scrub while playing
+// is the listener's choice of place, written at once like a pause — not left to the 5 s cadence (founder,
+// 2026-10-28).
 
 extension QueueStateWorld {
     /// Run `sql` on the library's file through a connection of the test's own — the store sees the change at
@@ -101,5 +103,33 @@ struct QueueStateEdgeTests {
         #expect(paused?.offset == 90 && paused?.revision == start.revision, "the scrub was not written alone")
         let rebuilt = player.vm.queueStateBook.recordsBuilt - built
         #expect(rebuilt == 0, "\(rebuilt) whole records built for writes of the playhead alone")
+    }
+
+    @Test("VM-QS-16: a scrub while playing is written at once, a small one back too; a relaunch comes back there")
+    func scrubWhilePlayingIsKeptAtOnce() async throws {
+        let world = try await QueueStateWorld(songs: 3)
+        defer { world.discard() }
+        let player = try await world.launch()
+        player.vm.playNow((0 ..< 3).map(audioFile), startAt: 1)
+        try await playing(player)
+        player.vm.duration = 200
+        try movePlayhead(player, to: 30) // the song's own progress, written at the cadence
+        let start = try #require(try await world.stored(after: player))
+        #expect(start.offset == 30)
+        let built = player.vm.queueStateBook.recordsBuilt
+        // Each scrub is under the cadence from the place last written: 3 s on, then 2 s back. No tick follows it.
+        for target in [33.0, 31.0] {
+            player.vm.seek(to: target)
+            let stored = try await world.stored(after: player)
+            #expect(stored?.offset == target && stored?.revision == start.revision && stored?.record == start.record,
+                    "the scrub to \(target) s was not written at once, alone: stored @\(stored?.offset ?? -1)")
+        }
+        #expect(player.vm.queueStateBook.recordsBuilt == built, "a scrub's write built the whole record")
+
+        // Killed right after the scrub, never quit: a relaunch has only what the writer wrote.
+        let relaunched = try await world.launch()
+        #expect(relaunched.vm.selectedTrackIndex == 1, "the relaunch selected another song")
+        #expect(relaunched.vm.pausedResumePosition == 31 && relaunched.vm.playbackPosition == 31,
+                "the relaunch is at \(relaunched.vm.playbackPosition) s, not where the listener scrubbed to")
     }
 }
