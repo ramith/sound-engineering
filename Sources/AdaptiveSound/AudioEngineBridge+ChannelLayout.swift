@@ -116,6 +116,7 @@ extension AudioEngineBridge {
     /// truncation, never trim 0 — and the planner, seeing roles that differ from the analysis', keeps to the
     /// fallback trim. The combine replaces this body with the resolver's call (lane 2's report has the line).
     private func sourceRoles(channelCount: AVAudioChannelCount, layout _: AVAudioChannelLayout?) -> [UInt8] {
-        [UInt8](repeating: UInt8(AsChannelRoleUnknown.rawValue), count: Int(min(channelCount, AVAudioChannelCount(AS_MAX_CHANNELS))))
+        let width = Int(min(channelCount, AVAudioChannelCount(AS_MAX_CHANNELS)))
+        return [UInt8](repeating: UInt8(AsChannelRoleUnknown.rawValue), count: width)
     }
 }
