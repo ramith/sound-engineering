@@ -10,7 +10,7 @@ import Foundation
 /// mainMixer -> output`) and the analysis-tap install/remove, factored out of the core
 /// `AudioEngineBridge` class body into a same-module extension to keep the class focused (SwiftLint
 /// `type_body_length`). The members touched here (`avEngine`, `playerNode`, `effectsNode`,
-/// `spatialAudioUnit`, the analyzer arrays, the meter/analyzer handles, the
+/// `spatialNode`, the analyzer arrays, the meter/analyzer handles, the
 /// `tapInstalled` flags) are module-internal on the base class so this extension can reach them.
 extension AudioEngineBridge {
     /// Instantiate the effects AU, then (nested) the spatial AU, then wire the full two-AU graph and
@@ -33,7 +33,7 @@ extension AudioEngineBridge {
             AVAudioUnit.instantiate(with: spatialDescription, options: []) { [weak self] spatialUnit, error in
                 guard let self else { completion(false); return }
                 guard let spatialUnit, error == nil else { completion(false); return }
-                self.spatialAudioUnit = spatialUnit
+                self.setSpatialUnit(spatialUnit)
                 engine.attach(spatialUnit)
 
                 self.connectInitialGraph(engine: engine, player: player,

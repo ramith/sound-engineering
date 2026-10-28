@@ -64,7 +64,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// graph's node and the `AUAudioUnit` the control plane publishes to, as ONE value so they can
     /// never disagree. Guarded by `stateLock`; access ONLY via `effectsNode`, `withEffectsAU` and
     /// `setEffectsUnit`. Held for the engine's lifetime; detached + released in `shutdown()`.
-    var storedEffectsUnit: EffectsUnit?
+    var storedEffectsUnit: GraphUnit?
 
     /// Borrows of the effects AU in flight (`withEffectsAU`). The teardown waits for it to reach 0
     /// before releasing the AU, so the release — and the AU's Realizer barrier — is never a
@@ -88,12 +88,17 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var transportEpoch: UInt64 = 0
 
     /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as
-    /// `effectsAU -> spatialAU -> mainMixer` (Sprint 5b M3-3). It is the stage that maps the
-    /// source/processing width N to the device width M, so the mixer no longer naively downmixes
-    /// (it runs at the device width M). For M3 the device width M == source width N, making the
-    /// spatial AU a bit-exact identity route; S4 introduces the real M < N fold (binaural).
-    /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
-    var spatialAudioUnit: AVAudioUnit?
+    /// `effectsAU -> spatialAU -> mainMixer` (Sprint 5b M3-3): the stage that maps the source width N
+    /// to the device boundary M — a bit-exact identity route when M == N, the BS.775 stereo fold and its
+    /// backstop when the device is narrower (R1.1-B). The graph's node and the `AUAudioUnit` the fold's
+    /// parameters are published to, as ONE value (level-and-fold §8, M1). Guarded by `stateLock`; access
+    /// ONLY via `spatialNode`, `withSpatialAU` and `setSpatialUnit`. Held for the engine's lifetime;
+    /// detached + released in `shutdown()`.
+    var storedSpatialUnit: GraphUnit?
+
+    /// Borrows of the spatial AU in flight (`withSpatialAU`); the teardown waits for 0, as for the
+    /// effects AU. Named acquire/release atomic.
+    let spatialAUBorrows = Atomic<Int>(0)
 
     // MARK: - Monitoring taps (per-channel before/after spectra; analyzers in `storedTapAnalysis`)
 

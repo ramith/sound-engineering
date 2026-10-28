@@ -3,12 +3,13 @@ import Synchronization
 
 // MARK: - Values the bridge swaps whole under `stateLock`
 
-/// The effects AU as the graph holds it and as the control plane reaches it.
-struct EffectsUnit {
+/// One of the app's two custom AUs — the effects unit or the spatial unit — as the graph holds it and as
+/// the control plane reaches it.
+struct GraphUnit {
     /// The node in the graph (attach, connect, tap, detach) — `engineQueue` only.
     let node: AVAudioUnit
-    /// Its `AUAudioUnit` (our `AdaptiveSoundAU`), read once when the unit is set: every control-plane
-    /// C-ABI call takes it (`withEffectsAU`).
+    /// Its `AUAudioUnit` (our `AdaptiveSoundAU` or `SpatialRendererAU`), read once when the unit is set:
+    /// every control-plane C-ABI call takes it (`withEffectsAU`, `withSpatialAU`).
     let au: AUAudioUnit
 }
 
