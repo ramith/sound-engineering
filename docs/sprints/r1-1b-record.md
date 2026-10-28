@@ -107,8 +107,8 @@ test-library app. What it covers:
 - **Real music:**
   - Pavlik Records stereo and 5.0 classical, up to 352.8 kHz
   - Dolby and THX trailers
-  - five loud tracks the founder named from their own collection, −7.2 to −12.4 LUFS. They are MP3s, and their
-    decoded samples reach +2 dBFS.
+  - five loud tracks the founder named from their own collection, −7.2 to −12.4 LUFS. They are MP3s; ffmpeg
+    decodes them to +2 dBFS, but Apple's MP3 decoder clamps at 0 dBFS, so the app receives them already clipped.
   - the founder's 37.5-minute live orchestral show, cut into a nine-piece live album
 - **Generated material:** loud masters (limited, hard-clipped to +4.3 dBTP, float with peaks above full scale), a
   continuous album in seven variants (ReplayGain complete, partial, none, wrong; gapless MP3; gapless and padded AAC),
