@@ -35,6 +35,25 @@ enum KillHarness {
         }
         return String(hash, radix: 16)
     }
+
+    /// The state the writer would write from `viewModel` now, as the log names it: the hash of the record and
+    /// the playhead beside it (`queueStateNow`, the sink's own function).
+    @MainActor
+    static func state(of viewModel: AudioViewModel) -> LoggedState {
+        let (record, offset) = viewModel.queueStateNow()
+        return LoggedState(hash: hash((try? record?.encodedQueue()) ?? "none"), offset: offset)
+    }
+
+    /// The child's checkpoint, logged as "flushed": the queue as it is now asked for, then every write done — the
+    /// quit's pair (`persistQueueCursor`, then the writer's flush), without the close. So the store holds the state
+    /// the child logged last, the oracle's "nothing written was lost". A flush alone is not that: it writes what was
+    /// asked, and a playing song's playhead is asked at its cadence — moved under `playheadCadenceSeconds`, the
+    /// store keeps the playhead last asked (VM-QS-03), a state the child reached before (VM-KILL-02).
+    @MainActor
+    static func checkpoint(_ viewModel: AudioViewModel) async {
+        viewModel.persistQueueCursor()
+        await viewModel.queueStateWriter.flush()
+    }
 }
 
 /// One state the child reached, as the log names it: the record's hash and the playhead.
@@ -44,6 +63,11 @@ struct LoggedState: Hashable, CustomStringConvertible {
 
     var description: String {
         "\(hash) @\(offset)"
+    }
+
+    /// As a line of the child's log names it.
+    var logged: String {
+        "\(hash) \(offset)"
     }
 
     /// The state stored in `state`.
@@ -62,7 +86,8 @@ struct LoggedState: Hashable, CustomStringConvertible {
 struct ChildLog {
     var restored: LoggedState?
     var states: [LoggedState] = []
-    /// For each "flushed" line, the number of states logged before it.
+    /// For each "flushed" line — a checkpoint returned (`KillHarness.checkpoint`) — the number of states logged
+    /// before it.
     var flushedAt: [Int] = []
 
     init(_ text: String) {
@@ -108,14 +133,14 @@ struct QueueStateKillChild {
         let ops = Int(environment[KillHarness.opsKey] ?? "") ?? Int.max
 
         let child = try await KillChild(storeURL: storeURL, defaults: defaults)
-        try log.write(contentsOf: Data("restored \(child.loggedState())\n".utf8))
+        try log.write(contentsOf: Data("restored \(KillHarness.state(of: child.vm).logged)\n".utf8))
         var done = 0
         while done < ops, getppid() != 1 {
             child.change(&rng)
             done += 1
-            try log.write(contentsOf: Data("state \(child.loggedState())\n".utf8))
+            try log.write(contentsOf: Data("state \(KillHarness.state(of: child.vm).logged)\n".utf8))
             if rng.below(5) == 0 {
-                await child.vm.queueStateWriter.flush()
+                await KillHarness.checkpoint(child.vm)
                 try log.write(contentsOf: Data("flushed\n".utf8))
             } else {
                 try await child.vm.settled()
@@ -151,13 +176,6 @@ private final class KillChild {
         vm.hydrateQueueOnLaunch()
         try await vm.settled()
         await vm.queueStateWriter.flush()
-    }
-
-    /// The state the writer would write now, as the log names it.
-    func loggedState() -> String {
-        let (record, offset) = vm.queueStateNow()
-        let text = (try? record?.encodedQueue()) ?? "none"
-        return "\(KillHarness.hash(text)) \(offset)"
     }
 
     /// One random change, as a listener or the engine makes it: an edit of the queue, a change of the
