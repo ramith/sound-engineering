@@ -87,6 +87,12 @@ struct TrackDecodePass {
                 streamed.error = failure
                 return streamed
             }
+            // A short read is the decoder's real end. E-AC-3, AC-3, ffmpeg-made MP3 and Vorbis files deliver up to
+            // a few hundred frames fewer than `file.length` reports, and the read after the short one throws
+            // rather than returning nothing (PASS-09).
+            if buffer.frameLength < buffer.frameCapacity {
+                return streamed
+            }
         }
         streamed.cancelled = true
         return streamed
