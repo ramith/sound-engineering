@@ -57,14 +57,6 @@ namespace AdaptiveSound
         std::array<uint8_t, 3> pad_ = {};
     };
 
-    struct LoudnessParams
-    {
-        float makeupGainLinear = 1.0F;
-        float lufsTarget = kDefaultLufsTarget;
-        uint8_t enabled = 1;
-        std::array<uint8_t, 3> pad_ = {};
-    };
-
     struct BRIRParams
     {
         uint8_t activeSlotIndex = 0;
@@ -87,7 +79,7 @@ namespace AdaptiveSound
     };
 
     // Crossfeed (QW1; R1.1-A): headphone crossfeed, bs2b (CrossfeedModule), an output stage of the
-    // kernel of its own — after the normaliser, before the limiter — at its preset's full strength
+    // kernel of its own — after the Intensity blend, before the limiter — at its preset's full strength
     // whatever Intensity is (founder decision 2026-10-14). The coefficients are bs2b's init()
     // (libbs2b bs2b.c) at the owned rate, its output gain folded into the numerators:
     //   direct path (high-boost shelf):  y = directB0·x + directB1·x[n−1] + directPole·y[n−1]
@@ -136,7 +128,6 @@ namespace AdaptiveSound
     {
         EQParams eq;
         ClarityParams clarity;
-        LoudnessParams loudness;
         BRIRParams brir;
         CrossfeedParams crossfeed; // headphone crossfeed: the output stage ahead of the limiter
         LimiterParams limiter;
@@ -157,7 +148,9 @@ namespace AdaptiveSound
     // EQParams to 640 B. The size itself is golden-master-NEUTRAL (the hash is over audio output):
     // EQ1b re-baselined the golden master because the EQ's audio changed; the fix round left it
     // untouched. If a FUTURE change trips this assert: re-MEASURE N, then re-confirm the
-    // golden-master hash (CF-1) still holds — never silently bump N.
+    // golden-master hash (CF-1) still holds — never silently bump N. R1.1-B (level-and-fold §7, M8) deleted
+    // LoudnessParams with the session AGC: re-measured, still 768 B — the bytes used went 744 → 728, inside the
+    // alignas(64) padding — and the golden master re-run (MultichannelTests.inc).
     constexpr size_t kMeasuredTargetStateBytes = 768;
     static_assert(
         sizeof(TargetState) == kMeasuredTargetStateBytes,

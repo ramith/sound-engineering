@@ -158,7 +158,6 @@ static auto testKernelNonFiniteInputPlaysAsSilence() -> void
         for (size_t run = 0; run < outputs.size(); ++run)
         {
             TargetState state{}; // the limiter ON at −1 dBTP
-            state.loudness.enabled = 0U;
             state.intensityLinear = c.intensity;
             state.eq = c.eqOn ? warm : EQParams{};
             DSPKernel kernel;
@@ -472,166 +471,6 @@ static auto testEqSinglePointSettlesFast() -> void
 
 namespace
 {
-    // The level (dB re the tone's own amplitude) in consecutive 5 ms windows of `out` from `from`.
-    auto fixLevelTrace(const std::vector<float>& out, size_t from, double amplitude)
-        -> std::vector<double>
-    {
-        constexpr size_t kWindow = 240U; // 5 ms at 48 kHz
-        std::vector<double> levels;
-        for (size_t n = from; n + kWindow <= out.size(); n += kWindow)
-        {
-            double energy = 0.0;
-            for (size_t k = n; k < n + kWindow; ++k)
-            {
-                energy += static_cast<double>(out[k]) * out[k];
-            }
-            levels.push_back(10.0 * std::log10(std::max(energy / kWindow, 1e-20) /
-                                               (amplitude * amplitude / 2.0)));
-        }
-        return levels;
-    }
-
-    struct FixGlide
-    {
-        double swingDb = 0.0;       // the level after − the level before
-        double tenToNinetyMs = 0.0; // how long the middle 80 % of the swing takes
-        double firstMoveDb = 0.0;   // the largest move from `before` while Intensity ramps
-        double worst50MsDb = 0.0;   // the largest level change over any 50 ms after that
-    };
-
-    // The level glide in `levels` (5 ms windows), against the level just before it. The first
-    // 200 ms are the Intensity ramp's own (τ 32 ms: the blend law moves the level there).
-    auto fixGlide(const std::vector<double>& levels, double before) -> FixGlide
-    {
-        FixGlide glide;
-        glide.swingDb = levels.back() - before;
-        double t10 = -1.0;
-        double t90 = -1.0;
-        constexpr size_t kFiftyMs = 10U;
-        constexpr size_t kRampWindows = 40U; // 200 ms
-        for (size_t i = 0; i < levels.size(); ++i)
-        {
-            const double progress = (levels[i] - before) / glide.swingDb;
-            const double ms = 5.0 * static_cast<double>(i);
-            t10 = (t10 < 0.0 && progress >= 0.1) ? ms : t10;
-            t90 = (t90 < 0.0 && progress >= 0.9) ? ms : t90;
-            if (i < kRampWindows)
-            {
-                glide.firstMoveDb = std::max(glide.firstMoveDb, std::abs(levels[i] - before));
-            }
-            else
-            {
-                glide.worst50MsDb =
-                    std::max(glide.worst50MsDb, std::abs(levels[i] - levels[i - kFiftyMs]));
-            }
-        }
-        glide.tenToNinetyMs = t90 - t10;
-        return glide;
-    }
-
-    // The equal-power blend's own level (dB) at Intensity r when wet == dry: cos + sin.
-    auto fixBlendLawDb(double intensity) -> double
-    {
-        const double angle = intensity * std::numbers::pi / 2.0;
-        return 20.0 * std::log10(std::cos(angle) + std::sin(angle));
-    }
-} // namespace
-
-// ---------------------------------------------------------------------------
-// Intensity_Zero_LevelGlide — founder decision 33 (amendment 16): crossing Intensity 0 glides the
-// level over ~2 s. With the normaliser adapted to a loud (or quiet) tone at r = 0.3, r → 0 used
-// to swing the whole makeup in ~0.1 s (+10 dB / −14.6 dB, 8.8 dB in the worst 50 ms; the
-// break-it's finding 4), because the contribution followed r. Measured as level over time (5 ms
-// windows), both ways across 0:
-//   - the swing still happens (≥ 6 dB: the normaliser's makeup really leaves and rejoins);
-//   - its middle 80 % takes ≥ 1 s (the blend law's quick move at the start shortens the ideal
-//     linear glide's 1.6 s; the old behaviour took ~0.07 s);
-//   - while Intensity itself ramps (the first 200 ms) the level moves by no more than the
-//     equal-power blend's own change (wet == dry here: up to 2.6 dB for r 0.3) + 1.5 dB (the
-//     glide's own share of those 200 ms is 0.1 × a makeup of up to 12 dB);
-//   - after that, no 50 ms moves it by more than 0.5 dB (a 12 dB glide over 2 s is 0.3).
-// The normaliser's meter keeps up with the render by state, not by pacing (engineRunSineMeasured).
-// ---------------------------------------------------------------------------
-static auto testIntensityZeroLevelGlide() -> void
-{
-    static const char* const kName = "Intensity_Zero_LevelGlide";
-    constexpr double kMinSwingDb = 6.0;
-    constexpr double kMinGlideMs = 1000.0;
-    constexpr double kRampAllowanceDb = 1.5;
-    constexpr double kWorst50MsBoundDb = 0.5;
-    constexpr float kStartIntensity = 0.3F;
-    const double blendLawDb = fixBlendLawDb(kStartIntensity);
-    std::string report = std::format(
-        "[info] {}: swing / 10–90 % time / move while Intensity "
-        "ramps (blend law {:.2f} dB) / worst 50 ms after\n",
-        kName,
-        blendLawDb);
-    std::string failures;
-    for (const double amplitude : {0.5, 0.02}) // loud: the normaliser cuts; quiet: it boosts
-    {
-        TargetState state{}; // normaliser ON (−16 LUFS), limiter ON
-        state.clarity.enabled = 0U;
-        state.intensityLinear = kStartIntensity;
-        DSPKernel kernel;
-        kernel.publishTargetState(state);
-        kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
-        EngineSine sine;
-        sine.amplitude = amplitude;
-        std::vector<float> out;
-        if (!engineRunSineMeasured(kernel, sine, engineBlocksFor(12.0), out))
-        {
-            return;
-        }
-        for (const float to : {0.0F, kStartIntensity})
-        {
-            const size_t switchAt = out.size();
-            const double before =
-                fixLevelTrace(out, switchAt - (static_cast<size_t>(kEngineBlock) * 2U), amplitude)
-                    .back();
-            state.intensityLinear = to;
-            kernel.publishTargetState(state);
-            engineRunSine(kernel, sine, engineBlocksFor(3.5), out);
-            const FixGlide glide = fixGlide(fixLevelTrace(out, switchAt, amplitude), before);
-            const std::string name = std::format("tone {:.2f} FS, r → {:.1f}", amplitude, to);
-            report +=
-                std::format("[info]   {:22s} {:+6.2f} dB / {:6.0f} ms / {:.2f} dB / {:.2f} dB\n",
-                            name,
-                            glide.swingDb,
-                            glide.tenToNinetyMs,
-                            glide.firstMoveDb,
-                            glide.worst50MsDb);
-            const bool glided = std::abs(glide.swingDb) >= kMinSwingDb &&
-                                glide.tenToNinetyMs >= kMinGlideMs &&
-                                glide.firstMoveDb <= blendLawDb + kRampAllowanceDb &&
-                                glide.worst50MsDb <= kWorst50MsBoundDb;
-            if (!glided)
-            {
-                failures += std::format(
-                    "{}: swing {:+.2f} dB (≥ {}), 10–90 % in {:.0f} ms (≥ {}), {:.2f} dB while "
-                    "Intensity ramps (≤ {:.2f}), worst 50 ms after {:.2f} dB (≤ {}); ",
-                    name,
-                    glide.swingDb,
-                    kMinSwingDb,
-                    glide.tenToNinetyMs,
-                    kMinGlideMs,
-                    glide.firstMoveDb,
-                    blendLawDb + kRampAllowanceDb,
-                    glide.worst50MsDb,
-                    kWorst50MsBoundDb);
-            }
-        }
-    }
-    logInfo(report);
-    if (!failures.empty())
-    {
-        logFail(kName, failures);
-        return;
-    }
-    logPass(kName);
-}
-
-namespace
-{
     struct FixP0Step
     {
         double stepLu = 0.0;    // how much quieter the EQ-only path played than the source
@@ -758,7 +597,6 @@ namespace
     {
         const auto fs = static_cast<uint32_t>(kEngineFs);
         TargetState state{};
-        state.loudness.enabled = 0U;
         state.intensityLinear = 0.0F;
         DSPKernel kernel;
         kernel.publishTargetState(state); // P0 from the first block

@@ -712,11 +712,6 @@ namespace
         {"EQ_Off_BitExact", testEqOffBitExact, Tier::Concurrent},
         {"EQ_BitPerfect_P0", testEqBitPerfectP0, Tier::Concurrent},
         {"Kernel_PathSwitch_NoGlitch", testKernelPathSwitchNoGlitch, Tier::Correctness},
-        {
-            "Path_Switch_AfterNormaliserAdapted",
-            testPathSwitchAfterNormaliserAdapted,
-            Tier::Concurrent,
-        },
         {"EQ_PublishRejectsNonFinite", testEqPublishRejectsNonFinite, Tier::Concurrent},
         {"EQ_RT_IgnoresBadSnapshot", testEqRtIgnoresBadSnapshot, Tier::Correctness},
         {"EQ_NaNInput_Recovers", testEqNaNInputRecovers, Tier::Correctness},
@@ -754,11 +749,6 @@ namespace
         // Sprint EQ break-it (engine): red tests pinning defects the gate above does not see.
         {"BreakIt_InfInput_KernelRecovers", testBreakItInfInputKernelRecovers, Tier::Concurrent},
         {
-            "BreakIt_NonFiniteInput_NormaliserKeepsAdapting",
-            testBreakItNonFiniteInputNormaliserKeepsAdapting,
-            Tier::Concurrent,
-        },
-        {
             "BreakIt_Transitions_LowBandGestures",
             testBreakItTransitionsLowBandGestures,
             Tier::AccuracySweep,
@@ -786,7 +776,6 @@ namespace
         },
         {"EQ_Transitions_SinglePoints", testEqTransitionsSinglePoints, Tier::AccuracySweep},
         {"EQ_SinglePoint_SettlesFast", testEqSinglePointSettlesFast, Tier::Correctness},
-        {"Intensity_Zero_LevelGlide", testIntensityZeroLevelGlide, Tier::Concurrent},
         {"Kernel_P0Switch_LoudMasterStep", testKernelP0SwitchLoudMasterStep, Tier::Concurrent},
         {"Kernel_P0Fade_KeepsPower", testKernelP0FadeKeepsPower, Tier::Correctness},
         {"EQ_Cpu_7_1_AboveSupportedRates", testEqCpu71AboveSupportedRates, Tier::Timing},
@@ -902,6 +891,8 @@ namespace
         {"Level_Compare_Matched", testLevelCompareMatched, Tier::Correctness},
         {"Level_ModeChange_NoGainReduction", testLevelModeChangeNoGainReduction, Tier::Correctness},
         {"Level_KnownIssue_EnvelopeLogged", testLevelKnownIssueEnvelopeLogged, Tier::Correctness},
+        {"Level_AgcGone_IntensitySweep", testLevelAgcGoneIntensitySweep, Tier::Correctness},
+        {"GoldenMaster_StereoN2_P1Leveled_v1", testGoldenMasterStereoP1Leveled, Tier::Correctness},
         // ---- end LevelPlanTests.inc ----
         // ---- FoldTests.inc (R1.1-B W4, lane 2): rows below ----
         {"Fold_Matrix_CentreAndInPhase", testFoldMatrixCentreAndInPhase, Tier::Correctness},

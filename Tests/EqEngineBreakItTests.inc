@@ -7,8 +7,6 @@
 // pins a defect the builders' own gate does not see. The measurement half (durations, latencies,
 // spectra) lives in research/eq-engine-break-it/.
 
-#include "../Sources/AudioDSP/Loudness/LoudnessModule.h"
-
 namespace
 {
     // ---------------------------------------------------------------------------------------------
@@ -125,115 +123,6 @@ static auto testBreakItInfInputKernelRecovers() -> void
             failures += std::format("{}: still {} 1 s after one +Inf sample; ",
                                     c.name,
                                     firstBad != out.size() ? "non-finite" : "silent");
-        }
-    }
-    if (!failures.empty())
-    {
-        logFail(kName, failures);
-        return;
-    }
-    logPass(kName);
-}
-
-namespace
-{
-    // Feed `seconds` of a loud 1 kHz tone (≈ −6 LUFS; the makeup slews toward −10 dB at 0.1 dB per
-    // gated block) to `module`, the first block carrying `poison` (0: none) — and keep its meter up
-    // by state: every kMeterCatchUpBlocks, and at the end, wait until it has measured what it was
-    // handed. False if it never caught up (the hang cap failed the test).
-    [[nodiscard]] auto bkFeedLoudTone(LoudnessModule& module,
-                                      uint32_t fs,
-                                      uint32_t blockFrames,
-                                      uint64_t& n,
-                                      double seconds,
-                                      float poison) -> bool
-    {
-        TestABL abl(blockFrames);
-        const auto blocks = static_cast<uint32_t>(seconds * fs / blockFrames);
-        const LoudnessParams params; // production defaults: −16 LUFS, enabled
-        const auto caughtUp = [&module]
-        {
-            return rig::waitUntil("the normaliser's meter measured every block it was handed",
-                                  [&module] { return module.meterCaughtUp(); });
-        };
-        for (uint32_t b = 0U; b < blocks; ++b)
-        {
-            for (uint32_t i = 0U; i < blockFrames; ++i, ++n)
-            {
-                abl.left[i] = static_cast<float>(
-                    0.5 * std::sin(2.0 * std::numbers::pi * 1000.0 * static_cast<double>(n) / fs));
-                abl.right[i] = abl.left[i];
-            }
-            if (b == 0U && poison != 0.0F)
-            {
-                abl.left[100] = poison;
-            }
-            module.process(params, MultichannelView::fromABL(abl.abl(), blockFrames));
-            if ((b % kMeterCatchUpBlocks) == kMeterCatchUpBlocks - 1U && !caughtUp())
-            {
-                return false;
-            }
-        }
-        return caughtUp();
-    }
-} // namespace
-
-// ---------------------------------------------------------------------------
-// BreakIt_NonFiniteInput_NormaliserKeepsAdapting — the same guard claim, one stage later. The EQ
-// zeroes its own states after a non-finite block, but that block's samples still reach the
-// normaliser (P2 / P3). Its K-weighting biquads take the NaN into their state and never flush it:
-// every later 100 ms hop is NaN, blockLoudness(NaN) reads as silence, nothing is gated in again,
-// and the makeup gain FREEZES at whatever it was — for the rest of the session (until the AU
-// re-allocates). One NaN or +Inf sample from a corrupt float file is enough.
-// The meter keeps up by state: every 8 blocks the feed waits until it has measured what it was
-// handed, and each reading follows a wait — no pacing sleeps, no fixed settles.
-// ---------------------------------------------------------------------------
-static auto testBreakItNonFiniteInputNormaliserKeepsAdapting() -> void
-{
-    static const char* const kName = "BreakIt_NonFiniteInput_NormaliserKeepsAdapting";
-    constexpr uint32_t kFs = 48000U;
-    constexpr uint32_t kBlock = 512U;
-    const auto runSeconds = [](LoudnessModule& module, uint64_t& n, double seconds, float poison)
-    { return bkFeedLoudTone(module, kFs, kBlock, n, seconds, poison); };
-    std::string failures;
-    for (const float poison :
-         {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()})
-    {
-        LoudnessModule module;
-        module.initialize(kFs, kBlock);
-        uint64_t n = 0U;
-        if (!runSeconds(module, n, 3.0, 0.0F)) // adapting: the makeup is mid-slew here
-        {
-            return;
-        }
-        const double before = 20.0 * std::log10(module.currentMakeupGainLinear());
-        if (!runSeconds(module, n, 0.02, poison) ||
-            !runSeconds(module, n, 3.0, 0.0F)) // 3 s more of the same programme
-        {
-            return;
-        }
-        const double after = 20.0 * std::log10(module.currentMakeupGainLinear());
-        const double shortTerm = module.measuredLufsShortTerm();
-        logInfo(
-            std::format("[info] {}: {} sample: makeup {:+.2f} dB before, {:+.2f} dB 3 s "
-                        "after (still slewing toward ≈ −10 dB if healthy); short-term {:.1f} "
-                        "LUFS\n",
-                        kName,
-                        std::isnan(poison) ? "NaN" : "+Inf",
-                        before,
-                        after,
-                        shortTerm));
-        // Healthy: 3 s of programme moves the makeup ≈ 2–3 dB further toward −10 dB, and the
-        // short-term meter reads the tone (≈ −6 LUFS), not the −200 "silence" sentinel.
-        if (!(after < before - 1.0) || !(shortTerm > -70.0))
-        {
-            failures += std::format(
-                "{}: the normaliser froze (makeup {:+.2f} → {:+.2f} dB, "
-                "short-term {:.1f} LUFS); ",
-                std::isnan(poison) ? "NaN" : "+Inf",
-                before,
-                after,
-                shortTerm);
         }
     }
     if (!failures.empty())

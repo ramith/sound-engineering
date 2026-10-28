@@ -50,7 +50,6 @@ source "$REPO_ROOT/scripts/lib/cxx-analysis-flags.sh"
 SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.cpp"
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp"
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/CausalLoudnessTap.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp"

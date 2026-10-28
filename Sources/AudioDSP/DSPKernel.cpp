@@ -6,7 +6,6 @@
 #include "include/MultichannelView.h"
 #include "Limiting/LimiterModule.h"
 #include "Loudness/CausalLoudnessTap.h"
-#include "Loudness/LoudnessModule.h"
 #include "Spatial/BRIRModule.h"
 #include "Spatial/CrossfeedModule.h"
 #include <Accelerate/Accelerate.h>
@@ -14,13 +13,12 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
-#include <span>
 #include <utility>
 
 namespace AdaptiveSound
 {
 
-    // Intensity ramp time constant. Mirrors the EQ master-gain / loudness makeup smoothers
+    // Intensity ramp time constant. Mirrors the EQ master-gain smoother
     // (32 ms one-pole) so a knob sweep is click-free; settles to ~98% in 5τ ≈ 160 ms.
     static constexpr float kIntensityRampTauSeconds = 0.032F;
 
@@ -33,14 +31,6 @@ namespace AdaptiveSound
 
     // Half-pi for the equal-power crossfade gains: wetGain = sin(r·π/2), dryGain = cos(r·π/2).
     static constexpr float kHalfPi = 1.57079632679489661923F;
-
-    // The normaliser's contribution reaches 100 % at this Intensity (amendment 2:
-    // makeup·min(1, r/0.1)), and fades linearly to 0 dB below it …
-    static constexpr float kLoudnessFadeIntensity = 0.1F;
-    // … but in TIME it moves no faster than a full 0 ↔ 1 in this long (founder decision 33:
-    // crossing Intensity 0 glides the level over ~2 s): the normaliser's makeup leaves (or joins)
-    // the level as a slow fade, however fast Intensity itself moves.
-    static constexpr float kLoudnessGlideSeconds = 2.0F;
 
     // The bit-perfect path: the cross-fade length between the undelayed input and the limiter's
     // delayed output, and the hysteresis before entering it (engine-plan §5.1).
@@ -60,7 +50,6 @@ namespace AdaptiveSound
         clarityModule_ = std::make_unique<ClarityModule>();
         brirModule_ = std::make_unique<BRIRModule>();
         crossfeedModule_ = std::make_unique<CrossfeedModule>();
-        loudnessModule_ = std::make_unique<LoudnessModule>();
         limiterModule_ = std::make_unique<LimiterModule>();
         causalTap_ = std::make_unique<CausalLoudnessTap>();
 
@@ -68,7 +57,6 @@ namespace AdaptiveSound
         clarityModule_->initialize(sampleRate, maxFrames);
         brirModule_->initialize(sampleRate, maxFrames);
         crossfeedModule_->initialize(sampleRate, maxFrames);
-        loudnessModule_->initialize(sampleRate, maxFrames);
         limiterModule_->initialize(sampleRate, maxFrames);
         causalTap_->initialize(sampleRate, maxFrames);
 
@@ -78,16 +66,12 @@ namespace AdaptiveSound
         bypassScratch_.assign(planar, 0.0F);
         wetGainBuf_.assign(maxFrames_, 0.0F);
         dryGainBuf_.assign(maxFrames_, 0.0F);
-        loudnessWeightBuf_.assign(maxFrames_, 0.0F);
 
         // Snap the intensity ramp to whatever has been published so far (no launch fade-in).
         intensityRamp_.initialize(kIntensityRampTauSeconds, static_cast<float>(sampleRate));
         targetStateSnapshot_.copySnapshot(currentState_);
         intensityRamp_.target = currentState_.intensityLinear;
         intensityRamp_.snap();
-        loudnessContribution_ = loudnessContributionAt(intensityRamp_.current);
-        loudnessContributionStep_ =
-            1.0F / std::max(1.0F, kLoudnessGlideSeconds * static_cast<float>(sampleRate));
 
         const auto fs = static_cast<double>(sampleRate);
         bypassMixStep_ = 1.0F / std::max(1.0F, kBypassCrossfadeSeconds * static_cast<float>(fs));
@@ -109,11 +93,7 @@ namespace AdaptiveSound
 
     void DSPKernel::publishChannelLayout(const ChannelLayout& layout) noexcept
     {
-        // Off-RT (control thread): forwarded lock-free to the loudness measurement worker.
-        if (loudnessModule_ != nullptr)
-        {
-            loudnessModule_->publishChannelLayout(layout);
-        }
+        // Off-RT (control thread): forwarded lock-free to the causal estimate's worker.
         if (causalTap_ != nullptr)
         {
             causalTap_->publishChannelLayout(layout);
@@ -144,19 +124,12 @@ namespace AdaptiveSound
 
     bool DSPKernel::analysisWorkersParked() const noexcept
     {
-        return loudnessModule_ != nullptr && causalTap_ != nullptr &&
-               loudnessModule_->workerParked() && causalTap_->workerParked();
-    }
-
-    bool DSPKernel::loudnessMeterCaughtUp() const noexcept
-    {
-        return loudnessModule_ == nullptr || loudnessModule_->meterCaughtUp();
+        return causalTap_ != nullptr && causalTap_->workerParked();
     }
 
     uint64_t DSPKernel::analysisWorkerWakes() const noexcept
     {
-        return (loudnessModule_ != nullptr ? loudnessModule_->workerWakes() : 0U) +
-               (causalTap_ != nullptr ? causalTap_->workerWakes() : 0U);
+        return (causalTap_ != nullptr) ? causalTap_->workerWakes() : 0U;
     }
 
     void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept
@@ -173,7 +146,7 @@ namespace AdaptiveSound
         const MultichannelView block = MultichannelView::fromABL(ioData, inNumberFrames);
 
         // A NaN or an infinity is not audio (amendment 14): it plays as silence on EVERY path, the
-        // bit-perfect one included, so nothing downstream — a filter state, the normaliser, the
+        // bit-perfect one included, so nothing downstream — a filter state, the
         // limiter, the device — ever meets one. A finite block is only read, never written.
         for (uint32_t ch = 0U; ch < block.channels(); ++ch)
         {
@@ -199,12 +172,8 @@ namespace AdaptiveSound
         {
             intensityRamp_.current = intensityRamp_.target; // keep the endpoint bit-exact
         }
-        // An endpoint's hard branch (P1 / P2) also waits for the normaliser's contribution to
-        // finish its glide there (decision 33); until then the blend path runs at the endpoint.
-        const bool atZero =
-            settled && intensityRamp_.target == 0.0F && loudnessContribution_ == 0.0F;
-        const bool atOne =
-            settled && intensityRamp_.target == 1.0F && loudnessContribution_ == 1.0F;
+        const bool atZero = settled && intensityRamp_.target == 0.0F;
+        const bool atOne = settled && intensityRamp_.target == 1.0F;
 
         // P0 eligibility, with the 2 s hysteresis. The first block after initialize() has no
         // previous output to stay continuous with, so it snaps to its path. Crossfeed is an output
@@ -265,7 +234,7 @@ namespace AdaptiveSound
         eqModule_->process(block);
         if (intensityAtZero)
         {
-            // P1: EQ → Crossfeed → Limiter. No coloration, no normaliser; the limiter at the
+            // P1: EQ → Crossfeed → Limiter. No coloration; the limiter at the
             // EQ-only ceiling (decision 29: −0.1 dBTP on a wired output, so a loud master's EQ On
             // is not squashed under its bit-perfect Off). It only ever RAISES the ceiling, so a
             // bypassed limiter (ceiling ≥ 1) stays bypassed.
@@ -279,7 +248,6 @@ namespace AdaptiveSound
         {
             // P2: the full chain in place.
             runColorationChain(state, block);
-            loudnessModule_->process(state.loudness, block);
             renderOutput(state, block, state.limiter);
             return;
         }
@@ -299,19 +267,12 @@ namespace AdaptiveSound
 
         // (c) Equal-power blend, the intensity ramp advanced per sample. Equal-POWER is the law for
         //     the decorrelating wet chain; on correlated (lightly processed) material it adds up to
-        //     +3 dB at r = 0.5, which the normaliser downstream absorbs. The normaliser's
-        //     contribution glides toward min(1, r/0.1) at most 1 per kLoudnessGlideSeconds.
+        //     +3 dB at r = 0.5 — the hump S17 removes with the blend itself (roadmap, C-40).
         for (uint32_t i = 0U; i < safeCount; ++i)
         {
             const float ramped = intensityRamp_.tick();
             wetGainBuf_[i] = std::sin(ramped * kHalfPi);
             dryGainBuf_[i] = std::cos(ramped * kHalfPi);
-            const float goal = loudnessContributionAt(ramped);
-            loudnessContribution_ =
-                (goal > loudnessContribution_)
-                    ? std::min(goal, loudnessContribution_ + loudnessContributionStep_)
-                    : std::max(goal, loudnessContribution_ - loudnessContributionStep_);
-            loudnessWeightBuf_[i] = loudnessContribution_;
         }
         const auto len = static_cast<vDSP_Length>(safeCount);
         for (uint32_t ch = 0U; ch < numChannels; ++ch)
@@ -325,11 +286,7 @@ namespace AdaptiveSound
             }
         }
 
-        // (d) Loudness on the blend, its contribution faded toward 0 dB as r → 0 so this path meets
-        //     the normaliser-free EQ-only path with no level step (amendment 2), and slowly
-        //     (decision 33); then the output stages.
-        loudnessModule_->process(
-            state.loudness, block, std::span<const float>(loudnessWeightBuf_.data(), safeCount));
+        // (d) The output stages.
         renderOutput(state, block, state.limiter);
     }
 
@@ -358,11 +315,6 @@ namespace AdaptiveSound
                 std::copy_n(src, safeCount, dst);
             }
         }
-    }
-
-    float DSPKernel::loudnessContributionAt(float intensity) noexcept
-    {
-        return std::min(1.0F, intensity / kLoudnessFadeIntensity);
     }
 
     float DSPKernel::streamCorrelation(const MultichannelView& block,

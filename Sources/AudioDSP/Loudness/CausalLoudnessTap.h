@@ -13,7 +13,7 @@
 //   RT process()  ──push(input)──▶  SpscRing  ──▶  worker jthread: TrackLoudnessProfiler
 //                                                  └─ every 1 s of audio: snapshot() → sink
 //
-// The RT side mirrors LoudnessModule: it relays the channel count by atomic, interleaves into a
+// The RT side relays the channel count by atomic, interleaves into a
 // pre-allocated scratch and pushes to a lock-free SPSC ring, DROPPING on full. When the tap is not
 // running it costs one relaxed atomic load per block. The worker parks while no estimate runs, and
 // once no audio has come for a while (WorkerParking), so a paused or idle tap wakes nobody. Everything else — the profiler, its FFTs, the

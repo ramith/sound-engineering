@@ -235,7 +235,6 @@ xcrun clang++ \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/GraphicEQDesigner.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQDesignBridge.cpp" \
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/CausalLoudnessTap.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessProfile.cpp" \

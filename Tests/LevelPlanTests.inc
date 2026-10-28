@@ -40,6 +40,11 @@
 //   LP-20 Level_ModeChange_NoGainReduction
 //                                     — NI-4: a Track → Album change mid-song glides the effects unit at 0.15 s
 //                                       with GR < 0.01 dB (the spatial unit's half is lane 2's).
+//   LP-22 Level_AgcGone_IntensitySweep — the session AGC is gone (M8): Intensity 0 → 1 → 0 with Leveling Off
+//                                       leaves the integrated loudness within 0.1 dB (libebur128).
+//   LP-23 GoldenMaster_StereoN2_P1Leveled_v1
+//                                     — the shipping path's bit-exact signature: P1, the EQ Off, g = −7.07 dB
+//                                       through the Realizer and a real plan (architect N8).
 //   LP-21 Level_KnownIssue_EnvelopeLogged
 //                                     — C5: TP + B_eff is a fixture-dependent bound, not a strict one: a driven
 //                                       808 under a +5 dB 20–125 Hz boost and a clipped master under a −12 dB
@@ -1583,6 +1588,108 @@ static auto testLevelKnownIssueEnvelopeLogged() -> void
     if (!fail.empty())
     {
         logFail(kName, "the limiter did not hold:" + fail);
+        return;
+    }
+    logPass(kName);
+}
+
+// ===========================================================================
+// LP-22 (M8): the session AGC is gone. With Leveling Off and the EQ Off, Intensity 0 → 1 → 0 changes the
+// integrated loudness by no more than 0.1 dB (libebur128) at each settled endpoint: nothing renormalises the
+// level any more (before R1.1-B the normaliser pulled Intensity 1 to −16 LUFS). The equal-power blend's mid-knob
+// hump is S17's (C-40), so only the endpoints are measured.
+// ===========================================================================
+static auto testLevelAgcGoneIntensitySweep() -> void
+{
+    static const char* const kName = "Level_AgcGone_IntensitySweep";
+    constexpr double kWindowSeconds = 8.0;
+    constexpr double kSettleSeconds = 1.0;
+    constexpr double kToleranceDb = 0.1;
+    TlProgramme programme =
+        lnHead(tlGatePink(), kSettleSeconds + kWindowSeconds); // −18 LUFS, peaks well under 0
+    programme.channels = lpScaled(programme.channels, -6.0);   // −24 LUFS: the limiter idle
+    const auto settle = static_cast<size_t>(kSettleSeconds * kEngineFs);
+    std::array<double, 3U> lufs{};
+    size_t step = 0U;
+    for (const float intensity : {0.0F, 1.0F, 0.0F})
+    {
+        LnEngine engine(EqCurve{}, false, kLpBluetooth);
+        engine.realizer->applyIntensity(intensity);
+        engine.realizer->applyTrackPlan(kLpTrackA, AsPlanEventFreshStart, lnQuietPlan(), false);
+        engine.realizer->barrier();
+        const TlChannels out = lnRender(*engine.kernel, programme, 0U, programme.frames());
+        TlChannels window(out.size());
+        for (size_t ch = 0U; ch < out.size(); ++ch)
+        {
+            window[ch].assign(out[ch].begin() + static_cast<std::ptrdiff_t>(settle), out[ch].end());
+        }
+        lufs.at(step) = tlEbur128Lufs(window, kEngineFs);
+        ++step;
+    }
+    logInfo(std::format("  [info] {}: Intensity 0 → 1 → 0: {:.3f} → {:.3f} → {:.3f} LUFS\n",
+                        kName,
+                        lufs[0],
+                        lufs[1],
+                        lufs[2]));
+    if (!(std::abs(lufs[1] - lufs[0]) <= kToleranceDb) ||
+        !(std::abs(lufs[2] - lufs[0]) <= kToleranceDb))
+    {
+        logFail(kName,
+                std::format("the level moved with Intensity: {:.3f} → {:.3f} → {:.3f} LUFS",
+                            lufs[0],
+                            lufs[1],
+                            lufs[2]));
+        return;
+    }
+    logPass(kName);
+}
+
+// ===========================================================================
+// LP-23 (architect N8): the shipping path's golden master — the stereo golden master's chirp at Intensity 0
+// (P1), the EQ Off, through the Realizer with a plan whose leveling gain is −7.07 dB (§4's worked example's g,
+// on a Bluetooth output): a 64-bit FNV-1a of the L+R output against a committed constant.
+// ===========================================================================
+static auto testGoldenMasterStereoP1Leveled() -> void
+{
+    static const char* const kName = "GoldenMaster_StereoN2_P1Leveled_v1";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kTotal = TestConstants::kTotalFrames1s;
+    constexpr uint64_t kFnvOffsetBasis = 0xCBF29CE484222325ULL;
+    TlProgramme chirp{kEngineFs, TlChannels(2U, std::vector<float>(kTotal))};
+    for (uint32_t idx = 0U; idx < kTotal; ++idx)
+    {
+        const float timeSec = static_cast<float>(idx) / static_cast<float>(kSR);
+        const float freq =
+            TestConstants::kChirpF0 + (TestConstants::kChirpF1 - TestConstants::kChirpF0) *
+                                          (timeSec / TestConstants::kChirpDuration);
+        const float sample =
+            std::sin(2.0F * std::numbers::pi_v<float> * freq * timeSec) * TestConstants::kChirpAmpl;
+        chirp.channels[0][idx] = sample;
+        chirp.channels[1][idx] = sample;
+    }
+    // §4's stereo numbers: L −10.93 LUFS, TP +0.23 dBTP on Bluetooth → g = −18 − L = −7.07 dB.
+    const AsTrackPlan plan = lpStereoPlan(
+        lpDecision(-10.93, 0.23, std::span<const LpRole>(kLpRolesStereo)), kLpBluetooth);
+    LnEngine engine(EqCurve{}, false, kLpBluetooth);
+    engine.realizer->applyTrackPlan(kLpTrackA, AsPlanEventFreshStart, plan, false);
+    engine.realizer->barrier();
+    const TlChannels out = lnRender(*engine.kernel, chirp, 0U, chirp.frames());
+    const uint64_t hash = fnv1aFloats(out[1], fnv1aFloats(out[0], kFnvOffsetBasis));
+    logInfo(std::format(
+        "  [info] {}: g {:+.2f} dB; output hash = 0x{:016X}\n", kName, plan.levelGainDb, hash));
+    if (!lpNear(plan.levelGainDb, -7.07, 1e-9))
+    {
+        logFail(kName, std::format("the plan's g is {:+.4f} dB, not −7.07", plan.levelGainDb));
+        return;
+    }
+    if (hash != TestConstants::kGoldenMasterStereoP1LeveledHash)
+    {
+        logFail(kName,
+                std::format("golden-master hash mismatch: got 0x{:016X}, expected 0x{:016X} (the "
+                            "shipping path's "
+                            "output changed — intended? then re-baseline)",
+                            hash,
+                            TestConstants::kGoldenMasterStereoP1LeveledHash));
         return;
     }
     logPass(kName);
