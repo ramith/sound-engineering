@@ -144,7 +144,7 @@ extension AudioEngineBridge {
             if let effectsUnit = effectsNode {
                 engine.detach(effectsUnit)
             }
-            if let spatialUnit = spatialAudioUnit {
+            if let spatialUnit = spatialNode {
                 engine.detach(spatialUnit)
             }
         }
@@ -153,7 +153,7 @@ extension AudioEngineBridge {
     /// Reset every stored field to its post-shutdown idle value and drop the taps' analysis.
     private func resetGraphStateAfterShutdown() {
         setEffectsUnit(nil)
-        spatialAudioUnit = nil
+        setSpatialUnit(nil)
         setAvEngine(nil)
         setPlayerNode(nil)
         setActivePath(.enhanced)

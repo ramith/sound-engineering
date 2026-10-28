@@ -122,7 +122,7 @@ struct MultichannelSourceTests {
         defer { try? FileManager.default.removeItem(at: url) }
         try await rig.play(url)
 
-        let spatial = try #require(rig.bridge.spatialAudioUnit)
+        let spatial = try #require(rig.bridge.spatialNode)
         #expect(spatial.inputFormat(forBus: 0).channelCount == 8, "the spatial unit takes all 8 channels")
         #expect(spatial.outputFormat(forBus: 0).channelCount == 2, "and renders the device boundary in stereo")
         await rig.finish()
