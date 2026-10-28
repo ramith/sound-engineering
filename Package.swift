@@ -26,7 +26,7 @@ let package = Package(
             dependencies: [
                 "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
                 "LibraryBrowseKit", "DesignTokenKit", "EQEditKit", "TrackLoudnessKit", "OutputDeviceKit",
-                "SettingsKit",
+                "SettingsKit", "LevelingKit",
             ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
@@ -137,6 +137,15 @@ let package = Package(
             dependencies: ["AudioFormatKit"],
             path: "Sources/SRCQualityMeasure"
         ),
+        // The read-only analysis tool (R1.1-B, founder decision 4; level-and-fold "The analysis tool"): prints
+        // what the one analysis pass measures for the files named on its command line — loudness and true peak
+        // as decoded and on the fold, the LFE statistics — and writes nothing in AppDataLocation. Lane 1's.
+        // `swift run AnalyzeTracks <file>…`.
+        .executableTarget(
+            name: "AnalyzeTracks",
+            dependencies: ["TrackLoudnessKit", "AudioFormatKit", "LevelingKit"],
+            path: "Sources/AnalyzeTracks"
+        ),
         // Pure queue/advance decision core (Sprint 9, S9-Q1). Extracted from AudioViewModel so
         // BOTH the app and the PlaybackQueueKitTests suite link the identical next/previous-index
         // logic — no hand-mirror to drift. Pure Swift, zero deps, off the audio path entirely.
@@ -199,12 +208,24 @@ let package = Package(
         // own library so TrackLoudnessKitTests gate the code the playback bridge runs.
         .target(
             name: "TrackLoudnessKit",
-            dependencies: ["AudioDSP"],
+            // R1.1-B (level-and-fold §9, commit 0): AudioFormatKit for the one channel-role resolver and the
+            // F1 format function the analysis pass shares with playback; GRDB for the analysis store
+            // (`track-analysis.sqlite3`, separate from the library).
+            dependencies: ["AudioDSP", "AudioFormatKit", .product(name: "GRDB", package: "GRDB.swift")],
             path: "Sources/TrackLoudnessKit",
             linkerSettings: [
                 // AVAudioFile decodes the track; not supplied transitively by AudioDSP.
                 .linkedFramework("AVFoundation"),
             ]
+        ),
+        // The leveling decision (R1.1-B, level-and-fold §S3): what the engine needs to level a track when it
+        // becomes audible, resolved to its scope. Same rationale as PlaybackQueueKit: the rules live outside
+        // the app target so a test target gates the exact code the app runs. Holds only the decision at W4's
+        // commit 0; lane 3 adds the rules in W5 (Auto, sources, album anchor, continuity, groups). Pure Swift.
+        .target(
+            name: "LevelingKit",
+            dependencies: [],
+            path: "Sources/LevelingKit"
         ),
         // The Swift test rig (test-rig redesign): the ONE way a test here waits, holds a producer and keeps
         // blocking work off the cooperative pool (`until`, `blocking`, `Hold`, `TestPoints`). A plain library
