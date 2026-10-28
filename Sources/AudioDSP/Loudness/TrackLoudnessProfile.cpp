@@ -6,6 +6,7 @@
 #include "LufsMeter.h"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <memory>
 #include <numbers>
@@ -131,9 +132,16 @@ namespace AdaptiveSound
 
         // A profile whose shape is internally consistent (it is only ever built by the profiler,
         // but a prediction must never index past its storage).
+        [[nodiscard]] bool supportedGrid(uint32_t bandsPerOctave) noexcept
+        {
+            return bandsPerOctave == TrackLoudness::kBandsPerOctave ||
+                   bandsPerOctave == TrackLoudness::kCoarseBandsPerOctave;
+        }
+
         [[nodiscard]] bool wellFormed(const TrackLoudnessProfile& profile) noexcept
         {
-            return profile.bandCount > 0U && profile.bandCount <= TrackLoudness::kMaxBandCount &&
+            return supportedGrid(profile.bandsPerOctave) && profile.bandCount > 0U &&
+                   profile.bandCount <= TrackLoudness::kMaxBandCount &&
                    profile.bandPower.size() == static_cast<size_t>(profile.blockCount) *
                                                    static_cast<size_t>(profile.bandCount);
         }
@@ -141,32 +149,34 @@ namespace AdaptiveSound
 
     namespace TrackLoudness
     {
-        double edgeHz(uint32_t edge) noexcept
+        double edgeHz(uint32_t edge, uint32_t bandsPerOctave) noexcept
         {
-            return kFirstEdgeHz * std::exp2(static_cast<double>(edge) / kBandsPerOctave);
+            return kFirstEdgeHz *
+                   std::exp2(static_cast<double>(edge) / static_cast<double>(bandsPerOctave));
         }
 
-        uint32_t bandCount(double sampleRate) noexcept
+        uint32_t bandCount(double sampleRate, uint32_t bandsPerOctave) noexcept
         {
             if (!std::isfinite(sampleRate) || sampleRate < kMinSampleRateHz ||
-                sampleRate > kMaxSampleRateHz)
+                sampleRate > kMaxSampleRateHz || !supportedGrid(bandsPerOctave))
             {
                 return 0U;
             }
             const double nyquist = sampleRate / 2.0;
             uint32_t edges = 0U;
-            while (edgeHz(edges) < nyquist)
+            while (edgeHz(edges, bandsPerOctave) < nyquist)
             {
                 ++edges;
             }
             return edges + 1U; // band 0 sits below the first edge
         }
 
-        double bandCentreHz(uint32_t band, double sampleRate) noexcept
+        double bandCentreHz(uint32_t band, double sampleRate, uint32_t bandsPerOctave) noexcept
         {
-            const uint32_t count = bandCount(sampleRate);
-            const double lower = (band == 0U) ? 0.0 : edgeHz(band - 1U);
-            const double upper = (band + 1U >= count) ? (sampleRate / 2.0) : edgeHz(band);
+            const uint32_t count = bandCount(sampleRate, bandsPerOctave);
+            const double lower = (band == 0U) ? 0.0 : edgeHz(band - 1U, bandsPerOctave);
+            const double upper =
+                (band + 1U >= count) ? (sampleRate / 2.0) : edgeHz(band, bandsPerOctave);
             return std::sqrt(std::max(lower, kLowestCentreFloorHz) * upper);
         }
     } // namespace TrackLoudness
@@ -240,8 +250,8 @@ namespace AdaptiveSound
         size_t played = 0U;
         while (played < profile.bandCount)
         {
-            const double centre =
-                TrackLoudness::bandCentreHz(static_cast<uint32_t>(played), profile.sampleRate);
+            const double centre = TrackLoudness::bandCentreHz(
+                static_cast<uint32_t>(played), profile.sampleRate, profile.bandsPerOctave);
             if (!(centre < outputNyquist))
             {
                 break;
@@ -284,6 +294,82 @@ namespace AdaptiveSound
                                               { return sum + static_cast<double>(power); });
         return (energy > kTinyEnergy) ? (kLufsOffset + (kDbPowerScale * std::log10(energy)))
                                       : kSilenceLufs;
+    }
+
+    namespace
+    {
+        // binary16's largest finite value (2^15·(2 − 2^−10)).
+        constexpr float kBinary16Max = 65504.0F;
+
+        [[nodiscard]] uint16_t toBinary16(float value) noexcept
+        {
+            const float clamped = std::clamp(value, 0.0F, kBinary16Max);
+            return std::bit_cast<uint16_t>(static_cast<_Float16>(clamped));
+        }
+
+        [[nodiscard]] float fromBinary16(uint16_t bits) noexcept
+        {
+            return static_cast<float>(std::bit_cast<_Float16>(bits));
+        }
+    } // namespace
+
+    size_t compactPowers(const TrackLoudnessProfile& profile, std::span<uint16_t> out) noexcept
+    {
+        if (!wellFormed(profile))
+        {
+            return 0U;
+        }
+        const size_t required = profile.bandPower.size();
+        if (out.size() < required)
+        {
+            return required;
+        }
+        const float scale = std::ldexp(1.0F, TrackLoudness::kCompactPowerScaleLog2);
+        std::ranges::transform(profile.bandPower,
+                               out.begin(),
+                               [scale](float power) { return toBinary16(power * scale); });
+        return required;
+    }
+
+    std::shared_ptr<const TrackLoudnessProfile> profileFromCompact(double sampleRate,
+                                                                   uint32_t bandsPerOctave,
+                                                                   uint32_t bandCount,
+                                                                   uint32_t blockCount,
+                                                                   uint32_t blockStrideHops,
+                                                                   std::span<const uint16_t> powers)
+    {
+        if (bandCount == 0U || bandCount != TrackLoudness::bandCount(sampleRate, bandsPerOctave) ||
+            blockStrideHops == 0U ||
+            powers.size() != static_cast<size_t>(blockCount) * static_cast<size_t>(bandCount))
+        {
+            return nullptr;
+        }
+        const float unscale = std::ldexp(1.0F, -TrackLoudness::kCompactPowerScaleLog2);
+        auto profile = std::make_shared<TrackLoudnessProfile>();
+        profile->bandPower.resize(powers.size());
+        for (size_t index = 0U; index < powers.size(); ++index)
+        {
+            const float value = fromBinary16(powers[index]);
+            if (!std::isfinite(value) || value < 0.0F)
+            {
+                return nullptr;
+            }
+            profile->bandPower[index] = value * unscale;
+        }
+        profile->sampleRate = sampleRate;
+        profile->bandsPerOctave = bandsPerOctave;
+        profile->bandCount = bandCount;
+        profile->blockCount = blockCount;
+        profile->blockStrideHops = blockStrideHops;
+        const auto hopFrames = static_cast<uint64_t>(std::lround(kHopSeconds * sampleRate));
+        profile->analysedFrames =
+            (blockCount == 0U) ? 0U
+                               : ((static_cast<uint64_t>(blockCount - 1U) * blockStrideHops) +
+                                  static_cast<uint64_t>(kBlockHops)) *
+                                     hopFrames;
+        profile->wholeTrack = true;
+        profile->sourceLoudnessLufs = profileLoudnessLufs(*profile);
+        return profile;
     }
 
     namespace

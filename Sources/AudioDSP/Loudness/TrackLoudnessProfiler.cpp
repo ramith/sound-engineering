@@ -44,7 +44,8 @@ namespace AdaptiveSound
     std::unique_ptr<TrackLoudnessProfiler>
     TrackLoudnessProfiler::create(const Format& format, uint32_t maxBlocks) noexcept
     {
-        if (TrackLoudness::bandCount(format.sampleRate) == 0U || format.channelCount == 0U ||
+        if (TrackLoudness::bandCount(format.sampleRate, format.bandsPerOctave) == 0U ||
+            format.blockStrideHops == 0U || format.channelCount == 0U ||
             format.channelCount > kMaxChannels || maxBlocks < kMinMaxBlocks ||
             maxBlocks % 2U != 0U || !validWeights(format))
         {
@@ -69,7 +70,7 @@ namespace AdaptiveSound
           hopFrames_(static_cast<uint32_t>(std::lround(kHopSeconds * format.sampleRate))),
           blockFrames_(hopFrames_ * static_cast<uint32_t>(kBlockHops)),
           fftLength_(std::bit_ceil(blockFrames_)),
-          bandCount_(TrackLoudness::bandCount(format.sampleRate)),
+          bandCount_(TrackLoudness::bandCount(format.sampleRate, format.bandsPerOctave)),
           maxBlocks_(maxBlocks),
           setup_(std::move(setup)),
           ring_(static_cast<size_t>(channelCount_) * blockFrames_, 0.0F),
@@ -79,7 +80,8 @@ namespace AdaptiveSound
           spectrumReal_(fftLength_ / 2U),
           spectrumImag_(fftLength_ / 2U),
           binPower_(fftLength_ / 2U),
-          bandFirstBin_(static_cast<size_t>(bandCount_) + 1U)
+          bandFirstBin_(static_cast<size_t>(bandCount_) + 1U),
+          strideHops_(format.blockStrideHops)
     {
         kWeight_.fill(makeKWeighting(format.sampleRate));
         // Band b ≥ 1 starts at the first bin at or above edge b − 1 (bin k sits at k·fs/N); band
@@ -89,7 +91,7 @@ namespace AdaptiveSound
         uint32_t bin = 0U;
         for (uint32_t band = 1U; band < bandCount_; ++band)
         {
-            const double edge = TrackLoudness::edgeHz(band - 1U);
+            const double edge = TrackLoudness::edgeHz(band - 1U, format.bandsPerOctave);
             while (bin <= nyquistBin && static_cast<double>(bin) * binHz < edge)
             {
                 ++bin;
@@ -286,6 +288,7 @@ namespace AdaptiveSound
     {
         auto profile = std::make_shared<TrackLoudnessProfile>();
         profile->sampleRate = format_.sampleRate;
+        profile->bandsPerOctave = format_.bandsPerOctave;
         profile->channelCount = channelCount_;
         profile->bandCount = bandCount_;
         profile->blockCount = blockCount_;

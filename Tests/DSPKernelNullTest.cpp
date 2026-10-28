@@ -866,6 +866,24 @@ namespace
         {"Roles_CountFallbacks", testRolesCountFallbacks, Tier::Correctness},
         {"Roles_Guards", testRolesGuards, Tier::Correctness},
         {"Roles_Bs1770Weights", testRolesBs1770Weights, Tier::Correctness},
+        {"AnalysisTP_VsExactReference", testAnalysisTpVsExactReference, Tier::Correctness},
+        {
+            "AnalysisTP_NotBelowShippedKernel",
+            testAnalysisTpNotBelowShippedKernel,
+            Tier::Correctness,
+        },
+        {"AnalysisTP_PruningIsExact", testAnalysisTpPruningIsExact, Tier::Correctness},
+        {"Analyzer_LoudnessVsEbur128", testAnalyzerLoudnessVsEbur128, Tier::Correctness},
+        {"Analyzer_HistogramsAndPool", testAnalyzerHistogramsAndPool, Tier::Correctness},
+        {"Analyzer_FoldVariantsAndEdges", testAnalyzerFoldVariantsAndEdges, Tier::Correctness},
+        {"Analyzer_AbiGuards", testAnalyzerAbiGuards, Tier::Correctness},
+        {"LfeStats_MatchesPrototype", testLfeStatsMatchesPrototype, Tier::Correctness},
+        {
+            "CompactProfile_PredictsLikeFull",
+            testCompactProfilePredictsLikeFull,
+            Tier::AccuracySweep,
+        },
+        {"CompactProfile_RoundTrip", testCompactProfileRoundTrip, Tier::Correctness},
         // ---- end AnalyzerTests.inc ----
         // ---- LevelPlanTests.inc (R1.1-B W4, lane 1): rows below ----
         {"LevelPlan_RoleNumbers_Fixed", testLevelPlanRoleNumbersFixed, Tier::Correctness},
