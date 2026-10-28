@@ -30,7 +30,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <numeric>
 #include <optional>
 #include <span>
 
@@ -63,16 +65,16 @@ namespace AdaptiveSound
         // (|Σ gᵢ·xᵢ| ≤ Σ|gᵢ|·max|xᵢ|, for sample and true peaks alike).
         [[nodiscard]] double worstRowGainDb() const noexcept
         {
-            double worst = 0.0;
-            for (const auto& row : gain)
+            const auto used = static_cast<std::ptrdiff_t>(std::min(inChannels, kMaxChannels));
+            const auto rowSum = [used](const std::array<float, kMaxChannels>& row)
             {
-                double sum = 0.0;
-                for (uint32_t ch = 0U; ch < inChannels; ++ch)
-                {
-                    sum += std::abs(static_cast<double>(row[ch]));
-                }
-                worst = std::max(worst, sum);
-            }
+                return std::accumulate(row.begin(),
+                                       row.begin() + used,
+                                       0.0,
+                                       [](double sum, float weight)
+                                       { return sum + std::abs(static_cast<double>(weight)); });
+            };
+            const double worst = std::max(rowSum(gain[0]), rowSum(gain[1]));
             return (worst > 0.0) ? kFoldDbAmplitudeScale * std::log10(worst) : 0.0;
         }
     };
