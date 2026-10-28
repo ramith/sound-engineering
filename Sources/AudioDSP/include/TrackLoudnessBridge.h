@@ -99,11 +99,12 @@ typedef struct
     uint32_t version;               ///< AS_TRACK_ANALYSIS_VERSION
     uint32_t channelCount;          ///< N
     uint8_t roles[AS_MAX_CHANNELS]; ///< AsChannelRole per slot, as fed to asTrackAnalyzerCreate
-    double sourceRateHz;            ///< the file's own rate
-    double peakRateHz;              ///< the rate the true peaks were measured at (the engine's)
+    double sourceRateHz; ///< the file's own rate (the Swift pass sets it; the C analyzer, fed only
+                         ///< the engine-rate stream, writes NaN)
+    double peakRateHz;   ///< the rate the true peaks were measured at (the engine's)
     double durationSeconds;
     /// L_N (BS.1770-5 gated, Table 3 weights, LFE 0) and TP_N (max over all N channels, the LFE
-    /// included; max of the shipped 8×24 and an 8×64 kernel).
+    /// included; max of the shipped 8×24 kernel, an 8×64 kernel and the sample peak; −200 dBTP for digital silence).
     double integratedLufs;
     double truePeakDbtp;
     /// The first and last whole 400 ms block (N-channel weights), for the continuity judge.
@@ -127,16 +128,17 @@ typedef struct
 } AsLoudnessBin;
 
 /// A compact −ΔL profile's shape (C2): 1/bandsPerOctave-octave bands from a 20 Hz first edge to
-/// Nyquist at `sampleRate`, one row per kept 400 ms block, each band's K-weighted, channel-weighted
-/// mean-square power as an IEEE-754 binary16 bit pattern, block-major (bandCount values per block).
+/// Nyquist at `sampleRate`, one row per kept 400 ms block, the IEEE-754 binary16 bit pattern of each band's
+/// K-weighted, channel-weighted mean-square power × 2^10 (TrackLoudness::kCompactPowerScaleLog2), block-major
+/// (bandCount values per block).
 typedef struct
 {
     double sampleRate;       ///< the analysis's rate (the engine's)
-    uint32_t bandsPerOctave; ///< 12
+    uint32_t bandsPerOctave; ///< 24 (the profiler's grid; 12 is supported)
     uint32_t bandCount;
     uint32_t blockCount;
     uint32_t
-        blockStrideHops; ///< kept block j starts at j·blockStrideHops·100 ms (4: non-overlapping)
+        blockStrideHops; ///< kept block j starts at j·blockStrideHops·100 ms (1 up to 1200 blocks; 2, 4, … past it)
 } AsCompactProfileInfo;
 
 // NOLINTEND(cppcoreguidelines-use-enum-class,performance-enum-size,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)

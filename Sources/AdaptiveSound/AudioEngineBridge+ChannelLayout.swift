@@ -2,6 +2,7 @@ import AudioDSP
 import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
+import TrackLoudnessKit
 
 // MARK: - AudioEngineBridge channel-layout publish (Sprint 5b, M2-d)
 
@@ -110,13 +111,10 @@ extension AudioEngineBridge {
         return state
     }
 
-    /// The file's channel roles, from its labels: lane 1-B's one resolver (`asResolveChannelRoles`, through
-    /// AudioFormatKit's `ChannelRoles`). It has not landed in this branch, so every role reads Unknown here:
-    /// the fold then plays the table's Unknown row (0.5 to both sides) at its worst-case trim — never a
-    /// truncation, never trim 0 — and the planner, seeing roles that differ from the analysis', keeps to the
-    /// fallback trim. The combine replaces this body with the resolver's call (lane 2's report has the line).
-    private func sourceRoles(channelCount: AVAudioChannelCount, layout _: AVAudioChannelLayout?) -> [UInt8] {
-        let width = Int(min(channelCount, AVAudioChannelCount(AS_MAX_CHANNELS)))
-        return [UInt8](repeating: UInt8(AsChannelRoleUnknown.rawValue), count: width)
+    /// The file's channel roles, from its labels: the one resolver (TrackLoudnessKit's `ChannelRoles`, over
+    /// AudioDSP's `asResolveChannelRoles`) — the same roles the analysis measured with, so the planner's fold and
+    /// this unit's agree. Min(N, 8) values; Unknown × 8 for a wider file; none for 0.
+    private func sourceRoles(channelCount: AVAudioChannelCount, layout: AVAudioChannelLayout?) -> [UInt8] {
+        ChannelRoles.resolve(channelCount: channelCount, layout: layout)
     }
 }
