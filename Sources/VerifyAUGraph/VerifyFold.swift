@@ -84,7 +84,8 @@ private func assertFoldSides(_ captured: [[Float]], label: String) -> Bool {
                     verdict = false
                 }
             } else if !(level < foldLeakCeilingDb) {
-                print("FOLD-1 FAIL \(label): channel \(channel) reaches side \(side) at \(String(format: "%.1f", level)) dB")
+                print("FOLD-1 FAIL \(label): channel \(channel) reaches side \(side) at "
+                    + "\(String(format: "%.1f", level)) dB")
                 verdict = false
             }
         }
