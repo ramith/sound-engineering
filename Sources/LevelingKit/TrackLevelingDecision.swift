@@ -93,7 +93,7 @@ public struct CompactLoudnessProfile: Sendable, Equatable {
     public var bandsPerOctave: Int
     public var bandCount: Int
     public var blockCount: Int
-    /// Kept block j starts at j × `blockStrideHops` × 100 ms (4: non-overlapping 400 ms blocks).
+    /// Kept block j starts at j × `blockStrideHops` × 100 ms (1 up to 1200 blocks; 2, 4, … past it).
     public var blockStrideHops: Int
     /// IEEE-754 binary16 bit patterns, block-major: `blockCount` × `bandCount` band powers.
     public var powers: [UInt16]
