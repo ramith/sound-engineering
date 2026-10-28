@@ -371,13 +371,16 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     // EQ control plane (withEffectsAU + publishEQ) lives in AudioEngineBridge+EQControl.swift.
 
     /// The engine's state for the main thread (`AudioPlaybackEngine.snapshot`): the transport clock's
-    /// last sample, the signal path (a copy under `stateLock`, whose holders never call out) with the fold
-    /// the spatial unit plays (its atomics, through a borrow of the AU), the meter's atomics (through a
-    /// strong copy of the meter) and the EQ design rate (an atomic, through a borrow of the AU). No
-    /// AVFAudio, no HAL, no queue hop.
+    /// last sample, the signal path (a copy under `stateLock`, whose holders never call out) with S2's two
+    /// engine reads — the fold the spatial unit plays and whether the crossfeed played (atomics, through
+    /// borrows of the AUs) — the meter's atomics (through a strong copy of the meter) and the EQ design rate
+    /// (an atomic, through a borrow of the AU). No AVFAudio, no HAL, no queue hop.
     func snapshot() -> EngineSnapshot {
         var signalPath = loadSignalPath()
-        signalPath.fold = signalPath.path == .enhanced ? foldReadout() : nil
+        if signalPath.path == .enhanced {
+            signalPath.fold = foldReadout()
+            signalPath.crossfeedEngaged = crossfeedEngagedNow()
+        }
         return EngineSnapshot(transport: transportSnapshots.read(), signalPath: signalPath,
                               loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
     }
