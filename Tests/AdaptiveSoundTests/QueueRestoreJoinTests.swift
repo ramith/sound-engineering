@@ -182,7 +182,7 @@ struct QueueRestoreJoinTests {
         #expect(player.vm.queue.map(\.file.absoluteURL) == [track(0), moved, track(2)])
     }
 
-    @Test("VM-QS-11 (known issue, +Playback): an open during its start, joined by the restore, primes the old row")
+    @Test("VM-QS-11: an open during its start, joined by the restore, primes what follows the opened song")
     func joinDuringTheOpenedFilesStart() async throws {
         let world = try await QueueStateWorld(songs: 4)
         defer { world.discard() }
