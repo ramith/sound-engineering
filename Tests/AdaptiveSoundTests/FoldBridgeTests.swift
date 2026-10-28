@@ -30,7 +30,7 @@ struct FoldBridgeTests {
         20 * log10(max(amplitude, 1e-12) / Double(MultichannelFixture.level))
     }
 
-    @Test("FB-1: a 5.1 file folds before any plan — every main channel reaches L′ or R′, at a worst-case trim")
+    @Test("FB-1: a 5.1 file folds at once — every main channel reaches L′ or R′, at a worst-case trim")
     func layoutFoldBeforeThePlan() async throws {
         let rig = try await MultichannelDeviceRig.make(deviceChannels: 2)
         let layout = try #require(AVAudioChannelLayout(layoutTag: Self.surround))
@@ -44,9 +44,11 @@ struct FoldBridgeTests {
             let loudest = max(Self.level(output[0], channel: channel), Self.level(output[1], channel: channel))
             #expect(Self.decibels(loudest) > -40, "channel \(channel) reaches the fold (\(Self.decibels(loudest)) dB)")
         }
+        // Since the W4 combine, lane 1's bridge plans the track the moment it is audible, so what plays here is
+        // either the layout's fold (before the plan) or the plan's. Nothing is measured yet (W4's decisions are
+        // .off), so the plan takes the same fallback: the worst-case trim either way.
         let fold = try #require(rig.bridge.snapshot().signalPath.fold)
-        #expect(!fold.fromPlan, "no plan yet: the layout's fold")
-        #expect(fold.trimDb <= -8.9, "the worst-case trim, never 0 (got \(fold.trimDb) dB)")
+        #expect(fold.trimDb <= -8.9, "the worst-case trim, never 0 (\(fold.trimDb) dB; plan: \(fold.fromPlan))")
         #expect(fold.backstopPeakGrDb < 0.01, "the backstop sleeps (\(fold.backstopPeakGrDb) dB)")
         await rig.finish()
     }

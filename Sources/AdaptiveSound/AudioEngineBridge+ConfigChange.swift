@@ -100,6 +100,7 @@ extension AudioEngineBridge {
     private func resumeEnhancedAfterReestablish(player: AVAudioPlayerNode, resumePos: Double) {
         guard lastFileURL != nil else { return } // every start names its file: none, nothing played
         // The configuration change flushed the player's queue: only a re-schedule makes sound again.
+        refreshOutputState() // M2: the planner re-plans protectively against the output as it is now (F5)
         let outcome = restartEnhanced(at: resumePos, player: player)
         if outcome == .unchanged {
             // The file no longer opens, so nothing can refill the player: end the track rather than
