@@ -38,6 +38,11 @@
 //     (`engineFormat`) and the two-AU graph: each channel in its own slot (±0.05 dB), others < −80 dB
 //     (VerifyF1ChannelIdentity.swift).
 //
+//   FOLD (R1.1-B, level-and-fold §10) — the BS.775 stereo fold in the graph: a 5.1 source on a stereo device with a
+//     plan published through the spatial unit's C-ABI folds each channel by its role (±0.05 dB, the LFE omitted,
+//     the backstop asleep); and M == N in the source's own layout is bit-exact with the backstop bypassed, a fold
+//     published or not (VerifyFold.swift).
+//
 //   M3-2 (Sprint 5b M3-2) — SpatialRendererAU register + instantiate smoke check.
 //
 //   M3-3 (Sprint 5b M3-3, TWO-AU graph) — the FULL device-boundary topology
@@ -376,6 +381,18 @@ if !verifyF1ChannelIdentity() {
 print("ALL F1 CHECKS PASSED — every channel of every layout plays in its own slot at 44.1 / 48 / 96 kHz")
 
 // =====================================================================================
+// FOLD — the stereo fold in the graph, and M == N bit-exact with the backstop bypassed.
+// Implementation in VerifyFold.swift; orchestrated below.
+// =====================================================================================
+
+if !verifyFold() {
+    print("VERIFY FAIL: the fold (FOLD) check failed")
+    exit(1)
+}
+
+print("ALL FOLD CHECKS PASSED — 5.1 folds to stereo by role in the graph; M == N stays bit-exact (backstop bypassed)")
+
+// =====================================================================================
 // DEV-UID — the device-identity bridge (UID / model UID / transport per output).
 // Implementation in VerifyDeviceIdentity.swift; orchestrated below.
 // =====================================================================================
@@ -390,6 +407,7 @@ print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PAS
     + "M2-c (live reconfigure stereo->6->stereo) PASS + EQ1b (EQ survives re-allocation) PASS + "
     + "M2-d (device boundary: M = N, or stereo) PASS + "
     + "F1 (channel identity, every layout and rate) PASS + "
+    + "FOLD (BS.775 in the graph; M == N bit-exact) PASS + "
     + "M3-2 (SpatialRendererAU register) PASS + "
     + "M3-3 (two-AU graph + spatial-AU bit-exact identity, 2/6/8) PASS + "
     + "DEV-UID (device identity) PASS ===")
