@@ -102,6 +102,18 @@ struct TrackAnalysisPassTests {
         #expect(reason.contains("wider"))
     }
 
+    @Test("PASS-08: an album's pooled loudness gates over every member's blocks (−20 and −40 LUFS pool to −20)")
+    func pooled() throws {
+        let loud = try Self.analyse(ToneFixtures.write(named: "pass-pool-loud", rate: 48000, channels: 2, seconds: 4,
+                                                       level: { _, _ in 0.1 }))
+        let quiet = try Self.analyse(ToneFixtures.write(named: "pass-pool-quiet", rate: 48000, channels: 2, seconds: 4,
+                                                        level: { _, _ in 0.01 }))
+        // The absolute-gated mean is ≈ −23 LUFS, so the relative gate (−33) drops the −40 LUFS track's blocks.
+        #expect(abs((TrackAnalysis.pooledLufs([loud, quiet], basis: 0) ?? .nan) + 20) < 0.05)
+        #expect(abs((TrackAnalysis.pooledLufs([quiet], basis: 0) ?? .nan) + 40) < 0.05)
+        #expect(TrackAnalysis.pooledLufs([], basis: 0) == nil && TrackAnalysis.pooledLufs([loud], basis: 1) == nil)
+    }
+
     private static func analyse(_ url: URL) throws -> TrackAnalysis {
         let identity = try #require(TrackIdentity(url: url))
         guard case let .analysed(analysis, _) = TrackAnalysisPass.analyse(url, identity: identity) else {
