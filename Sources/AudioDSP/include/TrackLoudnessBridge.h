@@ -34,6 +34,7 @@
 
 #include "CApiNoexcept.h"
 #include "EQDesignBridge.h"
+#include "TrackPlanBridge.h" // roles, the LFE variants, AsLfeStats (the analysis's seam, S1)
 #include <CoreAudioTypes/CoreAudioBaseTypes.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -66,6 +67,79 @@ typedef struct
     /// true for asLoudnessProfilerFinishFull's profile, false for a prefix.
     bool wholeTrack;
 } AsLoudnessProfileInfo;
+
+// MARK: - The one analysis pass (R1.1-B, level-and-fold §1.2 and §S1)
+//
+// Declared at lane 1's step 1 (the seam); defined by lane 1-B (the analyzer's step). The analysis is
+// a separate object fed the ENGINE-RATE stream (after the engine's own Mastering converter, the
+// file's own layout as its output format — F1), so every true peak is the one the limiter sees.
+// It measures and decides nothing: the LFE rule and the plan read its numbers later.
+
+// NOLINTBEGIN(cppcoreguidelines-use-enum-class,performance-enum-size,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays) PERMANENT reason="ISO C11 ABI header, Swift-visible: C has no enum class, no sized enum and no std::array"
+
+enum
+{
+    /// The analysis's form. Bump on: the fold coefficients, the LFE variant set, the LFE statistics'
+    /// definition, the peak kernels or their rate, the SRC or its output format, K-weighting, the
+    /// gates, the histogram or profile form, the role numbering, the role resolver, the count
+    /// fallbacks. NOT on a decision threshold (those are the planner's and the LFE rule's).
+    AS_TRACK_ANALYSIS_VERSION = 1,
+    /// The bases a compact −ΔL profile is kept for: 0 = as decoded (N channels), 1 + v = the fold
+    /// at LFE variant v.
+    AS_PROFILE_BASES = 1 + AS_FOLD_LFE_VARIANTS,
+};
+
+/// An opaque analysis of one track. Create with asTrackAnalyzerCreate(); destroy with
+/// asTrackAnalyzerDestroy().
+typedef struct AsTrackAnalyzer AsTrackAnalyzer;
+
+/// What the analysis measured. NaN = not measured (no gated block, or no fold).
+typedef struct
+{
+    uint32_t version;               ///< AS_TRACK_ANALYSIS_VERSION
+    uint32_t channelCount;          ///< N
+    uint8_t roles[AS_MAX_CHANNELS]; ///< AsChannelRole per slot, as fed to asTrackAnalyzerCreate
+    double sourceRateHz;            ///< the file's own rate
+    double peakRateHz;              ///< the rate the true peaks were measured at (the engine's)
+    double durationSeconds;
+    /// L_N (BS.1770-5 gated, Table 3 weights, LFE 0) and TP_N (max over all N channels, the LFE
+    /// included; max of the shipped 8×24 and an 8×64 kernel).
+    double integratedLufs;
+    double truePeakDbtp;
+    /// The first and last whole 400 ms block (N-channel weights), for the continuity judge.
+    double headBlockLufs;
+    double tailBlockLufs;
+    /// 1: N > 2 and the fold was measured (foldedLufs / foldedTruePeakDbtp below).
+    uint8_t folds;
+    double foldedLufs[AS_FOLD_LFE_VARIANTS];
+    double foldedTruePeakDbtp[AS_FOLD_LFE_VARIANTS];
+    AsLfeStats lfe;
+} AsTrackAnalysis;
+
+/// One non-empty bin of a gated-loudness histogram, in LufsMeter's form: 0.1 LU bins from
+/// −70 LUFS (bin b's centre is −70 + 0.1·(b + 0.5) LUFS), each with its block count and the exact sum
+/// of their energies.
+typedef struct
+{
+    uint32_t bin;
+    uint32_t count;
+    double energy;
+} AsLoudnessBin;
+
+/// A compact −ΔL profile's shape (C2): 1/bandsPerOctave-octave bands from a 20 Hz first edge to
+/// Nyquist at `sampleRate`, one row per kept 400 ms block, each band's K-weighted, channel-weighted
+/// mean-square power as an IEEE-754 binary16 bit pattern, block-major (bandCount values per block).
+typedef struct
+{
+    double sampleRate;       ///< the analysis's rate (the engine's)
+    uint32_t bandsPerOctave; ///< 12
+    uint32_t bandCount;
+    uint32_t blockCount;
+    uint32_t
+        blockStrideHops; ///< kept block j starts at j·blockStrideHops·100 ms (4: non-overlapping)
+} AsCompactProfileInfo;
+
+// NOLINTEND(cppcoreguidelines-use-enum-class,performance-enum-size,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 
 #ifdef __cplusplus
 extern "C"
@@ -149,6 +223,71 @@ extern "C"
                                    uint32_t pointCount,
                                    double outputSampleRate,
                                    double* changeDb) AUDIODSP_C_NOEXCEPT;
+
+    // MARK: The one analysis pass (lane 1-B defines these)
+
+    /// Create an analysis of a stream at the engine's rate.
+    ///
+    /// @param engineRateHz  The stream's rate (the engine's: 48 kHz).
+    /// @param channels      N, 1…8.
+    /// @param roles         `channels` AsChannelRole values (asResolveChannelRoles).
+    /// @return An analysis, or NULL on an invalid rate, count or roles.
+    AsTrackAnalyzer* asTrackAnalyzerCreate(double engineRateHz,
+                                           uint32_t channels,
+                                           const uint8_t* roles) AUDIODSP_C_NOEXCEPT;
+
+    /// Feed the next chunk, planar float32, at the engine's rate.
+    /// @return true when consumed; false — consuming nothing — on a NULL argument, a count
+    ///         mismatch, a non-finite sample or a finished analysis.
+    bool asTrackAnalyzerFeed(AsTrackAnalyzer* analyzer,
+                             const float* const* channels,
+                             uint32_t channelCount,
+                             uint32_t frames) AUDIODSP_C_NOEXCEPT;
+
+    /// End the stream and write what was measured. Measures; decides nothing.
+    /// @return true when written; false — writing nothing — on a NULL argument or a second call.
+    bool asTrackAnalyzerFinish(AsTrackAnalyzer* analyzer, AsTrackAnalysis* out) AUDIODSP_C_NOEXCEPT;
+
+    /// The gated-loudness histogram of `variant` (0 = as decoded, 1 + v = the fold at v — the
+    /// AS_PROFILE_BASES numbering), after asTrackAnalyzerFinish.
+    /// @return The bins required. Nothing is written when `capacity` is short (architect N10).
+    uint32_t asTrackAnalyzerHistogram(const AsTrackAnalyzer* analyzer,
+                                      uint8_t variant,
+                                      AsLoudnessBin* out,
+                                      uint32_t capacity) AUDIODSP_C_NOEXCEPT;
+
+    /// The compact −ΔL profile of `basis` (AS_PROFILE_BASES numbering), after asTrackAnalyzerFinish.
+    /// @return The values required (blockCount × bandCount). Nothing is written when `capacity` is
+    ///         short.
+    uint32_t asTrackAnalyzerProfile(const AsTrackAnalyzer* analyzer,
+                                    uint8_t basis,
+                                    uint16_t* out,
+                                    uint32_t capacity) AUDIODSP_C_NOEXCEPT;
+
+    /// The shape of `basis`'s compact profile, after asTrackAnalyzerFinish.
+    /// @return true when written.
+    bool asTrackAnalyzerProfileInfo(const AsTrackAnalyzer* analyzer,
+                                    uint8_t basis,
+                                    AsCompactProfileInfo* info) AUDIODSP_C_NOEXCEPT;
+
+    /// Destroy an analysis. NULL-safe.
+    void asTrackAnalyzerDestroy(AsTrackAnalyzer* analyzer) AUDIODSP_C_NOEXCEPT;
+
+    /// Pool `members` histograms into one BS.1770 gated loudness (the album's pooled anchor, P2):
+    /// histogram i is `counts[i]` bins at `histograms[i]`. The gate math, once, in C++.
+    /// @return The pooled loudness (LUFS); NaN when no block passes the gates or on a NULL argument.
+    double asLoudnessPoolHistograms(const AsLoudnessBin* const* histograms,
+                                    const uint32_t* counts,
+                                    uint32_t members) AUDIODSP_C_NOEXCEPT;
+
+    /// Rebuild a whole-track profile from a persisted compact one (C2: the saved −ΔL profile travels
+    /// with the start or on-deck request, so a fresh start of an analysed track never glides).
+    /// @return A new profile handle (release with asLoudnessProfileDestroy), or NULL on a NULL
+    ///         argument, a `count` other than blockCount × bandCount, or a shape the predictor does
+    ///         not support.
+    AsLoudnessProfile* asLoudnessProfileFromCompact(const AsCompactProfileInfo* info,
+                                                    const uint16_t* powers,
+                                                    uint32_t count) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

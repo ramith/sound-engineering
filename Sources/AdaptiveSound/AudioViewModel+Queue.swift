@@ -1,4 +1,5 @@
 import Foundation
+import LevelingKit
 import PlaybackQueueKit
 
 // MARK: - AudioViewModel queue ops (Play Now / Play Next / Add to Queue / jump-play)
@@ -199,8 +200,10 @@ extension AudioViewModel {
         pendingNextIndex = index
         let url: URL? = index.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].file.absoluteURL : nil }
         let ticket = nextOnDeckTicket()
+        // The pick's leveling decision is armed with it (R1.1-B, §S3): Off until lane 3's decisions land (W5).
+        let leveling: TrackLevelingDecision? = url == nil ? nil : .off
         return work.spawn { [engine] in
-            await engine.setNextTrack(url, ticket: ticket)
+            await engine.setNextTrack(url, ticket: ticket, leveling: leveling)
         }
     }
 }

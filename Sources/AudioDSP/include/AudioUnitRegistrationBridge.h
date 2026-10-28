@@ -21,6 +21,7 @@
 
 #include "CApiNoexcept.h"
 #include "TrackLoudnessBridge.h" // AsLoudnessProfile (publishTrackLoudnessProfile)
+#include "TrackPlanBridge.h" // AsTrackPlan, AsOutputState: the leveling plan the effects unit applies
 #include <AudioToolbox/AudioComponent.h>
 #include <CoreAudioTypes/CoreAudioBaseTypes.h>
 #include <stdbool.h>
@@ -63,12 +64,32 @@ extern "C"
     /// @param isOn      false plays the identity (the points are kept for the next On).
     /// @return true if accepted; false — the last good EQ keeps playing — on a null pointer, a
     ///         wrong count or any non-finite point. Finite points are clamped to ±12 dB.
+    ///
+    /// publishEQIntent with Compare released. The app calls publishEQIntent; this form stays for
+    /// VerifyAUGraph's offline re-allocation check until it moves to publishEQIntent.
     bool
     publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT;
+
+    /// Publish the EQ with Compare (R1.1-B, level-and-fold §7; replaces publishEQ for the app): the
+    /// 31 points, whether the EQ is on, and whether Compare is held. While Compare is held the EQ
+    /// plays its identity at the level the EQ-on curve plays at, so the comparison is level-matched;
+    /// the engine keeps the last EQ-on design for that. The trust boundary is publishEQ's.
+    ///
+    /// @return true if accepted; false — the last good EQ keeps playing — as for publishEQ.
+    bool publishEQIntent(void* auUnit,
+                         const float* pointsDb,
+                         uint32_t count,
+                         bool isOn,
+                         bool comparing) AUDIODSP_C_NOEXCEPT;
 
     /// The sample rate the EQ is designed at (the kernel's current rate), for the UI's read-back.
     /// Returns 0 if `auUnit` is null.
     double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT;
+
+    /// Whether the crossfeed played on the effects unit's last rendered block (R1.1-B, S2): on, or
+    /// still gliding out, on a stereo block — never on a folded (wider) file or the bit-perfect
+    /// path. One relaxed atomic load, safe from the main thread. False if `auUnit` is null.
+    bool crossfeedEngaged(void* auUnit) AUDIODSP_C_NOEXCEPT;
 
     /// Tell the live AdaptiveSoundAU which kind of output it plays on (Sprint EQ, EQ2; founder
     /// decision 29): the device's kAudioDevicePropertyTransportType FourCC, 0 when unknown. It

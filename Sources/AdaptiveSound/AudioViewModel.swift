@@ -455,10 +455,10 @@ final class AudioViewModel {
 
     // MARK: - Parameter Control
 
-    /// Publish the EQ (its 31 points, dB, and whether it plays) to the live DSP AU. Synchronous +
-    /// off-RT; called by `EQViewModel.publish()`, the EQ's one dispatch, on every change.
-    func publishEQ(points: [Float], isOn: Bool) {
-        engine.publishEQ(points: points, isOn: isOn)
+    /// Publish the EQ (its 31 points, dB, whether it is on, and whether Compare is held) to the live DSP AU.
+    /// Synchronous + off-RT; called by `EQViewModel.publish()`, the EQ's one dispatch, on every change.
+    func publishEQ(points: [Float], isOn: Bool, comparing: Bool) {
+        engine.publishEQ(points: points, isOn: isOn, comparing: comparing)
     }
 
     /// The rate the engine designs the EQ at, polled with the other readouts (`pollEngineReadouts`) and

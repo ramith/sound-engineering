@@ -95,15 +95,16 @@ struct EngineLifecycleTests {
     func theEQGoesToTheEngine() async throws {
         let player = try await FakePlayer.launched(tracks: 0)
         let points = (0 ..< 31).map { Float($0) / 3 - 5 }
-        player.vm.publishEQ(points: points, isOn: true)
-        player.vm.publishEQ(points: points, isOn: false)
+        player.vm.publishEQ(points: points, isOn: true, comparing: false)
+        player.vm.publishEQ(points: points, isOn: false, comparing: false)
         let published = player.calls.filter { call in
             if case .eq = call {
                 return true
             }
             return false
         }
-        #expect(published == [.eq(points: points, isOn: true), .eq(points: points, isOn: false)])
+        #expect(published == [.eq(points: points, isOn: true, comparing: false),
+                              .eq(points: points, isOn: false, comparing: false)])
     }
 
     @Test("the EQ's design rate follows the engine's: at launch, and as a tick reads it")

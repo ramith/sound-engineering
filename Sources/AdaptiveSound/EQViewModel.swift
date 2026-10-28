@@ -133,7 +133,9 @@ final class EQViewModel {
     /// pointer sample.
     private func publish() {
         guard audioViewModel.isEngineReady else { return }
-        audioViewModel.publishEQ(points: session.points, isOn: session.plays)
+        // On and Compare apart, not `plays`: Compare is level-matched in the engine (R1.1-B, §7), so it must
+        // know Compare from Off.
+        audioViewModel.publishEQ(points: session.points, isOn: session.current.isOn, comparing: session.isComparing)
     }
 }
 

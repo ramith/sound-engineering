@@ -873,6 +873,20 @@ namespace
         // ---- AnalyzerTests.inc (R1.1-B W4, lane 1): rows below ----
         // ---- end AnalyzerTests.inc ----
         // ---- LevelPlanTests.inc (R1.1-B W4, lane 1): rows below ----
+        {"LevelPlan_RoleNumbers_Fixed", testLevelPlanRoleNumbersFixed, Tier::Correctness},
+        {"LevelPlan_FoldMatrix_Table", testLevelPlanFoldMatrixTable, Tier::Correctness},
+        {
+            "LevelPlan_FoldMatrix_WorstCaseTrim",
+            testLevelPlanFoldMatrixWorstCaseTrim,
+            Tier::Correctness,
+        },
+        {"LevelPlan_WorkingCeiling", testLevelPlanWorkingCeiling, Tier::Correctness},
+        {"LevelPlan_LfeVariantGains", testLevelPlanLfeVariantGains, Tier::Correctness},
+        {
+            "Kernel_CrossfeedEngaged_FollowsWhatPlays",
+            testKernelCrossfeedEngagedFollowsWhatPlays,
+            Tier::Correctness,
+        },
         // ---- end LevelPlanTests.inc ----
         // ---- FoldTests.inc (R1.1-B W4, lane 2): rows below ----
         // ---- end FoldTests.inc ----
