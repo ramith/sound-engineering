@@ -13,9 +13,10 @@
 //                                         sub-bass 808 ≤ 0.25 dB: 400 ms blocks, part 1)
 //   Loudness_ProfileLate                — the prior plays until the profile lands, then the gain
 //                                         glides (τ 500 ms) to the track's own: no step
-//   Loudness_GaplessSeamStep            — a continuous gapless seam steps ≤ 0.2 dB (a bigger
-//                                         difference shares the group's gain); across silence
-//                                         each track keeps its own; a late profile at a seam
+//   Loudness_GaplessSeamStep            — a seam the continuity judge calls continuous steps
+//                                         ≤ 0.2 dB (a bigger difference shares the group's gain);
+//                                         one it calls apart keeps each track's own (B3); a late
+//                                         profile at a seam
 //   Loudness_AnalysisFails_CausalFallback
 //                                       — a failed analysis runs the causal estimate: the prior
 //                                         for 3 s, then ≤ 1 dB/s toward the track's gain, and a
@@ -81,6 +82,39 @@ namespace
                                                    : 0.0;
         }
     };
+
+    // The plan of a quiet master on the engine's (wired, stereo) output, Leveling Off: its peak is far
+    // under the ceiling, so the cap never binds — these tests are about −ΔL alone. The cap and the
+    // leveling gain have their own (LevelPlanTests.inc).
+    auto lnQuietPlan() -> AsTrackPlan
+    {
+        AsTrackLeveling decision{};
+        decision.mode = AsLevelingModeOff;
+        decision.channelCount = 2U;
+        decision.roles[0] = static_cast<uint8_t>(AsChannelRoleL);
+        decision.roles[1] = static_cast<uint8_t>(AsChannelRoleR);
+        decision.peakRateHz = kEngineFs;
+        decision.loudnessLufs = -30.0;
+        decision.truePeakDbtp = -40.0;
+        AsOutputState output{};
+        output.transportType = kAudioDeviceTransportTypeBuiltIn;
+        output.engineRateHz = kEngineFs;
+        output.sourceChannels = 2U;
+        output.outputChannels = 2U;
+        output.sourceRoles[0] = static_cast<uint8_t>(AsChannelRoleL);
+        output.sourceRoles[1] = static_cast<uint8_t>(AsChannelRoleR);
+        return asPlanTrack(&decision, &output, nullptr);
+    }
+
+    // `token` becomes audible on `engine` (a fresh start, or a seam the continuity judge calls
+    // `continuous` or not), with the quiet master's plan.
+    auto lnAudible(LnEngine& engine,
+                   uint64_t token,
+                   AsPlanEvent event = AsPlanEventFreshStart,
+                   bool continuous = false) -> void
+    {
+        engine.realizer->applyTrackPlan(token, event, lnQuietPlan(), continuous);
+    }
 
     // Render frames [start, start + frames) of `programme` through `kernel` in engine blocks,
     // calling `perBlock(firstFrame)` before each block. Returns the planar output.
@@ -308,7 +342,7 @@ static auto testEqLoudnessNeutralOnOff() -> void
         {
             LnEngine engine(curve.points);
             engine.realizer->publishTrackLoudnessProfile(kLnTrackA, profile);
-            engine.realizer->setCurrentTrack(kLnTrackA, false);
+            lnAudible(engine, kLnTrackA);
             engine.realizer->barrier();
             const TlChannels on = lnRender(*engine.kernel, programme, 0U, programme.frames());
             const double error = std::abs(tlEbur128Lufs(on, programme.sampleRate) - offLufs);
@@ -370,7 +404,7 @@ static auto testLoudnessProfileLate() -> void
     const double maxBlockStepDb = 1.02 * glidePerBlock * std::abs(ownGain - priorGain);
 
     LnEngine engine(curve);
-    engine.realizer->setCurrentTrack(kLnTrackA, false);
+    lnAudible(engine, kLnTrackA);
     engine.realizer->barrier();
     const double beforeGain = engine.realizer->loudnessGain().gainDb();
     const auto lateFrame = static_cast<size_t>(kLateSeconds * kEngineFs);
@@ -431,9 +465,13 @@ namespace
     };
 
     // Play `a` for 2 s with its profile in, then a gapless seam to `b` (profile published before
-    // the seam unless `bLate`, then 1 s later); report the gain around the seam.
-    auto lnSeam(const TlProgramme& a, const TlProgramme& b, const EqCurve& curve, bool bLate)
-        -> LnSeamResult
+    // the seam unless `bLate`, then 1 s later) that the continuity judge calls `continuous` or not;
+    // report the gain around the seam.
+    auto lnSeam(const TlProgramme& a,
+                const TlProgramme& b,
+                const EqCurve& curve,
+                bool bLate,
+                bool continuous) -> LnSeamResult
     {
         LnSeamResult result;
         const std::shared_ptr<const TrackLoudnessProfile> profileA =
@@ -443,7 +481,7 @@ namespace
         result.ownNext = lnOwnGainDb(*profileB, curve);
         LnEngine engine(curve);
         engine.realizer->publishTrackLoudnessProfile(kLnTrackA, profileA);
-        engine.realizer->setCurrentTrack(kLnTrackA, false);
+        lnAudible(engine, kLnTrackA);
         if (!bLate)
         {
             engine.realizer->publishTrackLoudnessProfile(kLnTrackB, profileB);
@@ -452,7 +490,7 @@ namespace
         const auto tail = static_cast<size_t>(2.0 * kEngineFs);
         (void)lnRender(*engine.kernel, a, a.frames() - tail, tail);
         result.before = engine.appliedGainDb();
-        engine.realizer->setCurrentTrack(kLnTrackB, true);
+        lnAudible(engine, kLnTrackB, AsPlanEventGaplessSeam, continuous);
         engine.realizer->barrier();
         (void)lnRender(*engine.kernel, b, 0U, static_cast<size_t>(0.1 * kEngineFs));
         result.after = engine.appliedGainDb();
@@ -476,10 +514,11 @@ namespace
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Loudness_GaplessSeamStep — amendments item 3: at a gapless seam where the music is continuous
-// the level steps by ≤ 0.2 dB; a bigger difference makes the group share one gain. Across
-// silence each track keeps its own (a step there is inaudible). A late profile at a seam holds the
-// gain, then decides the same way.
+// Loudness_GaplessSeamStep — amendments item 3; B3: at a gapless seam the continuity judge calls
+// continuous, the level steps by ≤ 0.2 dB; a bigger difference makes the group share one gain. A seam
+// it calls apart (across silence) lets each track keep its own — even where the audio itself runs on:
+// the engine no longer judges continuity, the app's one judge does. A late profile at a continuous
+// seam holds the gain, then decides the same way.
 // ---------------------------------------------------------------------------
 static auto testLoudnessGaplessSeamStep() -> void
 {
@@ -490,10 +529,11 @@ static auto testLoudnessGaplessSeamStep() -> void
     const TlProgramme bass = lnNoiseProgramme(8.0, 33U, 150.0, -18.0);
     const TlProgramme pinkThenSilence = lnNoiseProgramme(8.0, 34U, 0.0, -18.0, 1.0);
 
-    const LnSeamResult continuous = lnSeam(pink, bass, curve, false);
-    const LnSeamResult similar = lnSeam(pink, pinkTwin, curve, false);
-    const LnSeamResult silent = lnSeam(pinkThenSilence, bass, curve, false);
-    const LnSeamResult late = lnSeam(pink, bass, curve, true);
+    const LnSeamResult continuous = lnSeam(pink, bass, curve, false, true);
+    const LnSeamResult similar = lnSeam(pink, pinkTwin, curve, false, true);
+    const LnSeamResult silent = lnSeam(pinkThenSilence, bass, curve, false, false);
+    const LnSeamResult late = lnSeam(pink, bass, curve, true, true);
+    const LnSeamResult judgedApart = lnSeam(pink, bass, curve, false, false);
     logInfo(std::format(
         "[info] {}: continuous pink → bass: {:+.3f} → {:+.3f} dB (own {:+.3f}, shared {}); "
         "similar: {:+.3f} → {:+.3f}; across silence: {:+.3f} → {:+.3f} (own {:+.3f}); late "
@@ -522,14 +562,17 @@ static auto testLoudnessGaplessSeamStep() -> void
                            !similar.shared && std::abs(similar.after - similar.ownNext) <= 0.01;
     const bool silentOk = !silent.shared && std::abs(silent.after - silent.ownNext) <= 0.01;
     const bool lateOk = std::abs(late.after - late.before) <= kLnSeamStepDb && late.shared;
-    if (!continuousOk || !similarOk || !silentOk || !lateOk)
+    const bool judgedApartOk =
+        !judgedApart.shared && std::abs(judgedApart.after - judgedApart.ownNext) <= 0.01;
+    if (!continuousOk || !similarOk || !silentOk || !lateOk || !judgedApartOk)
     {
         logFail(kName,
-                std::format("continuous {} similar {} silent {} late {}",
+                std::format("continuous {} similar {} silent {} late {} judged apart {}",
                             continuousOk,
                             similarOk,
                             silentOk,
-                            lateOk));
+                            lateOk,
+                            judgedApartOk));
         return;
     }
     logPass(kName);
@@ -555,7 +598,7 @@ static auto testLoudnessAnalysisFailsCausalFallback() -> void
     const double priorGain = lnOwnGainDb(*makePinkPriorProfile(kEngineFs), curve);
 
     LnEngine engine(curve);
-    engine.realizer->setCurrentTrack(kLnTrackA, false);
+    lnAudible(engine, kLnTrackA);
     engine.realizer->reportTrackLoudnessFailure(kLnTrackA);
     engine.realizer->barrier();
     const bool running = engine.realizer->loudnessGain().wantsCausalEstimate();
@@ -570,11 +613,9 @@ static auto testLoudnessAnalysisFailsCausalFallback() -> void
     {
         (void)lnRender(*engine.kernel, programme, start, second);
         const double covered = static_cast<double>(start + second) / kEngineFs;
-        if (!rig::waitUntil("the causal estimate's snapshot covered the second just rendered",
-                            [&] {
-                                return engine.realizer->loudnessGain().causalSeconds() >=
-                                       covered - 1e-6;
-                            }))
+        if (!rig::waitUntil(
+                "the causal estimate's snapshot covered the second just rendered",
+                [&] { return engine.realizer->loudnessGain().causalSeconds() >= covered - 1e-6; }))
         {
             return;
         }
@@ -635,7 +676,7 @@ static auto testLoudnessEditDebounce() -> void
         tlProfile(programme, tlStereoWeights()).whole;
     LnEngine engine(kEqPresetCurves[kEqPresetWarm]);
     engine.realizer->publishTrackLoudnessProfile(kLnTrackA, profile);
-    engine.realizer->setCurrentTrack(kLnTrackA, false);
+    lnAudible(engine, kLnTrackA);
     engine.realizer->barrier();
     // A burst of edits (a drag), each with its decimated gain; then idle.
     const std::array<EqCurve, 3> drag = {
@@ -707,6 +748,8 @@ static auto testTrackLoudnessGainRules() -> void
     };
 
     TrackLoudnessGain gain(kEngineFs);
+    // −ΔL's rules: the quiet master's plan keeps the cap out of the way (no track yet: token 0).
+    (void)gain.onPlan(0U, AsPlanEventFreshStart, lnQuietPlan(), false);
     expect(gain.onDesign(design, false) == 0.0, "EQ Off plays 0 dB exactly");
     expect(gain.onDesign(engineDesign(EqCurve{}, kEngineFs), true) == 0.0,
            "a flat EQ plays 0 dB exactly");
@@ -719,10 +762,11 @@ static auto testTrackLoudnessGainRules() -> void
     expect(!gain.onProfile(kLnTrackA, nullptr).has_value(), "a null profile is ignored");
     expect(!gain.onProfile(kLnTrackA, profiles.prefix).has_value(),
            "a non-current track's profile waits");
-    const auto start = gain.onCurrentTrack(kLnTrackA, false);
-    expect(start.has_value() && start->rampSeconds == TrackLoudnessGain::kTrackChangeRampSeconds,
-           "a fresh start moves at once (10 ms)");
-    expect(!gain.onCurrentTrack(kLnTrackA, false).has_value(), "the same track again is a no-op");
+    const auto start = gain.onPlan(kLnTrackA, AsPlanEventFreshStart, lnQuietPlan(), false);
+    expect(start.has_value() && start->rampSeconds == TrackLoudnessGain::kFreshStartRampSeconds,
+           "a fresh start snaps (1 ms, N4)");
+    expect(!gain.onPlan(kLnTrackA, AsPlanEventFreshStart, lnQuietPlan(), false).has_value(),
+           "the same track and plan again moves nothing");
     const auto refine = gain.onProfile(kLnTrackA, profiles.whole);
     expect(!refine.has_value() || refine->rampSeconds == TrackLoudnessGain::kRefineRampSeconds,
            "prefix → whole refines over 2 s");
@@ -743,7 +787,7 @@ static auto testTrackLoudnessGainRules() -> void
 
     // Failure → the causal estimate: the prior through its warm-up, then ≤ 1 dB per snapshot; a
     // profile ends it.
-    (void)gain.onCurrentTrack(kLnTrackB, false);
+    (void)gain.onPlan(kLnTrackB, AsPlanEventFreshStart, lnQuietPlan(), false);
     expect(std::abs(gain.gainDb() - prior) < 1e-9, "a new track without a profile plays the prior");
     gain.onFailure(kLnTrackB);
     expect(gain.wantsCausalEstimate(), "a failed current track wants the causal estimate");
@@ -864,7 +908,7 @@ static auto testRealizerLoudnessCost() -> void
         lnRandomProfile(kRate, TrackLoudnessProfiler::kDefaultMaxBlocks, 81U);
     TrackLoudnessGain gain(kRate);
     (void)gain.onProfile(kLnTrackA, profile);
-    (void)gain.onCurrentTrack(kLnTrackA, false);
+    (void)gain.onPlan(kLnTrackA, AsPlanEventFreshStart, lnQuietPlan(), false);
     auto designer = eqMakeDesigner();
     std::array<GraphicEQDesign, 2> designs{};
     (void)designer->design(kEqPresetCurves[kEqPresetWarm], kRate, designs[0]);
@@ -1014,7 +1058,9 @@ static auto testLimiterEqOnlyCeiling() -> void
         LnEngine engine(curve, true, test.transport);
         engine.realizer->applyIntensity(test.intensity);
         engine.realizer->publishTrackLoudnessProfile(kLnTrackA, profile);
-        engine.realizer->setCurrentTrack(kLnTrackA, false);
+        // The quiet master's plan keeps the cap out of the way, so the limiter takes the peaks: this test
+        // measures the limiter's ceiling, not the cap's.
+        lnAudible(engine, kLnTrackA);
         engine.realizer->barrier();
         const TlChannels out = lnRender(*engine.kernel, master, 0U, master.frames());
         const auto settle = static_cast<size_t>(kSettleSeconds * kEngineFs);

@@ -7,6 +7,7 @@
 #include "../include/AsLog.h" // AdaptiveSound::log — off-RT control-plane logging seam
 
 #include <algorithm> // std::clamp
+#include <array>     // the plan events' names
 #include <cmath>     // std::exp, std::isfinite
 #include <optional>  // the queue-taken loudness copy
 #include <utility>   // std::move
@@ -190,7 +191,7 @@ template <typename T> bool Realizer::writeSlot(PendingSlot<T>& slot, const T& in
     return post;
 }
 
-bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
+bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn, bool comparing)
 {
     if (pointsDb == nullptr || count != static_cast<uint32_t>(kEqBandCount))
     {
@@ -198,6 +199,7 @@ bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
     }
     EqIntent intent{};
     intent.isOn = isOn;
+    intent.comparing = comparing;
     for (size_t band = 0; band < intent.points.size(); ++band)
     {
         const float point = pointsDb[band];
@@ -210,7 +212,7 @@ bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
     }
 
     const bool post = writeSlot(pendingEq_, intent);
-    AdaptiveSound::log::debug("[QW1] Realizer.setPendingEq on={} -> {}", isOn,
+    AdaptiveSound::log::debug("[QW1] Realizer.setPendingEq on={} comparing={} -> {}", isOn, comparing,
                               post ? "POST drain" : "coalesced (drain pending)");
     if (post)
     {
@@ -249,14 +251,15 @@ void Realizer::setPendingCrossfeed(uint32_t enabled, uint32_t preset)
 }
 
 void Realizer::publishTrackLoudnessProfile(uint64_t token,
-                                           std::shared_ptr<const TrackLoudnessProfile> profile)
+                                           std::shared_ptr<const TrackLoudnessProfile> profile,
+                                           bool saved)
 {
     if (token == 0U || !profile)
     {
         return;
     }
-    postWeak(queue_, weak_from_this(), [token, profile = std::move(profile)](Realizer& self) {
-        if (const auto change = self.loudness_.onProfile(token, profile))
+    postWeak(queue_, weak_from_this(), [token, saved, profile = std::move(profile)](Realizer& self) {
+        if (const auto change = self.loudness_.onProfile(token, profile, saved))
         {
             self.applyGainChange(*change);
         }
@@ -292,21 +295,32 @@ void Realizer::setOutputTransport(uint32_t transportType)
     });
 }
 
-void Realizer::setCurrentTrack(uint64_t token, bool gaplessSeam)
+void Realizer::applyTrackPlan(uint64_t token, AsPlanEvent event, const AsTrackPlan& plan, bool continuousWithPrevious)
 {
-    postWeak(queue_, weak_from_this(), [token, gaplessSeam](Realizer& self) {
-        const auto change = self.loudness_.onCurrentTrack(token, gaplessSeam);
-        if (change)
+    postWeak(queue_, weak_from_this(), [token, event, plan, continuousWithPrevious](Realizer& self) {
+        if (const auto change = self.loudness_.onPlan(token, event, plan, continuousWithPrevious))
         {
             self.applyGainChange(*change);
         }
-        AdaptiveSound::log::line("[EQ] loudness: track {:016x} audible ({}) — gain {:+.2f} dB{}",
+        static constexpr std::array<const char*, 4U> kEvents = {
+            "fresh start",
+            "gapless seam",
+            "mode change",
+            "output change",
+        };
+        const auto eventIndex = static_cast<size_t>(event);
+        AdaptiveSound::log::line("[EQ] level: track {:016x} {} — g {:+.2f} dB, G {:+.2f} dB (cap {:+.2f}, P {:+.2f} "
+                                 "dBTP, C_work {:+.3f}){}",
                                  static_cast<unsigned long long>(token),
-                                 gaplessSeam ? "gapless seam" : "fresh start",
-                                 self.loudness_.gainDb(),
-                                 self.loudness_.sharesGroupGain() ? ", shared by the gapless group"
-                                                                  : "");
-        self.syncCausalEstimate(true); // a new track: any estimate starts over
+                                 (eventIndex < kEvents.size()) ? kEvents.at(eventIndex) : "?",
+                                 self.loudness_.levelDb(),
+                                 self.loudness_.neutralDb(),
+                                 self.loudness_.capDb(),
+                                 plan.peakDbtp,
+                                 plan.workingCeilingDbtp,
+                                 self.loudness_.sharesGroupGain() ? ", G shared by the gapless group" : "");
+        // A new play: any estimate starts over. A mode or output change keeps the track's.
+        self.syncCausalEstimate(event == AsPlanEventFreshStart || event == AsPlanEventGaplessSeam);
     });
 }
 
@@ -396,26 +410,33 @@ void Realizer::drain()
 
 void Realizer::realizeEq()
 {
-    // Off is the flat design: k = k0 and m1 = 0 exactly — the RT module's identity.
+    // Off is the flat design: k = k0 and m1 = 0 exactly — the RT module's identity. While Compare is
+    // held the CURVE is still designed (Compare is level-matched against it), and its identity plays.
     const std::array<float, kEqBandCount> flat{};
     const std::array<float, kEqBandCount>& points = eq_.isOn ? eq_.points : flat;
     GraphicEQDesign design{};
-    if (!designer_->design(points, sampleRate_, design))
+    GraphicEQDesign played{};
+    if (!designer_->design(points, sampleRate_, design) ||
+        (eq_.isOn && eq_.comparing && !designer_->design(flat, sampleRate_, played)))
     {
         // Outside the design domain (a rate under 44 kHz): play the identity, never a curve
         // designed for another rate (engine-plan §6). Non-finite points never get here.
         AdaptiveSound::log::line("[EQ] Realizer: no EQ design at {} Hz — playing flat", sampleRate_);
         canonical_.eq = EQParams{};
         publishedDesign_ = GraphicEQDesign{};
-        (void)loudness_.onDesign(GraphicEQDesign(), false);
+        canonical_.eq.outputGainDb = loudness_.onDesign(GraphicEQDesign(), false, false);
         return;
     }
+    if (!(eq_.isOn && eq_.comparing))
+    {
+        played = design;
+    }
     // Each band glides at its own τ, from what was last published (amendment 15).
-    canonical_.eq = EQTargets::toParams(design, EQTargets::rampsFor(publishedDesign_, design));
-    publishedDesign_ = design;
-    // The loudness-neutral gain rides with the coefficients, at the rule's gain τ (decimated for a
-    // long profile; the idle refresh completes it).
-    canonical_.eq.outputGainDb = loudness_.onDesign(design, eq_.isOn);
+    canonical_.eq = EQTargets::toParams(played, EQTargets::rampsFor(publishedDesign_, played));
+    publishedDesign_ = played;
+    // The level stage's gain rides with the coefficients, at the rule's gain τ (decimated for a long
+    // profile; the idle refresh completes it, with the curve's cut allowance).
+    canonical_.eq.outputGainDb = loudness_.onDesign(design, eq_.isOn, eq_.comparing);
 }
 
 void Realizer::realizeCrossfeed()
