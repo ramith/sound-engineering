@@ -54,10 +54,12 @@ extension AudioEngineBridge {
         _ = withEffectsAU { publishChannelLayoutTag($0, tag) }
     }
 
-    /// Load-time graph step (M2-d, F1): re-format the graph to the source — its own channels in its own
-    /// order (`engineFormat`, the one F1 function) — THEN publish the source layout tag to the kernel. The
-    /// order matters: `reconfigureGraph` is the same-format no-op for stereo, and publishing afterwards
-    /// guarantees the kernel sees the tag for the format the graph just settled on.
+    /// Load-time graph step (M2-d, F1, M2): re-format the graph to the source — its own channels in its own
+    /// order (`engineFormat`, the one F1 function) — THEN publish the source layout tag to the kernel, THEN
+    /// assemble the one output state the planner plans against and give the spatial unit the layout's fold.
+    /// The order matters: `reconfigureGraph` is the same-format no-op for stereo, and everything after it reads
+    /// the format the graph just settled on. On `engineQueue`, before the file becomes audible, so the fold is
+    /// in place (the layout's, at its worst-case trim) before the plan refines it.
     ///
     /// - Parameters:
     ///   - channelCount: the source file's channel count N.
@@ -73,5 +75,47 @@ extension AudioEngineBridge {
 
         // 2. Publish the layout so the kernel computes the correct BS.1770-5 per-channel weights.
         publishChannelLayout(tag)
+
+        // 3. The output state (M2) for the planner, and the layout's fold for the spatial unit.
+        var state = outputState(roles: sourceRoles(channelCount: channelCount, layout: channelLayout))
+        applyOutputState(state)
+        _ = withSpatialAU { asSpatialPublishLayoutFold($0, &state) }
+    }
+
+    /// The output changed under the playing file (a re-establish after a device or route change): assemble the
+    /// output state again — the transport the view model handed over, the device boundary — keeping the file's
+    /// roles, and hand it to the planner, which re-plans the playing track protectively (F5) and sends the fold
+    /// its new plan. Any bridge queue but `resampleQueue`; never under `stateLock`.
+    func refreshOutputState() {
+        let current = leveling.outputState
+        let roles = withUnsafeBytes(of: current.sourceRoles) { Array($0.prefix(Int(current.sourceChannels))) }
+        applyOutputState(outputState(roles: roles))
+    }
+
+    /// The one output state (M2) for the graph as it is configured now: the view model's transport hand-over,
+    /// the graph's rate, its source width N with the file's `roles`, and the spatial unit's output width M.
+    private func outputState(roles: [UInt8]) -> AsOutputState {
+        var state = AsOutputState()
+        state.transportType = levelingOutputTransport()
+        let graph = playerNode?.outputFormat(forBus: 0)
+        state.engineRateHz = (graph?.sampleRate ?? 0) > 0 ? graph?.sampleRate ?? 48000 : 48000
+        state.sourceChannels = UInt32(graph?.channelCount ?? 2)
+        state.outputChannels = UInt32(spatialNode?.outputFormat(forBus: 0).channelCount ?? graph?.channelCount ?? 2)
+        let width = min(Int(state.sourceChannels), Int(AS_MAX_CHANNELS))
+        withUnsafeMutableBytes(of: &state.sourceRoles) { slots in
+            for slot in 0 ..< width {
+                slots[slot] = slot < roles.count ? roles[slot] : UInt8(AsChannelRoleUnknown.rawValue)
+            }
+        }
+        return state
+    }
+
+    /// The file's channel roles, from its labels: lane 1-B's one resolver (`asResolveChannelRoles`, through
+    /// AudioFormatKit's `ChannelRoles`). It has not landed in this branch, so every role reads Unknown here:
+    /// the fold then plays the table's Unknown row (0.5 to both sides) at its worst-case trim — never a
+    /// truncation, never trim 0 — and the planner, seeing roles that differ from the analysis', keeps to the
+    /// fallback trim. The combine replaces this body with the resolver's call (lane 2's report has the line).
+    private func sourceRoles(channelCount: AVAudioChannelCount, layout _: AVAudioChannelLayout?) -> [UInt8] {
+        [UInt8](repeating: UInt8(AsChannelRoleUnknown.rawValue), count: Int(min(channelCount, AVAudioChannelCount(AS_MAX_CHANNELS))))
     }
 }

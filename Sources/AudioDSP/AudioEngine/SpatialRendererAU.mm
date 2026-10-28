@@ -3,10 +3,16 @@
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
 #include "../include/MultichannelView.h"
 #include "../include/SpatialBridge.h" // the fold's C-ABI (AsFoldState)
+#include "../Planning/TrackPlan.h"      // the backstop's ceiling: the planner's rule (outputCeilingLinear)
+#include "../Spatial/FoldMatrix.h"      // the BS.775 matrix from roles (lane 1's one table)
 #include "../Spatial/SpatialRenderKernel.h"
 #include "InProcessEffectAU.h" // the scaffold both in-process AUs share (C-87)
+#include <cmath>
 #include <cstddef>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <span>
 #include <vector>
 
 using namespace AdaptiveSound;
@@ -168,6 +174,12 @@ namespace
             return kernel_.readout();
         }
 
+        // Off-RT, any control thread: the fold for the next blocks.
+        [[nodiscard]] bool publishFold(const FoldParams& fold) noexcept
+        {
+            return kernel_.publishFold(fold);
+        }
+
         AUAudioUnitStatus render(AudioUnitRenderActionFlags* flags,
                                  const AudioTimeStamp* timestamp,
                                  AUAudioFrameCount frames,
@@ -283,6 +295,79 @@ namespace
 
 @end
 
+// MARK: - The fold's C-ABI helpers (off the render thread)
+
+namespace
+{
+    constexpr float kSeamGlideSeconds = 0.01F;       // a gapless seam (design §1.3: 10 ms)
+    constexpr float kModeChangeGlideSeconds = 0.15F; // the listener's Leveling mode change (§1.3: τ = 0.15 s)
+
+    // How the fold moves to a plan delivered for `event` (AsPlanEvent).
+    [[nodiscard]] float glideSeconds(uint8_t event) noexcept
+    {
+        switch (event)
+        {
+            case AsPlanEventGaplessSeam:
+                return kSeamGlideSeconds;
+            case AsPlanEventModeChange:
+                return kModeChangeGlideSeconds;
+            default: // a fresh start, an output change (the stream restarts): snap
+                return 0.0F;
+        }
+    }
+
+    // The fold `output` plays at LFE variant `lfeVariant` and `trimDb` (NaN: the matrix's worst case for the
+    // output's ceiling): the BS.775 matrix over its roles, the backstop's ceiling from its transport. nullopt
+    // when the output does not fold (N ≤ 2, M ≥ N, N past the pipeline's width).
+    [[nodiscard]] std::optional<FoldParams> foldFor(const AsOutputState& output,
+                                                    uint8_t lfeVariant,
+                                                    double trimDb,
+                                                    float glide,
+                                                    bool fromPlan) noexcept
+    {
+        const uint32_t channels = output.sourceChannels;
+        if (channels <= 2U || channels > kMaxChannels || output.outputChannels >= channels)
+        {
+            return std::nullopt;
+        }
+        std::array<ChannelRole, kMaxChannels> roles{};
+        for (uint32_t ch = 0U; ch < channels; ++ch)
+        {
+            const uint8_t role = output.sourceRoles[ch];
+            roles[ch] = (role <= AsChannelRoleMono) ? static_cast<ChannelRole>(role) : ChannelRole::Unknown;
+        }
+        const std::optional<FoldMatrix> matrix =
+            makeBs775Fold(std::span<const ChannelRole>(roles.data(), channels), lfeVariant);
+        if (!matrix.has_value())
+        {
+            return std::nullopt;
+        }
+        const float ceiling = outputCeilingLinear(output.transportType);
+        FoldParams fold;
+        fold.inChannels = channels;
+        fold.rows = matrix->gain;
+        fold.trimDb = static_cast<float>(
+            std::isnan(trimDb) ? foldTrimDb(workingCeilingDbtp(ceiling), std::numeric_limits<double>::quiet_NaN(), *matrix)
+                               : trimDb);
+        fold.lfeGain = foldLfeVariantGain(lfeVariant);
+        fold.ceilingLinear = ceiling;
+        fold.glideSeconds = glide;
+        fold.fromPlan = fromPlan;
+        return fold;
+    }
+
+    // The live AU's render, borrowed for one C-ABI call (nullptr when there is none).
+    [[nodiscard]] std::shared_ptr<SpatialRender> borrowSpatialRender(void* spatialAU) noexcept
+    {
+        if (spatialAU == nullptr)
+        {
+            return nullptr;
+        }
+        SpatialRendererAU* audioUnit = (__bridge SpatialRendererAU*)spatialAU; // non-owning borrow
+        return [audioUnit spatialRender];
+    }
+} // namespace
+
 // MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitRegistrationBridge.h.
 
 extern "C" {
@@ -300,13 +385,38 @@ void registerSpatialRendererAUSubclass(void) AUDIODSP_C_NOEXCEPT {
 
 // MARK: The fold (SpatialBridge.h)
 
-bool asSpatialFoldState(void* spatialAU, AsFoldState* out) AUDIODSP_C_NOEXCEPT {
-    if (spatialAU == nullptr || out == nullptr) {
+
+bool asSpatialPublishLayoutFold(void* spatialAU, const AsOutputState* output) AUDIODSP_C_NOEXCEPT {
+    const std::shared_ptr<SpatialRender> render = borrowSpatialRender(spatialAU);
+    if (render == nullptr || output == nullptr || output->sourceChannels == 0U ||
+        output->sourceChannels > kMaxChannels) {
         return false;
     }
-    SpatialRendererAU* audioUnit = (__bridge SpatialRendererAU*)spatialAU; // non-owning borrow
-    const std::shared_ptr<SpatialRender> render = [audioUnit spatialRender];
-    if (render == nullptr) {
+    const std::optional<FoldParams> fold = foldFor(*output, AsLfeVariantOmit,
+                                                   std::numeric_limits<double>::quiet_NaN(), 0.0F, false);
+    return !fold.has_value() || render->publishFold(*fold);
+}
+
+bool asSpatialPublishPlan(void* spatialAU,
+                          const AsTrackPlan* plan,
+                          const AsOutputState* output,
+                          uint8_t event) AUDIODSP_C_NOEXCEPT {
+    const std::shared_ptr<SpatialRender> render = borrowSpatialRender(spatialAU);
+    if (render == nullptr || plan == nullptr || output == nullptr || output->sourceChannels == 0U ||
+        output->sourceChannels > kMaxChannels) {
+        return false;
+    }
+    if (plan->folds == 0U) {
+        return true;
+    }
+    const std::optional<FoldParams> fold =
+        foldFor(*output, plan->lfeVariant, std::min(plan->foldTrimDb, 0.0), glideSeconds(event), true);
+    return !fold.has_value() || render->publishFold(*fold);
+}
+
+bool asSpatialFoldState(void* spatialAU, AsFoldState* out) AUDIODSP_C_NOEXCEPT {
+    const std::shared_ptr<SpatialRender> render = borrowSpatialRender(spatialAU);
+    if (render == nullptr || out == nullptr) {
         return false;
     }
     const FoldReadout state = render->readout();

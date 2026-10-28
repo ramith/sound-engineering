@@ -17,6 +17,7 @@
 //
 
 #include "CApiNoexcept.h"
+#include "TrackPlanBridge.h" // AsTrackPlan, AsOutputState, AsPlanEvent: lane 1's seam
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -45,6 +46,31 @@ typedef struct
 extern "C"
 {
 #endif
+
+    /// The layout's fold for the file the graph is now configured for (lane 2's `configureGraphForSource`,
+    /// with the output state it assembles): the BS.775 matrix over `output->sourceRoles` with the LFE omitted,
+    /// at the matrix's worst-case trim for the output's ceiling — never trim 0 (M1). It plays until the track's
+    /// plan arrives. Nothing to do — true — when the output does not fold (N ≤ 2, or M ≥ N).
+    ///
+    /// @param spatialAU  Borrowed SpatialRendererAU*; false if null.
+    /// @param output     The output state (N, its roles, M, the transport); false if null or out of range.
+    /// @return true when published or nothing to fold.
+    bool asSpatialPublishLayoutFold(void* spatialAU, const AsOutputState* output) AUDIODSP_C_NOEXCEPT;
+
+    /// The playing track's plan, in the same turn the effects unit gets the same value (B1, M1): the BS.775
+    /// matrix over `output->sourceRoles` at the plan's LFE variant, the plan's trim, and the backstop's ceiling
+    /// from the output's transport (the planner's rule, Planning/TrackPlan.h). Nothing to do — true — when the
+    /// plan does not fold.
+    ///
+    /// @param plan    From asPlanTrack; false if null.
+    /// @param output  The output state the plan was made against; false if null or out of range.
+    /// @param event   AsPlanEvent — how the fold moves to it: a fresh start or an output change (the stream
+    ///                restarts) snaps, a gapless seam glides 10 ms, a mode change 0.15 s.
+    /// @return true when published or nothing to fold.
+    bool asSpatialPublishPlan(void* spatialAU,
+                              const AsTrackPlan* plan,
+                              const AsOutputState* output,
+                              uint8_t event) AUDIODSP_C_NOEXCEPT;
 
     /// Read what the spatial unit plays now.
     ///

@@ -143,17 +143,6 @@ namespace AdaptiveSound
         readoutOut_.store(outChannels_, std::memory_order_relaxed);
     }
 
-    auto SpatialRenderKernel::setLayoutFold(const FoldParams& fold) noexcept -> void
-    {
-        if (!isFinite(fold))
-        {
-            return;
-        }
-        layoutFold_ = fold;
-        layoutFold_.generation = 0U;
-        needsSnap_ = true;
-    }
-
     auto SpatialRenderKernel::publishFold(const FoldParams& fold) noexcept -> bool
     {
         if (!isFinite(fold))
@@ -219,38 +208,25 @@ namespace AdaptiveSound
         }
     }
 
-    // The fold: choose the fold for this N (the plan's, else the layout's), adopt a change, mix L′/R′
-    // (gliding, then steady), zero any further device channel, then the backstop.
+    // The fold: the newest published fold if it is for this N, adopted at a change; mix L′/R′ (gliding, then
+    // steady), zero any further device channel, then the backstop.
     auto SpatialRenderKernel::foldBlock(const MultichannelView& input,
                                         const MultichannelView& output,
                                         uint32_t frames) noexcept -> void
     {
         published_.copySnapshot(latest_);
-        const bool planFits = latest_.generation != 0U && latest_.inChannels == inChannels_;
-        const FoldParams* fold = nullptr;
-        if (planFits)
-        {
-            fold = &latest_;
-        }
-        else if (layoutFold_.inChannels == inChannels_)
-        {
-            fold = &layoutFold_;
-        }
         const auto vLen = static_cast<vDSP_Length>(frames);
-        if (fold == nullptr)
+        if (latest_.generation == 0U || latest_.inChannels != inChannels_)
         {
             // No fold for this width yet: silence, never the first two channels.
             zeroOutputChannels(output, 0U, vLen);
             haveFold_ = false;
             return;
         }
-        const uint32_t generation = planFits ? latest_.generation : 0U;
-        if (needsSnap_ || !haveFold_ || generation != appliedGeneration_ ||
-            planFits != appliedFromPlan_)
+        if (needsSnap_ || !haveFold_ || latest_.generation != appliedGeneration_)
         {
-            adoptFold(*fold, planFits, needsSnap_ || !haveFold_);
-            appliedGeneration_ = generation;
-            appliedFromPlan_ = planFits;
+            adoptFold(latest_, needsSnap_ || !haveFold_);
+            appliedGeneration_ = latest_.generation;
         }
         needsSnap_ = false;
         haveFold_ = true;
@@ -264,7 +240,7 @@ namespace AdaptiveSound
     // Take `fold` as the fold in force: its coefficients (rows × trim) as the target, reached at once
     // (`snap`, or a zero glide) or by a linear per-sample glide; its ceiling for the backstop; and a
     // fresh gain-reduction peak for the read-out.
-    auto SpatialRenderKernel::adoptFold(const FoldParams& fold, bool fromPlan, bool snap) noexcept
+    auto SpatialRenderKernel::adoptFold(const FoldParams& fold, bool snap) noexcept
         -> void
     {
         const float trim = linearFromDb(std::min(fold.trimDb, 0.0F));
@@ -301,7 +277,7 @@ namespace AdaptiveSound
         readoutPeakGrDb_.store(0.0F, std::memory_order_relaxed);
         readoutTrimDb_.store(fold.trimDb, std::memory_order_relaxed);
         readoutLfeGain_.store(fold.lfeGain, std::memory_order_relaxed);
-        readoutFromPlan_.store(fromPlan, std::memory_order_relaxed);
+        readoutFromPlan_.store(fold.fromPlan, std::memory_order_relaxed);
     }
 
     // The gliding part of the block, per sample: each output sample at the coefficients in force, which
