@@ -52,6 +52,7 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/CausalLoudnessTap.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelRoles.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Spatial/FoldLfeRule.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.cpp"
