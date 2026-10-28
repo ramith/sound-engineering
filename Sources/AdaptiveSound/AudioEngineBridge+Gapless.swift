@@ -64,7 +64,7 @@ extension AudioEngineBridge {
     /// A seek does not consume the on-deck track; a start or stop begins a new playback (every
     /// earlier request is stale). Returns once the request is settled: dropped, set, or armed / left
     /// empty. Safe to call from any thread.
-    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling _: TrackLevelingDecision?) async {
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             engineQueue.async {
                 guard self.onDeckGate.admit(ticket) else {
@@ -75,28 +75,33 @@ extension AudioEngineBridge {
                 if self.activePathKind == .pure {
                     self.retractThenArmPure(fileURL, ticket: ticket) { continuation.resume() }
                 } else {
-                    self.armEnhancedOnDeck(fileURL) { continuation.resume() }
+                    self.armEnhancedOnDeck(fileURL, leveling: leveling) { continuation.resume() }
                 }
             }
         }
     }
 
     /// The Enhanced arm, for an admitted request (on `engineQueue`): prefetch the pick's loudness
-    /// profile, then set the on-deck slot on `resampleQueue` (which owns the seam state) and arm the
-    /// EOF hook of the sub-path playing now — or, for `nil`, clear the slot and disarm both hooks so
-    /// no stale handler fires. `done` runs once the slot is set.
+    /// profile (unless its decision carries the saved one, C2, rebuilt here, off the seam), then set the
+    /// on-deck slot and its leveling decision on `resampleQueue` (which owns the seam state, so the seam
+    /// reads the decision of the URL it plays — B2) and arm the EOF hook of the sub-path playing now —
+    /// or, for `nil`, clear the slot and disarm both hooks so no stale handler fires. `done` runs once the
+    /// slot is set.
     ///
     /// `async`, not `sync`: admissions are serialized here and `resampleQueue` is FIFO, so the slot
     /// takes them — and a start's or stop's clear — in admission order, while a seam busy opening the
     /// next file can't hold `engineQueue` (the clock and every transport op) behind it.
-    private func armEnhancedOnDeck(_ fileURL: URL?, done: @escaping @Sendable () -> Void) {
+    private func armEnhancedOnDeck(_ fileURL: URL?, leveling: TrackLevelingDecision?,
+                                   done: @escaping @Sendable () -> Void) {
         dispatchPrecondition(condition: .onQueue(engineQueue))
         // The engine switches to the profile only when the track becomes AUDIBLE
         // (bumpTransitionCount) — never here.
-        prefetchTrackLoudness(fileURL)
+        let pending = fileURL.flatMap { url in leveling.map { EngineLevelingState.Pending(url: url, decision: $0) } }
+        prefetchTrackLoudness((pending?.saved.isEmpty ?? true) ? fileURL : nil)
         resampleQueue.async {
             defer { done() }
             self.onDeckURL = fileURL
+            self.armLeveling(pending)
             guard fileURL != nil else {
                 self.onResamplerEOF = nil
                 self.onPassthroughEOF = nil

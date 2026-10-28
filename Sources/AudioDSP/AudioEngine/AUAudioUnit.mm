@@ -353,6 +353,16 @@ void reportTrackLoudnessFailure(void* auUnit, uint64_t trackToken) AUDIODSP_C_NO
     }
 }
 
+// C2's rebuild of a saved compact profile is lane 1-B's (TrackLoudnessBridge.h declares it; its definition lands
+// with the analysis pass, R1.1-B W4). Until that definition joins the link, this WEAK one answers "cannot be
+// rebuilt", so the bridge falls back to analysing the track as it plays — today's path. A strong definition
+// replaces it at link time without a clash. To be deleted at the combine, once lane 1-B's is in.
+extern "C" __attribute__((weak)) AsLoudnessProfile*
+asLoudnessProfileFromCompact(const AsCompactProfileInfo* /*info*/, const uint16_t* /*powers*/,
+                             uint32_t /*count*/) AUDIODSP_C_NOEXCEPT {
+    return nullptr;
+}
+
 bool publishSavedLoudnessProfile(void* auUnit, uint64_t trackToken,
                                  const AsLoudnessProfile* profile) AUDIODSP_C_NOEXCEPT {
     // R1.1-B, C2: the persisted profile, final — the shared reference is copied, not the blocks.

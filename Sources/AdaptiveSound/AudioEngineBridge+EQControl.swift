@@ -57,7 +57,7 @@ extension AudioEngineBridge {
     /// (`levelingOutputTransport()`, M2), and the EQ-only path's limiter ceiling follows it. No-op on the AU if
     /// it isn't live.
     func publishOutputTransport(_ transportType: UInt32) {
-        leveling.setOutputTransport(transportType)
+        levelingTransportChanged(transportType)
         _ = withEffectsAU { CEQABI.transport($0, transportType) }
     }
 
