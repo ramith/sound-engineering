@@ -41,7 +41,6 @@ namespace
         AsLfeStats stats;
     };
 
-    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers) PERMANENT reason="measured fixture statistics: the data is the test"
     const std::array kLfeRuleCases = std::to_array<LfeRuleCase>({
         {"design A/copy/s0", LfeIntent::Omit, {597, 8.00F, 0.9458F, 1.0000F, 1.0000F, 1.0000F, 0.0000F, 0.05F}},
         {"design A/copy/s1", LfeIntent::Omit, {597, 8.00F, 0.9425F, 1.0000F, 1.0000F, 1.0000F, 0.0000F, 0.04F}},
@@ -227,7 +226,6 @@ namespace
         {"kick sweep kick-stem copy, kick -10 dB (low band -10.5 dB re bass)/s3", LfeIntent::KnownIssue, {397, 4.00F, 0.2664F, 0.0000F, 0.1157F, 0.2825F, 1.0000F, -15.98F}},
         {"kick sweep kick-stem copy, kick -14 dB (low band -14.5 dB re bass)/s3", LfeIntent::KnownIssue, {397, 4.00F, 0.1651F, 0.0000F, 0.0561F, 0.1909F, 0.9698F, -22.32F}},
     });
-    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 
     auto lfeVerdictName(AsLfeVerdict verdict) -> const char*
     {
