@@ -9,7 +9,6 @@
 // Helpers (shared — also used by MultichannelTests.inc): feedStereoSine,
 //        feedStereoSilence, kLufsTol.
 
-#include "../Sources/AudioDSP/Loudness/LoudnessModule.h"
 #include "BoundedWait.h"
 
 // ===========================================================================
@@ -185,8 +184,8 @@ static auto testLoudnessTruePeakKernelInterSample() -> void
     for (uint32_t n = 0U; n < 4800U; ++n)
     {
         // fs/4 sine, +45° phase: samples alternate ±kAmp·0.7071 exactly between peaks.
-        const double s = kAmp
-            * std::sin((std::numbers::pi / 2.0 * static_cast<double>(n)) + (std::numbers::pi / 4.0));
+        const double s = kAmp * std::sin((std::numbers::pi / 2.0 * static_cast<double>(n)) +
+                                         (std::numbers::pi / 4.0));
         for (uint32_t k = kNumTaps - 1U; k > 0U; --k)
         {
             hist[k] = hist[k - 1U];
@@ -245,10 +244,9 @@ static auto testLoudnessMeterBridgeTruePeak() -> void
     {
         for (uint32_t i = 0U; i < kChunk; ++i, ++n)
         {
-            buf[i] = static_cast<float>(
-                kAmp
-                * std::sin((std::numbers::pi / 2.0 * static_cast<double>(n))
-                           + (std::numbers::pi / 4.0)));
+            buf[i] = static_cast<float>(kAmp *
+                                        std::sin((std::numbers::pi / 2.0 * static_cast<double>(n)) +
+                                                 (std::numbers::pi / 4.0)));
         }
         loudnessMeterAddStereo(meter, buf.data(), nullptr, kChunk); // MONO path
     }
@@ -269,17 +267,15 @@ static auto testLoudnessMeterBridgeTruePeak() -> void
 }
 
 // ---------------------------------------------------------------------------
-// Loudness_WorkersSleepWhileIdle (council C-46 / KI-UI-03; DSP-09): the analysis workers — the
-// normaliser's meter (LoudnessModule) and the causal loudness estimate (CausalLoudnessTap) — sleep
-// while no audio reaches them, and wake for the next block. Nothing reaches them while playback is
-// paused (the engine stops); the normaliser is fed only while leveling is on and off the bit-perfect
-// path, the causal tap only while its estimate runs. Before R1.1 they polled: the normaliser every
-// 5 ms (200 wake-ups a second), the causal tap every 50 ms (10 ms with an estimate running), for the
-// AU's whole life.
+// Loudness_WorkersSleepWhileIdle (council C-46 / KI-UI-03; DSP-09): the kernel's analysis worker — the
+// causal loudness estimate (CausalLoudnessTap) — sleeps while no audio reaches it, and wakes for the next
+// block. Nothing reaches it while playback is paused (the engine stops), and it is fed only while its
+// estimate runs. Before R1.1 it polled every 50 ms (10 ms with an estimate running) for the AU's whole
+// life. (The session normaliser's meter, the second worker, went with the normaliser — R1.1-B, M8.)
 //
-// The workers' own telemetry decides, never the clock (PR #91's CI: the process's context switches,
+// The worker's own telemetry decides, never the clock (PR #91's CI: the process's context switches,
 // over a fixed settle, measured a busy runner, not the workers): the test waits — up to a hang cap
-// that fails, never carries on — until a worker is parked with nothing handed to it
+// that fails, never carries on — until the worker is parked with nothing handed to it
 // (`WorkerParking::isParked`), then 300 ms of idle must leave its wake count where it was.
 // ---------------------------------------------------------------------------
 static auto testLoudnessWorkersSleepWhileIdle() -> void
@@ -333,30 +329,7 @@ static auto testLoudnessWorkersSleepWhileIdle() -> void
     };
 
     {
-        // The normaliser measuring, then paused, then playing again.
-        LoudnessModule module;
-        module.initialize(kSR, kBlock);
-        LoudnessParams params{};
-        params.enabled = 1U;
-        const auto measure = [&](TestABL& block)
-        { module.process(params, MultichannelView::fromABL(block.abl(), kBlock)); };
-        play(measure, 0.5, 0.1F);
-        staysParked(
-            "the normaliser's worker, paused",
-            [&] { return module.workerParked(); },
-            [&] { return module.workerWakes(); });
-        play(measure, 1.0, 0.316F); // 10 dB louder: the worker must wake and measure it
-        if (!waitUntil([&] { return module.measuredLufsMomentary() > -14.0F; }, kHangCap))
-        {
-            fail += std::format(
-                "\n  after the pause the normaliser read {:.1f} LUFS momentary, not the louder "
-                "tone (≈ −10.7)",
-                module.measuredLufsMomentary());
-        }
-    }
-    {
-        // A kernel with leveling off (the faithful default) and no causal estimate: neither worker
-        // is fed while it plays.
+        // A kernel with no causal estimate: its worker is not fed while it plays.
         DSPKernel kernel;
         kernel.initialize(kSR, kBlock);
         kernel.publishTargetState(makeIdentityState());
@@ -364,10 +337,10 @@ static auto testLoudnessWorkersSleepWhileIdle() -> void
         const auto parked = [&] { return kernel.analysisWorkersParked(); };
         const auto wakes = [&] { return kernel.analysisWorkerWakes(); };
         play(render, 0.5, 0.1F);
-        staysParked("a kernel at rest (both workers)", parked, wakes);
+        staysParked("a kernel at rest", parked, wakes);
         // A causal estimate started while nothing plays waits for audio, then analyses it.
         kernel.startCausalLoudness([](const std::shared_ptr<const TrackLoudnessProfile>&) {});
-        staysParked("a causal estimate waiting for audio (both workers)", parked, wakes);
+        staysParked("a causal estimate waiting for audio", parked, wakes);
         play(render, 1.0, 0.1F);
         if (!waitUntil([&] { return kernel.causalLoudnessFedFrames() >= kSR / 2U; }, kHangCap))
         {
@@ -378,7 +351,7 @@ static auto testLoudnessWorkersSleepWhileIdle() -> void
     }
     if (!fail.empty())
     {
-        logFail(kName, "the analysis workers do not sleep while idle:" + fail);
+        logFail(kName, "the analysis worker does not sleep while idle:" + fail);
         return;
     }
     logPass(kName);

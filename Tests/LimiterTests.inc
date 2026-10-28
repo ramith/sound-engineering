@@ -106,7 +106,6 @@ static auto testLimiterCeilingEnforcement() -> void
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     // limiter: default LimiterParams — truePeakCeilingLinear = kTruePeakCeilingLinear
     kernel.publishTargetState(state);
 
@@ -188,7 +187,6 @@ static auto testLimiterGRResponseTime() -> void
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     kernel.publishTargetState(state);
 
     // Feed a DC burst at +0 dBFS (0.999) into a fresh, unprimed limiter.
@@ -244,7 +242,6 @@ static auto testLimiterNearNyquistCeiling() -> void
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U; // default limiter ceiling (0.891)
     kernel.publishTargetState(state);
 
     TestABL prime(kLimiterLookaheadFrames);
@@ -311,7 +308,6 @@ static auto limiterHotNoiseSoakBody(uint32_t numCh,
     state.intensityLinear = 1.0F;
     state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
-    state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;
     kernel.publishTargetState(state);
 
@@ -486,7 +482,8 @@ namespace
             const bool inBurst = n >= lead && n < lead + burst;
             input[n] = static_cast<float>(
                 kReleaseProbeLevel +
-                (inBurst ? kBurstAmplitude * std::sin(2.0 * std::numbers::pi * kBurstHz * n / kSR) : 0.0));
+                (inBurst ? kBurstAmplitude * std::sin(2.0 * std::numbers::pi * kBurstHz * n / kSR)
+                         : 0.0));
         }
 
         LimiterModule limiter;
@@ -511,7 +508,8 @@ namespace
             const double in = input[n - kLook];
             if (std::abs(in) > 0.5) // away from the burst's zero crossings
             {
-                trace.deepestDb = std::min(trace.deepestDb, 20.0 * std::log10(std::abs(output[n] / in)));
+                trace.deepestDb =
+                    std::min(trace.deepestDb, 20.0 * std::log10(std::abs(output[n] / in)));
             }
         }
         for (uint32_t n = lead + burst + kLook; n < total; ++n)
@@ -524,7 +522,8 @@ namespace
     // The gain `seconds` after t = 0 (dB).
     auto releaseGainAt(const ReleaseTrace& trace, double seconds) -> double
     {
-        const auto index = static_cast<size_t>(std::lround(seconds * TestConstants::kSampleRate48k));
+        const auto index =
+            static_cast<size_t>(std::lround(seconds * TestConstants::kSampleRate48k));
         return trace.afterDb[std::min(index, trace.afterDb.size() - 1U)];
     }
 
@@ -537,7 +536,8 @@ namespace
         {
             if (trace.afterDb[n] >= target)
             {
-                return (static_cast<double>(n) / TestConstants::kSampleRate48k) - kReleaseHoldSeconds;
+                return (static_cast<double>(n) / TestConstants::kSampleRate48k) -
+                       kReleaseHoldSeconds;
             }
         }
         return std::numeric_limits<double>::infinity();
@@ -555,24 +555,26 @@ static auto testLimiterReleaseTransientIsFast() -> void
     const double at500 = releaseGainAt(trace, 0.5);
     const double at1000 = releaseGainAt(trace, 1.0);
     const double tau = releaseTimeConstant(trace);
-    logInfo(std::format("  [info] {}: deepest {:.2f} dB; {:.2f} dB at 200 ms, {:.2f} at 500 ms, {:.3f} at "
-                        "1 s; τ {:.1f} ms after the hold\n",
-                        kName,
-                        trace.deepestDb,
+    logInfo(std::format(
+        "  [info] {}: deepest {:.2f} dB; {:.2f} dB at 200 ms, {:.2f} at 500 ms, {:.3f} at "
+        "1 s; τ {:.1f} ms after the hold\n",
+        kName,
+        trace.deepestDb,
+        at200,
+        at500,
+        at1000,
+        tau * 1000.0));
+    if (trace.deepestDb > -6.0 || at200 < -2.0 || at500 < -0.5 || at1000 < -0.1 ||
+        std::abs(tau - 0.100) > 0.015)
+    {
+        logFail(
+            kName,
+            std::format("a 5 ms burst: {:.2f} dB at 200 ms (bar −2), {:.2f} at 500 ms (bar −0.5), "
+                        "{:.3f} at 1 s (bar −0.1), τ {:.1f} ms (want 100 ± 15)",
                         at200,
                         at500,
                         at1000,
                         tau * 1000.0));
-    if (trace.deepestDb > -6.0 || at200 < -2.0 || at500 < -0.5 || at1000 < -0.1 ||
-        std::abs(tau - 0.100) > 0.015)
-    {
-        logFail(kName,
-                std::format("a 5 ms burst: {:.2f} dB at 200 ms (bar −2), {:.2f} at 500 ms (bar −0.5), "
-                            "{:.3f} at 1 s (bar −0.1), τ {:.1f} ms (want 100 ± 15)",
-                            at200,
-                            at500,
-                            at1000,
-                            tau * 1000.0));
         return;
     }
     logPass(kName);
@@ -587,17 +589,20 @@ static auto testLimiterReleaseSustainedIsSlow() -> void
     const ReleaseTrace trace = limiterReleaseTrace(2.0);
     const double at200 = releaseGainAt(trace, 0.2);
     const double tau = releaseTimeConstant(trace);
-    logInfo(std::format("  [info] {}: deepest {:.2f} dB; {:.2f} dB at 200 ms; τ {:.1f} ms after the hold\n",
-                        kName,
-                        trace.deepestDb,
-                        at200,
-                        tau * 1000.0));
+    logInfo(std::format(
+        "  [info] {}: deepest {:.2f} dB; {:.2f} dB at 200 ms; τ {:.1f} ms after the hold\n",
+        kName,
+        trace.deepestDb,
+        at200,
+        tau * 1000.0));
     if (trace.deepestDb > -6.0 || at200 > -4.0 || std::abs(tau - 0.500) > 0.050)
     {
-        logFail(kName,
-                std::format("2 s over the ceiling: {:.2f} dB at 200 ms (bar ≤ −4), τ {:.1f} ms (want 500 ± 50)",
-                            at200,
-                            tau * 1000.0));
+        logFail(
+            kName,
+            std::format(
+                "2 s over the ceiling: {:.2f} dB at 200 ms (bar ≤ −4), τ {:.1f} ms (want 500 ± 50)",
+                at200,
+                tau * 1000.0));
         return;
     }
     logPass(kName);

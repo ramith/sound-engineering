@@ -172,6 +172,19 @@ rules:
       include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp']
     pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\.detach\s*\()'
 
+  # R1.1-B (level-and-fold §7, M8): the session AGC is deleted. The level is the planner's leveling gain under
+  # the peak cap (Planning/TrackPlan, Loudness/TrackLoudnessGain) — a second, adaptive leveller must never come
+  # back. Code lines only: a comment may still tell the history.
+  - id: cpp-no-session-agc
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      The session loudness normaliser (LoudnessModule / LoudnessParams) was deleted in R1.1-B (M8): leveling is
+      the planner's frozen per-track gain under the peak cap. Don't bring back an adaptive leveller.
+    paths:
+      include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp', '*.inc', '*.swift']
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?\b(?:LoudnessModule|LoudnessParams)\b'
+
   # --- S10.7 layer-policy tripwires (docs/sprints/s10-7-liquid-glass-design.md §3.1/§3.2/§7 R1).
   # Drift nets, not security boundaries (same posture as the migrator grep): helper indirection
   # and legal-token recomposition can evade regexes — review owns that seam (design §7.4-1).
