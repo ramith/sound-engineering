@@ -285,10 +285,6 @@ int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
     return 1;
 }
 
-bool publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT {
-    return publishEQIntent(auUnit, pointsDb, count, isOn, false);
-}
-
 bool publishEQIntent(void* auUnit, const float* pointsDb, uint32_t count, bool isOn,
                      bool comparing) AUDIODSP_C_NOEXCEPT {
     // Sprint EQ (engine-plan §8): the points the UI draws + On/Off. The Realizer validates (the
