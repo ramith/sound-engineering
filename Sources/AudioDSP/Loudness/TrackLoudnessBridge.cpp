@@ -1,5 +1,5 @@
-// TrackLoudnessBridge.cpp — the C-ABI over TrackLoudnessProfiler and the loudness-change predictor
-// (see include/TrackLoudnessBridge.h).
+// TrackLoudnessBridge.cpp — the C-ABI over TrackLoudnessProfiler, the loudness-change predictor and the one
+// analysis pass, TrackAnalyzer (see include/TrackLoudnessBridge.h).
 //
 // Pure C++ (no live CoreAudio), so the C++ null test compiles and exercises it directly. The ABI
 // is the trust boundary: NULLs and wrong counts are rejected here; the profiler rejects
@@ -9,17 +9,27 @@
 #include "../EQ/EQDesignerHandle.h"
 #include "../EQ/GraphicEQDesigner.h"
 #include "ChannelLayoutDecoder.h"
+#include "TrackAnalyzer.h"
 #include "TrackLoudnessHandle.h"
 #include "TrackLoudnessProfiler.h"
+#include <array>
+#include <cmath>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <new>
 #include <span>
 #include <utility>
+#include <vector>
 
 struct AsLoudnessProfiler
 {
     std::unique_ptr<AdaptiveSound::TrackLoudnessProfiler> profiler;
+};
+
+struct AsTrackAnalyzer
+{
+    std::unique_ptr<AdaptiveSound::TrackAnalyzer> analyzer;
 };
 
 namespace
@@ -168,4 +178,163 @@ bool asLoudnessPredictChangeDb(const AsLoudnessProfile* profile,
     }
     *changeDb = change;
     return true;
+}
+
+// MARK: - The one analysis pass
+
+AsTrackAnalyzer* asTrackAnalyzerCreate(double engineRateHz,
+                                       uint32_t channels,
+                                       const uint8_t* roles) AUDIODSP_C_NOEXCEPT
+{
+    if (roles == nullptr || channels == 0U || channels > AdaptiveSound::kMaxChannels)
+    {
+        return nullptr;
+    }
+    std::array<AdaptiveSound::ChannelRole, AdaptiveSound::kMaxChannels> decoded{};
+    for (uint32_t ch = 0U; ch < channels; ++ch)
+    {
+        if (roles[ch] > static_cast<uint8_t>(AsChannelRoleMono))
+        {
+            return nullptr;
+        }
+        decoded[ch] = static_cast<AdaptiveSound::ChannelRole>(roles[ch]);
+    }
+    auto analyzer = AdaptiveSound::TrackAnalyzer::create(
+        engineRateHz, std::span<const AdaptiveSound::ChannelRole>(decoded.data(), channels));
+    if (!analyzer)
+    {
+        return nullptr;
+    }
+    auto* handle = new (std::nothrow) AsTrackAnalyzer();
+    if (handle != nullptr)
+    {
+        handle->analyzer = std::move(analyzer);
+    }
+    return handle;
+}
+
+bool asTrackAnalyzerFeed(AsTrackAnalyzer* analyzer,
+                         const float* const* channels,
+                         uint32_t channelCount,
+                         uint32_t frames) AUDIODSP_C_NOEXCEPT
+{
+    if (analyzer == nullptr || channels == nullptr)
+    {
+        return false;
+    }
+    return analyzer->analyzer->feed(std::span<const float* const>(channels, channelCount), frames);
+}
+
+bool asTrackAnalyzerFinish(AsTrackAnalyzer* analyzer, AsTrackAnalysis* out) AUDIODSP_C_NOEXCEPT
+{
+    if (analyzer == nullptr || out == nullptr)
+    {
+        return false;
+    }
+    return analyzer->analyzer->finish(*out);
+}
+
+uint32_t asTrackAnalyzerHistogram(const AsTrackAnalyzer* analyzer,
+                                  uint8_t variant,
+                                  AsLoudnessBin* out,
+                                  uint32_t capacity) AUDIODSP_C_NOEXCEPT
+{
+    if (analyzer == nullptr)
+    {
+        return 0U;
+    }
+    const std::span<const AsLoudnessBin> bins = analyzer->analyzer->histogram(variant);
+    const auto required = static_cast<uint32_t>(bins.size());
+    if (out != nullptr && capacity >= required)
+    {
+        std::ranges::copy(bins, out);
+    }
+    return required;
+}
+
+uint32_t asTrackAnalyzerProfile(const AsTrackAnalyzer* analyzer,
+                                uint8_t basis,
+                                uint16_t* out,
+                                uint32_t capacity) AUDIODSP_C_NOEXCEPT
+{
+    if (analyzer == nullptr)
+    {
+        return 0U;
+    }
+    const AdaptiveSound::TrackLoudnessProfile* profile = analyzer->analyzer->profile(basis);
+    if (profile == nullptr)
+    {
+        return 0U;
+    }
+    const size_t required = profile->bandPower.size();
+    if (out != nullptr && capacity >= required)
+    {
+        (void)AdaptiveSound::compactPowers(*profile, std::span<uint16_t>(out, required));
+    }
+    return static_cast<uint32_t>(required);
+}
+
+bool asTrackAnalyzerProfileInfo(const AsTrackAnalyzer* analyzer,
+                                uint8_t basis,
+                                AsCompactProfileInfo* info) AUDIODSP_C_NOEXCEPT
+{
+    if (analyzer == nullptr || info == nullptr)
+    {
+        return false;
+    }
+    const AdaptiveSound::TrackLoudnessProfile* profile = analyzer->analyzer->profile(basis);
+    if (profile == nullptr)
+    {
+        return false;
+    }
+    AsCompactProfileInfo result{};
+    result.sampleRate = profile->sampleRate;
+    result.bandsPerOctave = profile->bandsPerOctave;
+    result.bandCount = profile->bandCount;
+    result.blockCount = profile->blockCount;
+    result.blockStrideHops = profile->blockStrideHops;
+    *info = result;
+    return true;
+}
+
+void asTrackAnalyzerDestroy(AsTrackAnalyzer* analyzer) AUDIODSP_C_NOEXCEPT
+{
+    delete analyzer;
+}
+
+double asLoudnessPoolHistograms(const AsLoudnessBin* const* histograms,
+                                const uint32_t* counts,
+                                uint32_t members) AUDIODSP_C_NOEXCEPT
+{
+    if (histograms == nullptr || counts == nullptr)
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    std::vector<std::span<const AsLoudnessBin>> spans;
+    spans.reserve(members);
+    for (uint32_t member = 0U; member < members; ++member)
+    {
+        if (histograms[member] == nullptr && counts[member] > 0U)
+        {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        spans.emplace_back(histograms[member], counts[member]);
+    }
+    return AdaptiveSound::poolHistogramsLufs(spans);
+}
+
+AsLoudnessProfile* asLoudnessProfileFromCompact(const AsCompactProfileInfo* info,
+                                                const uint16_t* powers,
+                                                uint32_t count) AUDIODSP_C_NOEXCEPT
+{
+    if (info == nullptr || (powers == nullptr && count > 0U))
+    {
+        return nullptr;
+    }
+    return wrap(AdaptiveSound::profileFromCompact(info->sampleRate,
+                                                  info->bandsPerOctave,
+                                                  info->bandCount,
+                                                  info->blockCount,
+                                                  info->blockStrideHops,
+                                                  std::span<const uint16_t>(powers, count)));
 }

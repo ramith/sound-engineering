@@ -19,11 +19,15 @@
 // (review-sota §5). Measured: ≤ 0.112 dB against the BS.1770 change of the actually filtered track
 // on the 7-track corpus (engine-plan §4.1, s4b).
 //
-// THE BAND GRID. Band 0 is [0, 20 Hz). Band b ≥ 1 is [e_{b−1}, e_b) with edges e_i = 20·2^(i/24),
-// every edge below Nyquist; the last band runs to Nyquist inclusive. The centre of band b is the
-// geometric mean of its edges (the lower edge floored at 10 Hz): 14.1 Hz for band 0. 244 bands at
-// 44.1 kHz, 247 at 48 kHz, 295 at 192 kHz. (The Python oracle stops its edges at 20·2^(263/24) ≈
-// 39.8 kHz; above 88.2 kHz the grid here continues to Nyquist instead of lumping one wide top band.)
+// THE BAND GRID, a field of the profile (bandsPerOctave = B; R1.1-B §13.3). Band 0 is [0, 20 Hz). Band
+// b ≥ 1 is [e_{b−1}, e_b) with edges e_i = 20·2^(i/B), every edge below Nyquist; the last band runs to
+// Nyquist inclusive. The centre of band b is the geometric mean of its edges (the lower edge floored at
+// 10 Hz): 14.1 Hz for band 0. The profiler's grid is 1/24 octave (B = 24): 244 bands at 44.1 kHz, 247 at
+// 48 kHz, 295 at 192 kHz. (The Python oracle stops its edges at 20·2^(263/24) ≈ 39.8 kHz; above 88.2 kHz
+// the grid here continues to Nyquist instead of lumping one wide top band.) A 1/12-octave grid (B = 12; 124
+// bands at 48 kHz) is supported too, for a persisted profile at half the size; it is not used: on tonal
+// programmes its band centres miss the curve by 0.05–0.10 dB of ΔL (lane 1-B's measurement). The analysis
+// pass persists its profile on this 1/24 grid as binary16 (compactPowers / profileFromCompact below).
 //
 // THE LIMITS (amendment 19). The predictor reads each band's energy at the band's CENTRE, on a
 // 1/24-octave grid whose low bands are narrower than the 400 ms block's 2.5 Hz FFT bins. Where a
@@ -60,8 +64,10 @@ namespace AdaptiveSound
 
     namespace TrackLoudness
     {
-        // The band grid: 1/24 octave from a 20 Hz first edge.
-        constexpr double kBandsPerOctave = 24.0;
+        // The band grids, from a 20 Hz first edge: 1/24 octave (the profiler's, and the persisted profile's);
+        // 1/12 octave (supported, unused — see THE BAND GRID).
+        constexpr uint32_t kBandsPerOctave = 24U;
+        constexpr uint32_t kCoarseBandsPerOctave = 12U;
         constexpr double kFirstEdgeHz = 20.0;
         constexpr double kLowestCentreFloorHz = 10.0; // band 0's lower edge for its centre
         // The profiler's domain: any rate the decoders hand us up to 192 kHz.
@@ -71,25 +77,39 @@ namespace AdaptiveSound
         // scratch, so a prediction never allocates.
         constexpr uint32_t kMaxBandCount = 300U;
 
-        // Edge i of the grid: 20·2^(i/24) Hz.
-        [[nodiscard]] double edgeHz(uint32_t edge) noexcept;
+        // Edge i of the 1/bandsPerOctave grid: 20·2^(i/bandsPerOctave) Hz.
+        [[nodiscard]] double edgeHz(uint32_t edge,
+                                    uint32_t bandsPerOctave = kBandsPerOctave) noexcept;
 
         // The number of bands at `sampleRate`: band 0 plus one band per edge below Nyquist. 0 for a
-        // rate outside [kMinSampleRateHz, kMaxSampleRateHz] or non-finite.
-        [[nodiscard]] uint32_t bandCount(double sampleRate) noexcept;
+        // rate outside [kMinSampleRateHz, kMaxSampleRateHz] or non-finite, or a grid other than 1/12
+        // or 1/24 octave.
+        [[nodiscard]] uint32_t bandCount(double sampleRate,
+                                         uint32_t bandsPerOctave = kBandsPerOctave) noexcept;
 
         // The centre (Hz) of `band` at `sampleRate`: √(max(lower edge, 10 Hz) · upper edge), the
-        // last band's upper edge being Nyquist. Requires band < bandCount(sampleRate).
-        [[nodiscard]] double bandCentreHz(uint32_t band, double sampleRate) noexcept;
+        // last band's upper edge being Nyquist. Requires band < bandCount(sampleRate, bandsPerOctave).
+        [[nodiscard]] double bandCentreHz(uint32_t band,
+                                          double sampleRate,
+                                          uint32_t bandsPerOctave = kBandsPerOctave) noexcept;
+
+        // THE COMPACT FORM's storage (the persisted −ΔL profile, C2): each band power p is kept as the
+        // IEEE-754 binary16 bit pattern of p·2^kCompactPowerScaleLog2, rounded to nearest. The fixed
+        // scale puts binary16's range where band powers live: up to 64 (a band +18 dB over a full-scale
+        // sine's 0.5; above it saturates at binary16's largest finite value), normal down to 6e-8
+        // (−72 dB), subnormal down to 6e-11. binary16 alone (normal from 6e-5) would flush every band of
+        // a quiet passage to zero.
+        constexpr int kCompactPowerScaleLog2 = 10;
     } // namespace TrackLoudness
 
     // A track's (or a prefix's) gated block spectra. Built only by TrackLoudnessProfiler; read-only
     // once shared.
     struct TrackLoudnessProfile
     {
-        double sampleRate = 0.0;       // the decoded track's rate (sets the band grid)
+        double sampleRate = 0.0; // the decoded track's rate (sets the band grid)
+        uint32_t bandsPerOctave = TrackLoudness::kBandsPerOctave; // the band grid (24 or 12)
         uint32_t channelCount = 0U;    // the decoded channels (≤ kMaxChannels)
-        uint32_t bandCount = 0U;       // TrackLoudness::bandCount(sampleRate)
+        uint32_t bandCount = 0U;       // TrackLoudness::bandCount(sampleRate, bandsPerOctave)
         uint32_t blockCount = 0U;      // the kept blocks
         uint32_t blockStrideHops = 1U; // kept block j starts at j·blockStrideHops·100 ms
         uint64_t analysedFrames = 0U;  // the PCM frames fed before this profile was taken
@@ -143,6 +163,24 @@ namespace AdaptiveSound
     // seam (music on both sides) from one across silence.
     [[nodiscard]] double blockLoudnessLufs(const TrackLoudnessProfile& profile,
                                            uint32_t index) noexcept;
+
+    // The compact form of `profile` (the persisted −ΔL profile, C2): its band powers as binary16 bit
+    // patterns (TrackLoudness::kCompactPowerScaleLog2), block-major, into `out`. Returns the values
+    // required (blockCount × bandCount); writes nothing when `out` is shorter.
+    [[nodiscard]] size_t compactPowers(const TrackLoudnessProfile& profile,
+                                       std::span<uint16_t> out) noexcept;
+
+    // A whole-track profile rebuilt from a compact one: `powers` (blockCount × bandCount binary16 bit
+    // patterns, block-major) on the 1/bandsPerOctave grid at `sampleRate`. nullptr for a rate outside
+    // the grid's domain, a grid other than 1/12 or 1/24, a bandCount that is not that grid's at that
+    // rate, a stride of 0, a count other than blockCount × bandCount, or a non-finite pattern.
+    [[nodiscard]] std::shared_ptr<const TrackLoudnessProfile>
+    profileFromCompact(double sampleRate,
+                       uint32_t bandsPerOctave,
+                       uint32_t bandCount,
+                       uint32_t blockCount,
+                       uint32_t blockStrideHops,
+                       std::span<const uint16_t> powers);
 
     // The pink-noise prior (engine-plan §4.3): a one-block profile of K-weighted pink noise on the
     // band grid at `sampleRate`, at −23 LUFS. Pink noise has equal power per octave, so each
