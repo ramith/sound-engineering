@@ -85,6 +85,17 @@ these**; the semgrep rule `test-no-raw-time` bans `Thread.sleep`, `Task.sleep`, 
   `ImmediateClock()` makes a debounce a no-op (then await the task it started); `TestClock` only when the
   coalescing itself is under test, after `until` shows the sleep is pending.
 - **Settings write**: `SettingsStore.pendingWrite`; `await store.pendingWrite?.value`.
+- **A shuffle pass's edits, counted**: `ShufflePassTally` (PlaybackQueueKit), a task-local the app never holds. Run the
+  edit inside `ShufflePassTally.$current.withValue(tally) { … }` (a task started inside inherits it) and read
+  `tally.slotsMoved`: the slots the pass's line writers (insert, remove, `follow`'s one-pass build) wrote or shifted.
+  A big edit is proven linear by that count, never by a clock (rule 2): `ShufflePassTests` VM-SP-16,
+  `ShuffleBulkEditTests`.
+- **The queue writer's book**: `AudioViewModel.queueStateBook` (`QueueStateBook`). Its `recordsBuilt` counts the whole
+  resume records `queueStateNow()` built, so a test proves that a write of the playhead alone (the 5 s cadence, a pause,
+  a scrub) builds none: `QueueStateEdgeTests` VM-QS-15.
+- **An open waiting for the store**: `LibraryModel.isWaitingForStore` is true while a file open (Open With, a drop)
+  waits in `openedStore()` for the library store to open. Wait for it before the test opens the store: BI-P05
+  (`BreakItPlayerTests`).
 - **The `[UX]` log**: `logUX` writes through `UXLog.sink` (`NSLog` in the app). `QuietLog.install()`
   (Tests/AdaptiveSoundTests) points it at the ring; the rigs and `IsolatedDefaults`-using view-model tests
   call it. Keep the sink a *struct holding a closure*: a bare closure in a `Mutex` is re-wrapped on every

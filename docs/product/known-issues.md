@@ -32,6 +32,17 @@ red test on a reference branch) where one exists, the place in the code, and whe
 > auto-leveller, KI-PURE-01 and the two Pure rows under Known limitations); "Use this drive" (LIB-VOL-1) and the
 > search rule (KI-LIB-09) carry the decided behaviour. R1.1-B lands in two PRs, the player PR first. Nothing closed.
 >
+> **Amended 2026-10-28** at the close of R1.1-B's player half (PR 1, branch `r1.1b/integration`;
+> [sprint record](../sprints/r1-1b-record.md)). Closed: KI-PB-03 (shuffle as a permutation with history), KI-PB-21 (the
+> queue's resume record, one writer), KI-LIB-09 (one search rule) and LIB-VOL-1 ("Use this drive"), under
+> [Closed](#fixed-in-r11-b--the-player-half-pr-1-branch-r11bintegration); the Known limitations row on playing a single
+> file from outside the library is delivered. Added: KI-PB-22 (a FLAC with very short blocks may crash the app —
+> suspected), KI-PB-23 and KI-LIB-12, found on the sound half's test corpus (the record's
+> [Test material](../sprints/r1-1b-record.md#test-material) describes it and its gaps); KI-PB-24, KI-LIB-13 and
+> KI-UI-04, left by the player fix round; KI-LIB-14, the half of KI-LIB-09 the search rule did not touch; and, under
+> Known limitations, the one limitation LIB-VOL-1 still accepts. KI-MC-02 is amended: the same fault at rates other
+> than 48 kHz, through the resampler.
+>
 > - **Severity:** **HIGH** = wrong audio, a stuck state, or user data lost; **MEDIUM** = visibly wrong behaviour that
 >   has a workaround; **LOW** = rare, cosmetic or wording; **internal** = a developer-only follow-up.
 > - **Scheduled:** **R1.1-A** / **R1.1-B** (the two halves of R1.1), the **Engine sprint**, a later roadmap sprint,
@@ -57,14 +68,13 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-MC-02 | Channel roles come from positions, not the file's labels: an ALAC / AAC 5.1 file plays its centre on the left; 3-, 4-, 5- and 7-channel files fall back to stereo | HIGH | R1.1-B, before the fold; re-proved in the Engine sprint's acceptance (2026-10-23) | US-R1F-08 |
 | KI-PB-18 | Dragging the scrubber to the end of a track that isn't 48 kHz stops playback for good | HIGH | R1.1-A | US-R1F-11 |
 | KI-GAP-05 | An Enhanced gapless join to a file with a different channel count drops channels | HIGH | Engine sprint | US-R1F-02 |
+| KI-PB-22 | A FLAC with very short blocks (under 192 samples) may crash the app — suspected: proven in a standalone probe, not yet in the app | HIGH if proven | R1.1-B (proved or cleared in the whole-app break-it; fixed in the sound PR's fix round if proven) | US-PLAY-06 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | Engine sprint | US-R1F-02 |
-| KI-PB-03 | Shuffle on + Repeat off never ends the queue | MEDIUM | R1.1-B (shuffle as a permutation) | US-R1F-01 |
 | KI-PB-06 | After a relaunch the restored song shows `--:--` and its scrubber is dead until Play | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-08 | Clicking the paused current queue row restarts it from 0:00 | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-10 | Add to Queue onto an empty queue leaves Play / Space disabled | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-11 | "Restore previous queue" restores the wrong queue | MEDIUM | pool | US-R1F-04 |
 | KI-PB-12 | A single click on a playlist row replaces the queue and plays | MEDIUM | pool | US-R1F-04 |
-| KI-PB-21 | A crash or force-quit loses your place in the queue | MEDIUM | R1.1-B (atomic queue restore) | US-R1F-01 |
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-GAP-02 | At a resampled seam to another rate or width, the title and track B's gain switch up to ~0.2 s early | MEDIUM | Engine sprint (Leveling's seam tolerance until then, 2026-10-23) | US-R1F-02 |
 | KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
@@ -73,7 +83,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-SND-07 | The EQ-only −0.1 dBTP ceiling is chosen by the transport alone, never by the output's rate — a wired DAC at 44.1 or 96 kHz would get it today, into an unmeasured conversion after the engine | LOW (latent: no non-48 kHz wired output in use) | Engine sprint (decided 2026-10-23: the rate condition; the conversion measured) | US-PE-03, NFR-QUAL-05 |
 | KI-DEV-03 | An Enhanced start just after a device connects can end silent or on the wrong device | MEDIUM | Engine sprint | EP-PLAYENGINE |
 | KI-LIB-02 | A folder whose walk fails outright says nothing; there is no Rescan control *(narrowed in R1.1-A: a paused folder says why)* | ~~MEDIUM~~ LOW | ~~R1.1-A~~ the rest: for triage | US-R1F-03 |
-| LIB-VOL-1 | A paused folder on a replaced or UUID-less drive stays paused; re-adding it loses play stats | MEDIUM | R1.1-B ("Use this drive") | US-R1F-03 |
 | KI-LIB-03 | A failed first metadata pass leaves "No Music Yet", with no retry | MEDIUM | pool | US-R1F-03 |
 | KI-LIB-04 | Dragging a multi-selection onto a playlist adds one song | MEDIUM | pool | US-R1F-04 |
 | KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5); its check list grew 2026-10-23 | US-ENG-07 |
@@ -84,6 +93,8 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-PB-15 | Recent says "Nothing Played Yet" when the store is not ready or the read failed | LOW | pool | US-R1F-04 |
 | KI-PB-16 | A change of the next song in the last moments before a seam can still play the old pick (D41 residual A2 / A2′) | LOW | Engine sprint (seam identity) | US-R1F-01 |
 | KI-PB-17 | A scrub back into a track that has already ended (nothing armed) is lost | LOW | Engine sprint (seam identity) | US-R1F-01 |
+| KI-PB-23 | A truncated file shows its full length and stops at the cut; what the app does then is not yet checked | LOW | R1.1-B (the whole-app break-it) | US-PLAY-06 |
+| KI-PB-24 | A loose queue slot whose file joins the library stays loose: not marked as playing in the Library, and not moved with the file | LOW | pool | US-LIB-02 |
 | KI-GAP-03 | A narrow false seam on a Pure → Enhanced restart | LOW | Engine sprint | US-R1F-02 |
 | ENH-001 | Short-track auto-advance is a reconfigure gap, not a seamless seam | LOW | Engine sprint | US-R1F-02 |
 | ENH-002 | The UI loudness readout is L/R-only on a >2-channel output | LOW | pool | US-R1F-07 |
@@ -95,9 +106,12 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-LIB-06 | Genres split on "/" ("Singer/Songwriter" → two tiles) | LOW | pool | US-R1F-04 |
 | KI-LIB-07 | Case / Unicode variants split artist and genre tiles | LOW | pool | US-R1F-04 |
 | KI-LIB-08 | Sorting Songs by Album orders each album's tracks by scan order | LOW | pool | US-R1F-04 |
-| KI-LIB-09 | Two Filter semantics (Songs: token prefix; grids: substring) | LOW | R1.1-B (one search rule) | US-R1F-14 |
 | KI-LIB-10 | An empty playlist says "No Tracks Yet" (the app says "songs") | LOW | pool | US-R1F-04 |
+| KI-LIB-12 | A 5.1 Opus file is admitted by the scan but cannot play (macOS 26 refuses multichannel Opus) | LOW | R1.1-B (the whole-app break-it) | US-PLAY-06 |
+| KI-LIB-13 | macOS 26's NFC / NFKC turns a supplementary-plane letter followed by a combining accent into another character, so search loses that word | LOW (a known limitation) | none — re-index when SR-4 fails | US-R1F-14 |
+| KI-LIB-14 | A rail jump clears the grids' Filter but keeps the Songs filter (the rest of KI-LIB-09) | LOW | pool | US-R1F-04 |
 | KI-UI-01 | VoiceOver keeps the app fairly busy while a song plays — its code causes are fixed (R1.1-A, live readouts); not yet confirmed with VoiceOver | LOW | R1.1-A (founder's VoiceOver check) | US-R1F-15 |
+| KI-UI-04 | "Search Library" (⌘F) replaces the Edit menu's Find, Spelling and Substitutions items: SwiftUI has no placement for Find alone | LOW (a known limitation) | none | US-R1F-14 |
 | KI-ENG-02 | The main-thread stall self-test lacks the breaker's two extra modes and the 5 ms bound | internal | pool | US-R1F-07 |
 | KI-ENG-04 | The `eq-light-folded` picture sheet flakes in the renderer | internal | pool | US-R1F-07 |
 | KI-ENG-08 | A dead "Already in Queue" toast, and a negative index into `playTrack(at:)` | LOW | next time the file is touched | US-R1F-18 |
@@ -114,6 +128,9 @@ red test on a reference branch) where one exists, the place in the code, and whe
 
 *(KI-PB-04 — Space during a slow start restarted the song — and KI-PB-09 — a double-click on a queue row started it twice — were fixed in R1.1-A, with KI-PB-19 and KI-PB-20 (council C-15, C-17); see [Closed](#fixed-in-r11-a--playback-correctness-branch-r11atransport).)*
 
+*(KI-PB-03 — shuffle with Repeat off never ended the queue — was closed in R1.1-B with KI-PB-21, the queue's resume
+record (council C-16, C-65); see [Closed](#fixed-in-r11-b--the-player-half-pr-1-branch-r11bintegration).)*
+
 ### KI-PB-02 — Repeat turned off mid-song moves on, but with a gap
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** sweep ledger, "Logged post-R1" (Sprint G) · **Scheduled (2026-10-14):** Engine sprint · **Forward:** US-R1F-02.
@@ -122,14 +139,6 @@ The view model re-arms correctly (`AudioViewModel+Playlist.swift:150-159` → `a
 seamlessly: on 48 kHz files the gap is most likely KI-GAP-01. ~~On Pure the re-arm is refused (KI-PB-01).~~ *(Since PR
 #88, D41: on Pure the re-arm is applied — the old pick comes off at once and the new one arms when its file opens; a
 pick still opening when the song ends, or one of another rate or width, gives a short gap and the right song.)*
-
-### KI-PB-03 — Shuffle on + Repeat off never ends the queue
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** sweep ledger, "Logged post-R1" · **Scheduled (2026-10-14):** R1.1-B (shuffle as a permutation with history, council C-16 — it also stops repeats and a random Previous) · **Forward:** US-R1F-01.
-
-`QueueAdvance.nextIndex` returns a random pick before the end-of-queue check, and nothing records which songs have
-played (`Sources/PlaybackQueueKit/QueueAdvance.swift:38-45`). With Shuffle on and Repeat off, random songs repeat
-forever.
 
 ### KI-PB-06 — After a relaunch the restored song shows `--:--` and its scrubber is dead
 
@@ -222,6 +231,51 @@ state-machine work).
 
 `ended` stays latched across a seek, so a scrub back into a track that already ended with nothing armed is lost: the
 next tick starts the next track (architecture §2.5, "What plays next").
+
+### KI-PB-22 — A FLAC with very short blocks may crash the app
+
+**Status:** SUSPECTED — proven in a standalone probe, not yet in the app · **Severity:** HIGH if proven (the app quits
+mid-play) · **Source:** the R1.1-B test corpus, 2026-10-26 (the sprint record's
+[Test material](../sprints/r1-1b-record.md#test-material), corpus finding 4) · **Scheduled (2026-10-28):** R1.1-B —
+proved or cleared in the whole-app break-it; fixed in the sound PR's fix round if proven · **Forward:** US-PLAY-06.
+
+Apple's decoder opens a FLAC whose blocks are shorter than 192 samples, but reading it throws `fmt?`, and setting
+`AVAudioFile.framePosition` on it raises an Objective-C exception nothing catches, which ends the process. The app sets
+`framePosition` in two places: at every start and restart of a file played through the resampler — every file not at
+48 kHz (`primeEnhancedResamplerLocked`, `Sources/AdaptiveSound/AudioEngineBridge+EnhancedResampler.swift:58`) — and when
+a passthrough seam schedules the next file from its top (`scheduleFileChainingPassthrough`,
+`AudioEngineBridge+GaplessRoll.swift:272`). Whether the app reaches either line with such a file, and what it does
+then, is not yet checked.
+
+### KI-PB-23 — A truncated file shows its full length and stops at the cut
+
+**Status:** OPEN — what the app does at the cut is not yet checked · **Severity:** LOW · **Source:** the R1.1-B test
+corpus, 2026-10-26 (the record's [Test material](../sprints/r1-1b-record.md#test-material), corpus finding 5) ·
+**Scheduled (2026-10-28):** R1.1-B — checked in the whole-app break-it · **Forward:** US-PLAY-06.
+
+Apple's decoder opens a file cut short (a download that stopped, a damaged copy) with the length its header states,
+then reading it throws at the cut. So the song is listed, and its scrubber drawn, at the full length. How the app
+handles the throw — the song's end, an error, the next song — is not yet checked.
+
+### KI-PB-24 — A loose queue slot stays loose after its file joins the library
+
+**Status:** OPEN · **Severity:** LOW · **Source:** the R1.1-B player break-it (M1's wider case) and fix round,
+2026-10-26 · **Scheduled (2026-10-28):** pool · **Forward:** US-LIB-02.
+
+A file played from outside the library is a loose slot: no `trackID` (`AudioFile(looseFileAt:)`). If the file then
+joins the library while it is in the queue — added to a playlist from the queue, or reached by a scan of a folder
+around it — the slot stays loose. The live queue re-reads only its library songs when the library changes
+(`relinkLibrarySongs`, `Sources/AdaptiveSound/AudioViewModel+QueueHydration.swift:235-237`), the record keeps the slot
+as `.loose(path:)`, and the restore brings a loose slot back loose (`resolve`, `:160-175`), so it stays loose across a
+relaunch too, for as long as it is in the queue. Its plays are still counted, by its url — the play counter's
+fallback for a song with no id (`AudioViewModel+PlayTracking.swift:69-74`). What it misses is what keys on the id: the
+Library's lists and History do not mark it as playing (`playingTrackID`, `AudioViewModel+PlayingTrack.swift:10-13`;
+`UI/Playlist/QueueHistoryList.swift:63-67`), Now Playing shows its embedded tags, not the library's
+(`NowPlayingController.swift:191-195`), and when "Use this drive" moves the file the slot keeps the old path (`relink`,
+`AudioViewModel+QueueHydration.swift:251`). The fix the fix round
+named: the relink also resolves the loose slots by url, through the store's batched read
+(`LibraryStore.tracksDisplay(urls:)`). A file opened while the store is still opening is not this case: the open waits
+for the store (BI-P05, closed with KI-PB-21).
 
 ---
 
@@ -413,6 +467,11 @@ into the RT tap for a path that is not yet primary.
 
 ## Library and playlists
 
+*(LIB-VOL-1 — a paused folder on a replaced drive stayed paused — and KI-LIB-09 — two Filter semantics — were closed in
+R1.1-B ("Use this drive"; one search rule, council C-54, C-61); see
+[Closed](#fixed-in-r11-b--the-player-half-pr-1-branch-r11bintegration). KI-LIB-09's rail-jump half is KI-LIB-14, below;
+LIB-VOL-1's accepted rest is under [Known limitations](#known-limitations-by-design-or-not-yet-built).)*
+
 ### KI-LIB-02 — ~~Paused / failed folders are invisible; an emptied folder keeps its songs~~ A folder whose walk fails outright says nothing; there is no Rescan control
 
 **Status:** OPEN, narrowed in R1.1-A (a paused folder says why — below) · **Severity:** ~~MEDIUM~~ LOW (the rest) ·
@@ -445,21 +504,6 @@ folder it cannot open at all is still refused, `.incompleteWalk`. Showing a paus
 its treatment. Also: the volume monitor does not walk a folder whose drive was just unplugged (`handleVolumeChange`
 walks only reachable folders), so its state can read "watching" until a walk of it is refused.)* *(Both fixed in
 R1.1-A, above.)*
-
-### LIB-VOL-1 — A music folder is bound to its drive; a sweep needs evidence (R1 sweep-evidence fix)
-
-**Status:** OPEN (accepted limitations) · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-B ("Use this drive", council C-54) · **Forward:** US-R1F-03.
-
-A folder is bound to its drive's volume UUID (the startup disk as itself, since its UUID changes with the Mac); one on a volume that reports no UUID (some network volumes; FAT32/exFAT report one on macOS 26) stays unbound and is walked only while some of its songs are where the library has them — so a folder all of whose files were moved or renamed at once while unbound (on such a volume, or between the v8 upgrade and its first walk) stays paused until it is removed and re-added; so does a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7")~~; and a folder with a subfolder the app can never read never has its deleted songs swept~~ (`LibraryStore+Roots`, `SweepRefusal`). *(The struck limitation is fixed in R1.1-A, council C-55: the walk spares only the songs under what it could not read — see KI-LIB-02.)*
-
-**Do not remove and re-add a paused folder as a workaround:** removing a folder deletes every song of it that no
-playlist references, so re-adding it brings those songs back with new ids — their play counts, loved flags and
-ratings are lost. ~~A lossless "use this drive" action on a paused folder is on the council follow-up list (founder,
-2026-10-14).~~ **"Use this drive" (R1.1-B; founder, 2026-10-25):** a silent rebind of the paused folder to its new
-drive — the folder's songs found there (matched by relative path + size) keep their ids, plays, loves, ratings and
-playlist membership; the songs not found on the new drive are removed, with their history (no preview); refused when
-none of the folder's songs are found — nothing changes, and the app says it is the wrong drive. US-R1F-03. Also narrow: the first walk after the v8 upgrade binds whatever drive is at the folder's path, so a
-same-name *backup* drive mounted at that moment can be bound instead of the real one (found by the R1 break-it).
 
 ### KI-LIB-03 — A failed first metadata pass leaves "No Music Yet", with no retry
 
@@ -499,23 +543,49 @@ genre names are not NFC-normalised (`LibraryTypes.swift`; artists are). "Rock" a
 The Album and toggled-Artist sorts are title / name then row id, with no disc / track keys
 (`LibraryStore+BrowseReads.swift:306-309`), unlike the default artist-album-track sort (`:289-291`).
 
-### KI-LIB-09 — Two Filter semantics
-
-**Status:** OPEN · **Severity:** LOW · **Source:** breaker A post-R1 #7 · **Scheduled (2026-10-14):** R1.1-B (one search rule, council C-61) · **Forward:** ~~US-R1F-04~~ US-R1F-14.
-
-Songs filters by FTS token prefix (`LibraryStore+Search.swift:47`), the grids by substring
-(`LibraryBrowseKit/FacetTextFilter.swift:16`); "eatles" finds nothing in Songs. A rail jump clears the grids' filter but
-not the Songs filter (`LibraryBrowseModel+Sidebar.swift:24-27`).
-
-*(R1.1-B, founder 2026-10-25: one word-start rule everywhere — a word must start with what is typed — so the grids
-stop matching substrings and "eyon" no longer finds "Beyoncé" in the Albums / Artists / Genres filters (accepted);
-each tab keeps its own sort and ⌘F's results are ranked — US-R1F-14.)*
-
 ### KI-LIB-10 — An empty playlist says "No Tracks Yet"
 
 **Status:** OPEN · **Severity:** LOW (wording) · **Source:** breaker A post-R1 #14 · **Scheduled (2026-10-14):** pool · **Forward:** US-R1F-04.
 
 `UI/Playlist/PlaylistDetailView.swift:88`; the rest of the app says "songs".
+
+### KI-LIB-12 — A 5.1 Opus file is admitted by the scan but cannot play
+
+**Status:** OPEN — what the app shows is not yet checked · **Severity:** LOW · **Source:** the R1.1-B test corpus,
+2026-10-26 (the sprint record's [Test material](../sprints/r1-1b-record.md#test-material), corpus finding 5) ·
+**Scheduled (2026-10-28):** R1.1-B — checked in the whole-app break-it · **Forward:** US-PLAY-06.
+
+macOS 26's decoder opens stereo Ogg Opus (KI-LIB-05, closed in R1.1-A) but refuses a multichannel one (`fmt?`), while
+the scan admits every `.opus` file (`LibraryScanner.supportedExtensions`,
+`Sources/LibraryScan/LibraryScanner.swift:61-64`). So a 5.1 Opus file is listed as a song it cannot play. What the
+app shows when it is played is not yet checked.
+
+### KI-LIB-13 — macOS 26 turns a supplementary-plane letter followed by a combining accent into another character
+
+**Status:** OPEN (a known limitation: the platform's) · **Severity:** LOW · **Source:** the R1.1-B player fix round,
+2026-10-26 (found while pinning the search index's form) · **Scheduled (2026-10-28):** none — re-index when SR-4 fails
+· **Forward:** US-R1F-14.
+
+macOS 26's NFC and NFKC (`precomposedStringWithCanonicalMapping` / `…WithCompatibilityMapping`) compose a letter outside
+the Basic Multilingual Plane followed by a combining mark as if it were the BMP character with the same low 16 bits:
+U+200A8 U+0301 (a CJK ideograph and an acute accent) becomes U+0385, U+21FBF U+0301 becomes U+1FCE — both Greek accent
+signs, which are no word characters (re-run on macOS 26, 2026-10-28). Search reads every title and every query through
+NFKC (`SearchRule.normalized`, `Sources/LibraryStore/SearchRule.swift:56`), so both halves agree, but such a word is
+lost to search: the title can't be found by it. VerifyLibraryStore SR-4 pins the behaviour: it hashes `normalized`'s
+output over every assigned scalar — alone, after a word character, after a symbol, and followed by U+0301 — against
+the form's golden
+(`Sources/VerifyLibraryStore/ChecksSearchForm.swift:1-11`, `:35`), so an OS that fixes the composition fails SR-4,
+which asks for a new form and a re-index. The same composition reaches the store's path normal form for a file name
+holding such a pair (`PathNormalizer`, `Sources/LibraryStore/PathNormalizer.swift:48`, `:55`); not checked in the app.
+
+### KI-LIB-14 — A rail jump clears the grids' Filter but keeps the Songs filter
+
+**Status:** OPEN (the half of KI-LIB-09 the one search rule did not touch) · **Severity:** LOW · **Source:** breaker A
+post-R1 #7 (with KI-LIB-09) · **Scheduled (2026-10-28):** pool · **Forward:** US-R1F-04.
+
+A rail jump starts a category fresh, with no Filter text (S10.8 D6), but clears only the grids' Filter
+(`selectCategory`, `Sources/AdaptiveSound/LibraryBrowseModel+Sidebar.swift:24-31`); the Songs filter (`searchQuery`,
+`LibraryBrowseModel.swift:109`) is never cleared, so a rail jump to Songs keeps the last search.
 
 ---
 
@@ -539,6 +609,19 @@ run (or Activity Monitor's CPU) with VoiceOver on, Now Playing showing, a song p
 
 *(KI-ENG-01 — the spectrum hand-off's data race — was fixed in R1.1-A; see
 [Closed](#fixed-in-r11-a--live-readouts-branch-r11areadouts).)*
+
+### KI-UI-04 — "Search Library" (⌘F) replaces the Edit menu's Find, Spelling and Substitutions items
+
+**Status:** OPEN (a known limitation: SwiftUI's) · **Severity:** LOW · **Source:** the R1.1-B player review, N8
+(2026-10-26) · **Scheduled (2026-10-28):** none · **Forward:** US-R1F-14.
+
+⌘F is the Library's search from any tab (R1.1-B, US-R1F-14), so its command replaces the Edit menu's text-editing group
+(`CommandGroup(replacing: .textEditing)`, `Sources/AdaptiveSound/AdaptiveSound.swift:161-169`): the app has no document
+text to find in, and one ⌘F means one thing. SwiftUI has no placement for the Find items alone: `.textEditing` also
+holds Spelling and Grammar and Substitutions, which leave the Edit menu with them (by Apple's placement documentation;
+not checked in the running app). A text field's own context menu still offers both. Keeping the group beside "Search
+Library" would list two ⌘F items; rebuilding Spelling and Substitutions by hand would lose their check marks; editing
+AppKit's main menu under SwiftUI is fragile, because SwiftUI rebuilds it. The reason is recorded beside the command.
 
 ### KI-ENG-02 — The main-thread stall self-test lacks the breaker's extra modes
 
@@ -624,6 +707,17 @@ An ALAC / AAC 5.1 file, whose order differs from the MPEG order, is routed by po
 left; 3-, 4-, 5- and 7-channel files fall back to stereo; 8 channels are forced to 7.1 A. The R1 release notes name
 the ALAC / AAC case.
 
+*(Amended 2026-10-28: the same family at rates other than 48 kHz.)* R1.1-B's design verify — its breaker, finding F1 —
+found it on the Enhanced resampler path too. A file not at 48 kHz is converted from its own channel layout straight to
+the graph's (`StreamingResampler(from: file.processingFormat, to: outputFormat)`,
+`Sources/AdaptiveSound/AudioEngineBridge+EnhancedResampler.swift:169-170`), whose layout is MPEG 5.1 A or 7.1 A by
+channel count (`Sources/AudioFormatKit/MultichannelFormat.swift:53-63`), so Apple's converter maps the channels by
+layout: a 7.1 file with back surrounds loses them; an AAC 5.1 file is reordered to the graph's order, so roles read
+from the file's own labels would land on the wrong channels; and a 3-, 4-, 5- or 7-channel file, whose count has no
+layout and falls back to a stereo graph (`AudioEngineBridge+Reconfigure.swift:110-119`), keeps only L and R. It is
+fixed first in R1.1-B's sound build, by lane 2 before the fold. It can be reproduced on demand with the test corpus:
+see the sprint record's [Test material](../sprints/r1-1b-record.md#test-material), corpus finding 1.
+
 ### KI-GAP-05 — An Enhanced gapless join to a file with a different channel count drops channels
 
 **Status:** OPEN · **Severity:** HIGH (wrong audio) · **Source:** council C-24 (BR-7, D39 A4) · **Scheduled
@@ -635,14 +729,8 @@ council default: a join that changes the format is an honest short gap with ever
 
 *(KI-PB-19 — Playing shown over silence after a quick Stop-then-Play — and KI-PB-20 — a queued song skipped — were fixed in R1.1-A (council C-15, C-17); see [Closed](#fixed-in-r11-a--playback-correctness-branch-r11atransport).)*
 
-### KI-PB-21 — A crash or force-quit loses your place in the queue
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-65 (LIB-12; product triage #3) · **Scheduled
-(2026-10-14):** R1.1-B (atomic queue restore) · **Forward:** US-R1F-01.
-
-The queue cursor reaches UserDefaults only on a clean quit (`AudioViewModel+Lifecycle.swift:125`), and the queue
-mirror's debounce can race its quit-flush (`AudioViewModel+QueueMirror.swift:25-36`), although the kit already has a
-coalescing writer for exactly this (`LibraryBrowseKit/CoalescingWriter.swift`).
+*(KI-PB-21 — a crash or force-quit lost the place in the queue — was closed in R1.1-B (council C-65); see
+[Closed](#fixed-in-r11-b--the-player-half-pr-1-branch-r11bintegration).)*
 
 ### KI-SND-02 — Enhanced sample-rate conversion rolls off the treble and lets aliases through
 
@@ -800,7 +888,8 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | **Every processing stage is Enhanced-only** — the EQ and crossfeed today; Leveling, Loudness, correction, Clarity and Spatial as they arrive — and in Pure each control shows one shared **"Not in bit-perfect mode"** state (first instance R1.1-B with Leveling — its row reads "Leveling off (bit-perfect)", founder 2026-10-25 — reused by every later stage; the Pure badge lists what is skipped); the Pure card says in one sentence why there are two "untouched" states (Pure, and Enhanced with nothing on ~~— over Bluetooth the same bits into the same encoder~~ *(corrected 2026-10-25: Pure declines Bluetooth, so over Bluetooth only Enhanced plays)*); Enhance in Pure reads "Not in bit-perfect mode — leave Pure?" with one tap | Decided 2026-10-23 ([roadmap reconciliation](roadmap-reconciliation-2026-10/README.md), cards 3 and 11, and the smaller items); ~~Leveling is the one stage that reaches Pure, on the device's volume (the row above)~~ *(2026-10-25: no stage reaches Pure in R1.1-B — leveling in Pure, on the device's volume, is deferred until the USB DAC; the row above)* | R1.1-B: US-R1F-20 (the shared row state; the Pure card's sentence); each later stage reuses it; Enhance's Pure line: US-UI-08 (S14-lite) |
 | **A loose song off the startup disk is never offered by Remove Missing**, only shown unavailable — even if it was really deleted | R1.1-A close-out AV-1 (option b): a loose song has no drive binding, so only on the startup disk can its folder being there prove it gone; elsewhere a same-named drive may stand in its drive's place (`FileAvailability`) | a volume column on loose rows (option a, v10) if it is ever wanted |
 | **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, 231a927; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
-| There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (67e4a50 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
+| ~~There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist~~ *(delivered in R1.1-B, PR 1: File ▸ Open… (⌘O), a Finder drop on the Library tab, Open With and a drop on the Dock icon play a file now without adding it to the library — a drop on the queue adds it at the end; Add Files… and a Finder drop add one to a playlist, as a song in no music folder; a loose file in the queue persists by its path, `QueueSlotRef.loose` (`Sources/PlaybackQueueKit/QueueSlotRef.swift`), with no `tracks` row — see KI-PB-21 under Closed, and KI-PB-24)* | ~~The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (67e4a50 in PR #23, "Now Playing is the queue only") and never re-added~~ *(the store's seam now has its UI callers: `PlaylistsModel+Add.swift`; the open paths: `AppDelegate.application(_:open:)`, `showOpenPanel`, `LibraryBrowseModel+LooseFiles.swift`)* | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
+| **A music folder on a drive that reports no volume UUID** (some network volumes), all of whose files were moved or renamed at once, stays paused: "Use This Drive…" finds none of its songs at their old paths and refuses. Removing and re-adding it brings the songs back with new ids, without their plays, loves and ratings | LIB-VOL-1's accepted rest (closed in R1.1-B): such a folder is not bound to its drive and is walked only while some of its songs are where the library has them (`LibraryStore+Roots`, `SweepRefusal`); "Use this drive" matches a song by its path under the folder and its size (`LibraryScan/RootRebind.swift`) | — (accepted) |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool (council C-57) |
 | **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. Rare since R1.1-A: FFmpeg is an opt-in, used only for a file Apple can't open (Apple opens Ogg Opus and Vorbis on macOS 26). AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp` (Apple first; FFmpeg only if Apple can't open the file and it is on); `AudioEngineBridge+Gapless.swift:37-42` | US-PLAY-07 → S11-lite |
 | **FFmpeg plays only through Pure Mode**: a file only FFmpeg reads (FFmpeg on) plays in Pure on a device Pure can use; Enhanced decodes through Apple only, so there it can't play. FFmpeg turned off after it loaded stays in memory until the app quits (nothing new uses it) | R1.1-A (FD-3): Enhanced is `AVAudioFile`; Pure's decoder is `FileDecodeSource` | — |
@@ -809,6 +898,227 @@ These are not defects; each is a decision or a planned feature. They are listed 
 ---
 
 ## Closed
+
+### Fixed in R1.1-B — the player half (PR 1, branch `r1.1b/integration`)
+
+Council C-16, C-65, C-61 (its R1.1-B half) and C-54, with the founder's answers at R1.1-B's plan check, 2026-10-25
+(US-R1F-01, US-R1F-14, US-R1F-03; the loose files of US-LIB-02 and US-PLIST-02 are under *Known limitations*). Two
+lanes, transport and library, combined; then a code review and a break-it, and one fix round. Each lane's new tests
+were first seen failing against a planted bug. The break-it's red tests, BI-P01…BI-P10 (committed red at `b34acf8f`),
+pass after the fix round. Two of them changed at the fix, as the [sprint record](../sprints/r1-1b-record.md) says:
+BI-P05 was rewritten, because its stand-in store meant both "still opening" and "never opens", and now opens while the
+store is opening and checks that the open waits; BI-P01 / BI-P02's precondition required the reused id, which is the
+bug itself, and now requires the new song's id to be a new one. The lanes added migrations v10 (the queue's resume
+state) and v11 (the search index without the zero-width joiners); the fix round added v12 (a removed song's id is
+never handed to another) and v13 (a combining mark that follows no word is no word). All four are additive; the store
+is at v13 (`currentSchemaVersion`, `Sources/LibraryStore/Schema.swift:35`). The combined check after the fix round is
+in the record's [measured results](../sprints/r1-1b-record.md#measured-results).
+
+#### KI-PB-03 — Shuffle on + Repeat off never ends the queue
+
+**Status:** ✅ CLOSED in R1.1-B, "shuffle as a permutation with history; the queue's resume record, one writer"
+(council C-16). Shuffle is a pass (`ShufflePass`, PlaybackQueueKit): every song of the queue once, in an order drawn up
+front by Fisher–Yates from a generator whose whole state the pass keeps (`ShuffleGenerator`, SplitMix64), with the pass
+before it kept as its history. Next steps on through the pass; Previous walks back through what played, and Next after
+Previous goes on in the same order — it never re-rolls. Repeat off ends the queue after the pass; Repeat All starts a
+new pass that never begins with the song that just ended. At a pass's first song Previous goes back into the last pass
+with Repeat All and restarts the song with Repeat off, and Up Next keeps the queue's own order (both founder,
+2026-10-25). A Play Next, or a song picked mid-pass, plays now and counts as played; an added song goes to a random
+place after the song armed next, so the armed pick stands. `QueueAdvance` is queue order only (its random picker is
+gone), and `PlaybackOrder` composes Repeat One, the pass and queue order. The pass is part of the queue's resume
+record, so a relaunch brings back its order, place and history (KI-PB-21, below). Tests: in the Kit, `ShufflePassTests`
+VM-SP-01…17 (VM-SP-01: a 100-song pass plays each song once, then the queue ends; VM-SP-15: over 24,000 seeded
+5-song passes, each of the 24 orders of the last four songs is drawn 860–1,140 times) and `PlaybackOrderTests`
+VM-PO-01…16 (VM-PO-04: Repeat off ends the queue at a pass's end); on the real view model, `ShuffleTransportTests`
+VM-SH-01…12 (VM-SH-01: 100 songs, each heard once, then the queue ends, on the Enhanced and the Pure path). *The fix
+round:* "a shuffle pass's bulk edits write its line once, not once per song" (review S3) — an edit of many songs (an
+Add to Queue, a Play Next, the launch's join) builds the pass's line once, with the same random draws
+(`LineInterleave`, a Fenwick tree over the free places), where one insert per song shifted about 10⁸ slots on the main
+actor for a 20,000-song Add to Queue (VM-SP-16, VM-SP-17; `ShuffleBulkEditTests` VM-SB-01/02 on the view model, each
+counted through `ShufflePassTally`, never a clock); and removing the selected song under shuffle selects the pass's
+next song as a step on, not the row that slid in (review N2, in "a failed restore read keeps the writer closed; … a
+removal under shuffle selects the pass's next"; VM-SH-12). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** sweep ledger, "Logged post-R1" · **Scheduled (2026-10-14):** R1.1-B (shuffle as a permutation with history, council C-16 — it also stops repeats and a random Previous) · **Forward:** US-R1F-01.~~
+
+*(As found at `0215f777`:)* `QueueAdvance.nextIndex` returns a random pick before the end-of-queue check, and nothing
+records which songs have played (`Sources/PlaybackQueueKit/QueueAdvance.swift:38-45`). With Shuffle on and Repeat off,
+random songs repeat forever.
+
+#### KI-PB-21 — A crash or force-quit loses your place in the queue
+
+**Status:** ✅ CLOSED in R1.1-B, "the queue's resume state, one record written in one transaction" and "shuffle as a
+permutation with history; the queue's resume record, one writer" (council C-65). The queue — its slots, the selected
+one and the shuffle pass — is one record, `QueueResumeRecord` (PlaybackQueueKit), each slot named by `QueueSlotRef`: a
+library song by its id, a loose file by its path, with no `tracks` row. It lives in two one-row tables migration v10
+adds (`Sources/LibraryStore/Schema+QueueState.swift`): `queue_state`, the record and its revision, and
+`queue_playhead`, the offset into the selected song and the revision of its record. Each write is one transaction
+(`LibraryStore+QueueState.swift`), and a playhead for another revision is refused, so a kill at any instant leaves the
+previous state or the next, never a mix. One writer: a `CoalescingWriter` whose sink, `writeQueueState`
+(`Sources/AdaptiveSound/AudioViewModel+QueueMirror.swift:87`), is the only caller of the two writes. It writes at once
+on every change to the queue, the selected song or the pass, at a pause, a scrub while paused, a stop and the quit;
+while a song plays it writes the playhead alone each time it has moved 5 s of the song
+(`QueueResumeRecord.playheadCadenceSeconds`, `Sources/PlaybackQueueKit/QueueResumeRecord.swift:29`), so after a crash
+the queue comes back paused at most 5 s early. Nothing is written before the launch's restore has read the store — the
+launch's empty queue never overwrites it — nor after the quit's last write. The restore
+(`AudioViewModel+QueueHydration.swift`) brings back the songs, loose files included, the selected one at its place, and
+the shuffle pass; a song gone since is dropped, and when it was the selected one the queue starts at the top (under
+shuffle, at the pass's next song), never another song at the old offset. A library from before v10 is read once the
+old way — the "current" playlist and the `queue.cursor.*` keys — and written as the record. From the restore on, the
+live queue follows the library: a song "Use this drive" moved plays from its new path (VM-QS-10). Tests: in the Kit,
+`QueueResumeRecordTests` VM-RR-01…07 and `QueueJoinTests` VM-QJ-01…07; on the real view model over a real
+`LibraryStore`, `QueueRestoreTests`, `QueueRestoreJoinTests` and `QueueStateEdgeTests`, VM-QS-01…15 (VM-QS-03, the
+cadence: the playhead at 4.9 s writes nothing, at 5.0 s the playhead alone, a pause at once); the process-level kill
+harness, VM-KILL-01 (`QueueStateKillTests`: a child process runs the real view model over a real store file and is
+sent SIGKILL at a random point, 100 times a run; every stored state must be whole, one the child reached and no older
+than its last flush, and the next child must restore exactly it); VerifyLibraryStore QS-1…QS-5 (the v9 → v10 upgrade
+keeps every user row; v10 is additive; a round trip; no half write; no mixed read). *The fix round:*
+- **The launch join is a Kit rule** ("the launch join ends where opening after the restore would", review M2; BI-P03,
+  BI-P03b). What was queued before the restore — a file opened at launch — joins the restored queue where the same
+  open after it would put it (`QueueJoin`, `Sources/PlaybackQueueKit/QueueJoin.swift`, through
+  `QueueInsert.playNextNow`): right after the restored song, first when none is selected, moving the restored queue's
+  slot of the same file rather than doubling it. An Add to Queue made before the restore joins at the end. Both orders
+  end in the same queue, song, next song and record (VM-QS-12: four cases, shuffle on and off). One rarer order is not
+  exact, as the file's header says: two opens before the restore, the first of a file the restored queue holds.
+- **A removed song's id is never handed to another** (migration v12, "a removed song's id is never handed to
+  another"; BI-P01, BI-P02). The record names a library song by its id alone, and SQLite gave the next song added the
+  highest removed id, so a restore, or the live queue's relink, could put a song the listener never queued in a
+  removed song's slot, at its offset. A one-row high-water table and two triggers (`Schema+TrackIDs.swift`) give every
+  new song an id above every id ever used, and refuse an insert at or below the mark (VerifyLibraryStore TID-1, TID-2).
+- **A failed restore read keeps the writer closed** (review N1): a damaged record restores nothing, and the session's
+  first change writes the queue whole (VM-QS-14); any other read failure is read once more, and a second failure keeps
+  the writer closed for the session, so the stored queue is never overwritten by one the launch never read (VM-QS-13).
+- **The old queue's entries go** (review N10): once the first record is written, the old "current" playlist's entries
+  are cleared and the cursor keys removed; the built-in playlist row stays (VM-QS-05).
+- **A playhead write builds no record** (review S5): the 5 s cadence, a pause and a scrub write the number alone,
+  without rebuilding the whole record on the main actor (VM-QS-15, counted through `QueueStateBook.recordsBuilt`).
+
+Also at the combine: a start keeps its slot, not its row, so a join that moves a song's row while it starts still
+primes what follows it (integration, "a start keeps its slot"; VM-QS-11, whose name still says "known issue"). And an
+open before the store has opened waits for it, so a library song opened at launch is queued as that song, not as a
+loose path ("files from outside the library — matched once the store opens, read off main, in order"; BI-P05,
+BI-P05b). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-65 (LIB-12; product triage #3) · **Scheduled (2026-10-14):** R1.1-B (atomic queue restore) · **Forward:** US-R1F-01.~~
+
+*(As found at `0215f777`:)* The queue cursor reaches UserDefaults only on a clean quit
+(`AudioViewModel+Lifecycle.swift:125`), and the queue mirror's debounce can race its quit-flush
+(`AudioViewModel+QueueMirror.swift:25-36`), although the kit already has a coalescing writer for exactly this
+(`LibraryBrowseKit/CoalescingWriter.swift`).
+
+#### KI-LIB-09 — Two Filter semantics
+
+**Status:** ✅ CLOSED in R1.1-B, "one search rule (SearchRule) and the v11 joiner re-index" and "⌘F searches the
+library; files from outside it play and join playlists" (council C-61, its R1.1-B half; founder 2026-10-25). One rule,
+`SearchRule` (`Sources/LibraryStore/SearchRule.swift`, in the store: the lowest target both halves import): a query
+finds an item when every word of the query starts a word of the item, in any order. Songs asks the full-text index
+through it (`ftsMatchQuery`, one quoted prefix term per word: `LibraryStore+Search.swift:44-47`); the Albums, Artists,
+Genres and Playlists Filters, the queue's filter and the playlist picker (`FacetTextFilter`), type-to-select (the
+title's start, `SearchFold`) and ⌘F's sections match in memory through it. Its words are exactly the index tokenizer's
+token characters, it folds as the tokenizer folds, and its text is NFKC with the zero-width joiner and non-joiner
+folded away, so a Sinhala conjunct is one word typed with or without its joiner. Each tab keeps its own sort; "eyon" no
+longer finds "Beyoncé" in the grids (accepted by the founder). ⌘F, "Search Library", opens the Library's Search page
+from any tab; its sections — Songs, Albums, Artists, Genres, Playlists — keep exactly what each tab's Filter keeps,
+ranked by one rule (`LibrarySearch`, `SearchRelevance`); the card Filters moved to ⌥⌘F. Migration v11 re-writes the
+derived index in the rule's form (`Schema+SearchJoiners.swift`; DDL unchanged, user data untouched). Tests:
+LibraryBrowseKitTests `SearchRuleTests`, `OneSearchRuleTests` (every query: the Songs search, the four Filters and ⌘F
+keep the same items; the in-memory rule agrees with the index, song by song; "beyo" and "eyon"; Sinhala with and
+without the joiner, NFD as NFC) and `SearchRelevanceTests`; AdaptiveSoundTests `LibrarySearchFocusTests` (⌘F from every
+tab); VerifyLibraryStore SR-1 (every Unicode scalar but NUL — 1,112,063 — through the app's own SQLite tokenizer and the
+rule: they agree on each), SR-2 (the v11 upgrade) and SR-3 (the plan check's counter-examples). *The fix round:*
+- **One search gate** ("one search gate for every tab and ⌘F — two characters, or one syllable"; BI-P09, and the
+  single CJK ideograph of the live keyboard pass). `SearchQueryGate.shouldQuery`
+  (`Sources/LibraryBrowseKit/SearchFilterDecisions.swift:46-68`) searches a query of two characters, or of one that is
+  a CJK ideograph, kana, a Hangul syllable or a letter of a Brahmic script. `FacetTextFilter.isActive` is that gate
+  (`FacetTextFilter.swift:40-42`), so Songs, every Filter and ⌘F answer one query alike; a one-letter Filter in Albums
+  no longer narrows while Songs shows everything (`SearchFilterDecisionsTests`).
+- **A combining mark that follows no word is no word** (migration v13, "a combining mark that follows no word is no
+  word (v13); the index form is pinned"; BI-P08 and the review's wider case). An emoji's variation selector made every
+  emoji query find every emoji title ("❤️" found "☀️ Summer"). The rule now folds variation selectors and emoji
+  skin-tone modifiers away and drops any combining mark that follows no word character, in the index and the query;
+  v13 re-writes the index (`Schema+SearchMarks.swift`). The form the index is written in is pinned (review S6):
+  `SearchRule.indexFormVersion` (3) names it, each re-index migration names the form it writes
+  (`Schema.searchIndexForms`), and VerifyLibraryStore SR-4 fails when the rule's form is ahead of the latest re-index,
+  or when `normalized`'s output over every assigned scalar differs from the form's golden, so a rule change cannot land
+  without a re-index. SR-5 upgrades a v12 store that shows the fault.
+- **A superseded ⌘F search is cancelled with its task** (review S4; `LibrarySearchFocusTests`).
+
+Not part of the search rule, and unchanged: a rail jump clears the grids' Filter but not the Songs filter — now
+KI-LIB-14. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** LOW · **Source:** breaker A post-R1 #7 · **Scheduled (2026-10-14):** R1.1-B (one search rule, council C-61) · **Forward:** US-R1F-04 → US-R1F-14.~~
+
+*(As found at `0215f777`:)* Songs filters by FTS token prefix (`LibraryStore+Search.swift:47`), the grids by substring
+(`LibraryBrowseKit/FacetTextFilter.swift:16`); "eatles" finds nothing in Songs. A rail jump clears the grids' filter
+but not the Songs filter (`LibraryBrowseModel+Sidebar.swift:24-27`). *(R1.1-B, founder 2026-10-25: one word-start rule
+everywhere — a word must start with what is typed — so the grids stop matching substrings and "eyon" no longer finds
+"Beyoncé" in the Albums / Artists / Genres filters (accepted); each tab keeps its own sort and ⌘F's results are ranked
+— US-R1F-14.)*
+
+#### LIB-VOL-1 — A music folder is bound to its drive; a sweep needs evidence (R1 sweep-evidence fix)
+
+**Status:** ✅ CLOSED in R1.1-B, "\"Use this drive\" — re-root a paused folder by relative path (+ size)" (council
+C-54; founder 2026-10-25). A folder paused because its drive is gone, another drive is at its path, or its drive can't
+be confirmed — `.rootVanished`, `.differentVolume`, `.unrecognizedFolder`, never `.incompleteWalk` or `.emptyWalk`
+(`MusicFolderStatus.offersUseThisDrive`, `Sources/LibraryBrowseKit/MusicFolderStatus.swift:54-59`) — offers "Use This
+Drive…", and the listener picks the folder on the drive that now holds its songs. The scanner looks for each song at
+its path under the folder, with the same size (`RootRebinder`, `Sources/LibraryScan/RootRebind.swift`); the store
+re-roots the folder in ONE transaction (`LibraryStore.rebindRoot`, `LibraryStore+Rebind.swift:139`): the songs found
+keep their ids, plays, loves, ratings, frecency and playlist places; the songs not found are removed with their
+history; the folder row moves to the new path, bound to the new drive; the albums regroup. Silently, as the founder
+decided: no preview. Refused with nothing written, and said: none of the folder's songs is on the drive ("That’s not the
+drive for “…” — none of its songs are on it. Nothing was changed."), the new location is, is inside or holds another
+music folder, or the folder's songs changed since they were looked for. An ordinary walk follows, on the confirmed
+drive. Tests: VerifyLibraryStore RB-1…RB-5 (8 of 10 songs at a new mount name keep their ids, plays, loves, ratings,
+frecency and playlist places, the 2 missing go with their entries, and the walk after sweeps nothing; none found →
+refused, nothing written; an overlap refused; the same path on a new drive, NFD names, an untagged album; 12 SIGKILLs
+in a 1,200-song rebind leave the state before or after, never a mix); AdaptiveSoundTests
+`UseThisDriveTests`. *The fix round* — "\"Use this drive\" keeps what it finds as the walk after it sees it" and "a
+gone drive's stale (dev, inode) never passes for another drive's folder at an add":
+- **The drive's own spelling and signature** (BI-P04, BI-P07). Each song is looked up through the drive's own listings —
+  the same name in NFC first, else the one name that differs only in letter case — and only where a walk goes; the
+  store takes each found file as the walk reads it: its url as the drive spells it and its own (dev, inode). Before, a
+  kept song kept the old drive's move-signature, so a rename on the new drive deleted it with its history, and a
+  case-only difference had the walk after the rebind sweep it (VerifyLibraryStore RB-6).
+- **The songs not found go first, and only a loose row is merged** (review S1): a removed song's history could be
+  merged into a kept song when the new folder is inside the old path; another folder's row at a found song's new url
+  now refuses the rebind (RB-7).
+- **A gone drive's stale identity** (BI-P06): a (dev, inode) pair is compared only with folders on the same drive, at
+  the rebind and when a folder is added (`addRoot`), since macOS hands a gone drive's device number to the next one.
+- **Its own words, and a checking state** (review N4): a folder that can't be read is refused as such ("That folder
+  can’t be read — is its drive connected? Nothing was changed."), never as the wrong drive; while the drive is checked
+  the row says "Checking the drive…", and its "Use This Drive…" and Remove are held (`MusicFolderStatusTests`; the
+  `folder-checking` picture sheet).
+- **The drive's other folders move with it** (plan check §6, counter-example 10): one choice moves the other paused
+  folders bound to the same old drive, each looked for at its own place on the drive as mounted now
+  (`RootRebinder.location(of:movedFrom:to:)`); one not there, or holding none of its songs, stays paused
+  (`UseThisDriveAlongTests`, `RootRebinderLocationTests`).
+- **And migration v12** (KI-PB-21, above): the ids of the songs a rebind removes are never handed to the songs the
+  walk after it adds.
+
+Still so, by design, and now under *Known limitations*: a folder on a drive that reports no volume UUID, all of whose
+files were moved or renamed at once, stays paused, because the rebind finds none of its songs at their old paths.
+*The original entry:*
+
+~~**Status:** OPEN (accepted limitations) · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-B ("Use this drive", council C-54) · **Forward:** US-R1F-03.~~
+
+*(As found at `0215f777`:)* A folder is bound to its drive's volume UUID (the startup disk as itself, since its UUID
+changes with the Mac); one on a volume that reports no UUID (some network volumes; FAT32/exFAT report one on macOS 26)
+stays unbound and is walked only while some of its songs are where the library has them — so a folder all of whose
+files were moved or renamed at once while unbound (on such a volume, or between the v8 upgrade and its first walk)
+stays paused until it is removed and re-added; so does a folder whose drive is replaced by a different one with the
+same name (a new or reformatted "T7")~~; and a folder with a subfolder the app can never read never has its deleted
+songs swept~~ (`LibraryStore+Roots`, `SweepRefusal`). *(The struck limitation is fixed in R1.1-A, council C-55: the walk
+spares only the songs under what it could not read — see KI-LIB-02.)* **Do not remove and re-add a paused folder as a
+workaround:** removing a folder deletes every song of it that no playlist references, so re-adding it brings those
+songs back with new ids — their play counts, loved flags and ratings are lost. ~~A lossless "use this drive" action on
+a paused folder is on the council follow-up list (founder, 2026-10-14).~~ **"Use this drive" (R1.1-B; founder,
+2026-10-25):** a silent rebind of the paused folder to its new drive — the folder's songs found there (matched by
+relative path + size) keep their ids, plays, loves, ratings and playlist membership; the songs not found on the new
+drive are removed, with their history (no preview); refused when none of the folder's songs are found — nothing
+changes, and the app says it is the wrong drive. US-R1F-03. Also narrow: the first walk after the v8 upgrade binds
+whatever drive is at the folder's path, so a same-name *backup* drive mounted at that moment can be bound instead of
+the real one (found by the R1 break-it).
 
 ### Fixed in R1.1-A — the close-out break-it's FIX-FIRST items (branch `r1.1a/breakit-fixes`)
 
