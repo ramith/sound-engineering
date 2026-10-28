@@ -128,8 +128,8 @@ func verifyEQReallocation() -> Bool {
     }
     let handle = Unmanaged.passUnretained(unit.auAudioUnit).toOpaque()
     publishIntensity(handle, 0)
-    guard publishEQ(handle, eqReallocCurve, UInt32(eqReallocCurve.count), true) else {
-        print("EQ1b FAIL: publishEQ rejected the curve")
+    guard publishEQIntent(handle, eqReallocCurve, UInt32(eqReallocCurve.count), true, false) else {
+        print("EQ1b FAIL: publishEQIntent rejected the curve")
         return false
     }
     let graph = ReconfigurableGraph.make(unit: unit)
