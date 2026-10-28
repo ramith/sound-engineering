@@ -27,8 +27,10 @@
 //                                         full-band clipped white noise logged.
 //   AN-T2 AnalysisTP_NotBelowShippedKernel — never below the limiter's own 8×24 reading nor the sample peak.
 //   AN-T3 AnalysisTP_PruningIsExact     — the pruned reading equals the brute-force one; the bound prunes.
-//   AN-M1 Analyzer_LoudnessVsEbur128    — L_N for stereo, 5.1, 7.1 (side 1.41, back 1.0) and mono, and L_F at
-//                                         all four LFE variants, against libebur128 on the same samples.
+//   AN-M1 Analyzer_LoudnessVsEbur128    — L_N for stereo, 5.1, 7.1 (side 1.41, back 1.0) and mono (and mono
+//                                         + 3.01 LU against libebur128's dual mono), and L_F at all four LFE
+//                                         variants, against libebur128 on the same samples (the oracle rows:
+//                                         Track; AN-M2 holds Album).
 //   AN-M2 Analyzer_HistogramsAndPool    — the histograms pool to libebur128's histogram-mode loudness (one
 //                                         track and two together); head and tail blocks.
 //   AN-M3 Analyzer_FoldVariantsAndEdges — no LFE: four equal variants; stereo: no fold; an LFE raises the
@@ -945,6 +947,11 @@ static auto testAnalyzerLoudnessVsEbur128() -> void
         AnRun run;
         anAnalyse(run, mono, {Mono});
         expect("mono L_N", run.analysis.integratedLufs, anEbur128(mono, {EBUR128_CENTER}), kTolLu);
+        // Heard on both sides at 0 dB (F8): the planner's +3.01 LU is libebur128's dual mono.
+        expect("mono L_N + 3.01 vs dual mono",
+               run.analysis.integratedLufs + (10.0 * std::log10(2.0)),
+               anEbur128(mono, {EBUR128_DUAL_MONO}),
+               kTolLu);
     }
     // 5.1: Ls/Rs 1.41, LFE excluded; and the fold at every LFE variant.
     const AnPlanes surround = anSurround(20.0);
