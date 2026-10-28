@@ -41,6 +41,21 @@
 
 namespace AdaptiveSound
 {
+    // ---------------------------------------------------------------------------
+    // Named weight constants — BS.1770-5 Annex 1 Table 1 [1]. Shared with the role-based weights of
+    // the one analysis pass (ChannelRoles.h, bs1770Weights), so both read one table.
+    // ---------------------------------------------------------------------------
+
+    // L / R / C weight: G = 1.0 (0 dB).
+    inline constexpr float kBs1770WeightLRCf = 1.0F;
+
+    // LFE weight: G = 0.0 — excluded from the loudness measurement entirely.
+    inline constexpr float kBs1770WeightLFEf = 0.0F;
+
+    // Surround weight: G = 10^(1.5/10) ≈ 1.41253754 (+1.5 dB in power).
+    // Applied to Ls, Rs, side surrounds, and back surrounds.
+    // Source: ITU-R BS.1770-5, Annex 1, Table 1.
+    inline constexpr float kBs1770SurroundWeight = 1.41253754F;
 
     // Decode `tag` into a fully-populated ChannelLayout.
     //

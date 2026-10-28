@@ -860,6 +860,12 @@ namespace
             Tier::Concurrent,
         },
         // ---- AnalyzerTests.inc (R1.1-B W4, lane 1): rows below ----
+        {"Roles_FromTags", testRolesFromTags, Tier::Correctness},
+        {"Roles_FromDescriptions", testRolesFromDescriptions, Tier::Correctness},
+        {"Roles_FromBitmap", testRolesFromBitmap, Tier::Correctness},
+        {"Roles_CountFallbacks", testRolesCountFallbacks, Tier::Correctness},
+        {"Roles_Guards", testRolesGuards, Tier::Correctness},
+        {"Roles_Bs1770Weights", testRolesBs1770Weights, Tier::Correctness},
         // ---- end AnalyzerTests.inc ----
         // ---- LevelPlanTests.inc (R1.1-B W4, lane 1): rows below ----
         {"LevelPlan_RoleNumbers_Fixed", testLevelPlanRoleNumbersFixed, Tier::Correctness},
