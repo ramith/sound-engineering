@@ -61,15 +61,11 @@ namespace AdaptiveSound
 
         [[nodiscard]] auto isFinite(const FoldParams& fold) noexcept -> bool
         {
-            for (const auto& row : fold.rows)
-            {
-                if (!std::ranges::all_of(row, [](float gain) { return std::isfinite(gain); }))
-                {
-                    return false;
-                }
-            }
-            return std::isfinite(fold.trimDb) && std::isfinite(fold.lfeGain) &&
-                   std::isfinite(fold.glideSeconds);
+            const auto finite = [](float value) { return std::isfinite(value); };
+            const auto finiteRow = [&finite](const auto& row)
+            { return std::ranges::all_of(row, finite); };
+            return std::ranges::all_of(fold.rows, finiteRow) && finite(fold.trimDb) &&
+                   finite(fold.lfeGain) && finite(fold.glideSeconds);
         }
 
         // Copy `numIn` channels from `input` to `output` (vDSP_mmov, bit-exact), then zero-fill output
@@ -240,8 +236,7 @@ namespace AdaptiveSound
     // Take `fold` as the fold in force: its coefficients (rows × trim) as the target, reached at once
     // (`snap`, or a zero glide) or by a linear per-sample glide; its ceiling for the backstop; and a
     // fresh gain-reduction peak for the read-out.
-    auto SpatialRenderKernel::adoptFold(const FoldParams& fold, bool snap) noexcept
-        -> void
+    auto SpatialRenderKernel::adoptFold(const FoldParams& fold, bool snap) noexcept -> void
     {
         const float trim = linearFromDb(std::min(fold.trimDb, 0.0F));
         for (uint32_t row = 0U; row < kFoldRows; ++row)
