@@ -23,18 +23,23 @@ private struct ReconfigureGraphNodes {
 extension AudioEngineBridge {
     // MARK: - Multichannel reconfigure lifecycle (Sprint 5b, M2-c / M3-3)
 
-    /// Reconfigure the live graph to carry `channels` channels end-to-end.
+    /// Reconfigure the live graph to play a source of `channelCount` channels in `layout` end to end.
     ///
-    /// This is the spike-validated lifecycle that re-widths a SINGLE running engine without a crash
-    /// or a silent downmix. It must run OFF the audio thread (it stops the player, removes taps,
-    /// reconnects nodes, resizes the per-channel analyzers, and re-starts the engine). It is a no-op
-    /// when `channels` already matches the current graph width, so the stereo path is byte-for-byte
-    /// unchanged until a real reconfigure is requested.
+    /// The graph's source width takes the file's OWN layout (`engineFormat(channelCount:layout:sampleRate:)`, F1): its
+    /// channels in its own order, so the resampler converts the rate only and the roles read from the
+    /// file's labels name the right slots. Mono and stereo keep today's formats, and a file wider than the
+    /// engine carries plays through the stereo fallback.
     ///
-    /// Both custom AU nodes are re-widthed together (Sprint 5b M3-3): the chain
+    /// This is the spike-validated lifecycle that re-formats a SINGLE running engine without a crash or a
+    /// silent downmix. It must run OFF the audio thread (it stops the player, removes taps, reconnects
+    /// nodes, resizes the per-channel analyzers, and re-starts the engine). It is a no-op when the graph
+    /// already plays that format — rate, channel count AND layout — so the stereo path is byte-for-byte
+    /// unchanged, and a 5.1 file after a 5.1 file in another order still re-lays the graph.
+    ///
+    /// Both custom AU nodes are re-formatted together (Sprint 5b M3-3): the chain
     /// `player -> effectsAU -> spatialAU -> mainMixer -> output` is reconnected with the effects-AU
-    /// edges at the source/processing width N and the spatial-AU output + mixer + output at the
-    /// device width M = min(N, deviceChannels) (M2-d).
+    /// edges at the source format (width N) and the spatial-AU output + mixer + output at the device
+    /// boundary `deviceWidthFormat` resolves (M == N, or stereo when the device is narrower).
     ///
     /// The hard-won findings from the spike are baked in here:
     /// - The `mainMixerNode -> outputNode` reconnect (`reconnectGraph`) is MANDATORY: without it the
@@ -44,78 +49,58 @@ extension AudioEngineBridge {
     ///   lighter than stop). The offline harness can only change WIDTH via stop -> re-enable manual
     ///   rendering -> start, so `reconfigureGraph` detects manual-rendering mode and branches.
     ///
-    /// - Parameter channels: the desired graph width (1...8; counts with no `multichannelFormat`
-    ///   mapping fall back to stereo, and stereo failing aborts gracefully without a crash).
-    func reconfigureGraph(to channels: AVAudioChannelCount) {
-        // 1. Same-count guard — keep the existing path 100% untouched until a real reconfigure.
-        guard channels != currentGraphWidth else { return }
+    /// - Parameters:
+    ///   - channelCount: the source's channel count N.
+    ///   - layout: the source's channel layout (`processingFormat.channelLayout`; nil when it reports none).
+    func reconfigureGraph(channelCount: AVAudioChannelCount, layout: AVAudioChannelLayout?) {
         guard let engine = avEngine, let player = playerNode,
               let effects = effectsNode, let spatial = spatialAudioUnit else { return }
 
-        // 2. Quiesce the audio thread: stop any streaming-resampler loop (bump generation + drop
+        // 1. Resolve the graph format, falling back to stereo, then aborting gracefully.
+        guard let format = resolveReconfigureFormat(channelCount: channelCount, layout: layout,
+                                                    sampleRate: currentGraphSampleRate)
+        else {
+            abortReconfigure(reason: "no usable format for \(channelCount)ch (stereo fallback also nil)")
+            return
+        }
+
+        // 2. Same-format guard — keep the existing path 100% untouched until a real reconfigure.
+        guard format != player.outputFormat(forBus: 0) else { return }
+
+        // 3. Quiesce the audio thread: stop any streaming-resampler loop (bump generation + drop
         //    session so no in-flight buffer schedules onto the graph we're about to reconnect), then
         //    stop the player and remove every tap before touching nodes.
         stopEnhancedResampler()
         player.stop()
         removeSpectrumTap()
 
-        let graphSampleRate = currentGraphSampleRate
-
-        // 5. Resolve the target format, falling back to stereo, then aborting gracefully.
-        guard let format = resolveReconfigureFormat(for: channels, sampleRate: graphSampleRate) else {
-            // multichannelFormat returned nil even for the stereo fallback — cannot proceed safely.
-            abortReconfigure(reason: "no usable format for \(channels)ch (stereo fallback also nil)")
-            return
-        }
-        let resolvedChannels = format.channelCount
-
-        // 4 + 6 + 8: pause (or offline stop), reconnect at the new width, then restart the engine.
+        // 4 + 6 + 8: pause (or offline stop), reconnect at the new format, then restart the engine.
         // 7. Resize analyzers while taps are removed (off the audio thread) — done inside the helper.
         // 9 + 10: reinstall taps + publish the new running state — done inside the helper.
         do {
             let nodes = ReconfigureGraphNodes(engine: engine, player: player, effects: effects, spatial: spatial)
-            try applyReconfigure(nodes: nodes, format: format, channels: resolvedChannels)
+            try applyReconfigure(nodes: nodes, format: format)
         } catch {
-            // 8. engine.start() threw (an AU could not re-allocate render resources at this width):
+            // 8. engine.start() threw (an AU could not re-allocate render resources at this format):
             // transition to a safe state and log — never crash the app.
-            abortReconfigure(reason: "engine.start() failed at \(resolvedChannels)ch: \(error)")
+            abortReconfigure(reason: "engine.start() failed at \(format.channelCount)ch: \(error)")
         }
-    }
-
-    /// The graph's current channel width, derived from the player node's negotiated output format.
-    /// Falls back to the analyzer-array count (kept in lock-step) and finally to 2 (the init width).
-    private var currentGraphWidth: AVAudioChannelCount {
-        if let player = playerNode {
-            let width = player.outputFormat(forBus: 0).channelCount
-            if width > 0 {
-                return width
-            }
-        }
-        let monitored = tapAnalysis.after.count
-        if monitored > 0 {
-            return AVAudioChannelCount(monitored)
-        }
-        return 2
     }
 
     /// The sample rate the graph runs at (48 kHz today). Read from the live player output format so
-    /// the reconfigured format keeps the rate stable across a width change.
+    /// the reconfigured format keeps the rate stable across a format change.
     private var currentGraphSampleRate: Double {
         let rate = playerNode?.outputFormat(forBus: 0).sampleRate ?? 0
         return rate > 0 ? rate : 48000.0
     }
 
-    /// Resolve the format for `channels`, falling back to stereo if the requested count is unmapped.
-    /// Returns `nil` only if even the stereo fallback cannot be built (should never happen).
-    private func resolveReconfigureFormat(
-        for channels: AVAudioChannelCount,
-        sampleRate: Double
-    ) -> AVAudioFormat? {
-        if let format = multichannelFormat(for: channels, sampleRate: sampleRate) {
-            return format
-        }
-        // Requested count has no layout tag (e.g. 3/4/5/7) — fall back to stereo rather than abort.
-        return multichannelFormat(for: 2, sampleRate: sampleRate)
+    /// The graph format for the source (F1: its own layout at the graph's rate), falling back to stereo
+    /// for a file wider than the engine carries. Returns `nil` only if even the stereo fallback cannot be
+    /// built (should never happen).
+    private func resolveReconfigureFormat(channelCount: AVAudioChannelCount, layout: AVAudioChannelLayout?,
+                                          sampleRate: Double) -> AVAudioFormat? {
+        engineFormat(channelCount: channelCount, layout: layout, sampleRate: sampleRate)
+            ?? multichannelFormat(for: 2, sampleRate: sampleRate)
     }
 
     /// Reconnect every edge of the two-AU graph at the new width:
@@ -157,17 +142,12 @@ extension AudioEngineBridge {
     /// analyzers, restart, then reinstall taps and publish `.running`. Throws if `engine.start()`
     /// fails so the caller can land in a safe state.
     ///
-    /// The device width M is resolved by `deviceWidthFormat` (M2-d): M = min(N, deviceChannels)
-    /// where deviceChannels is the engine output node's negotiated width. So a 5.1 source (N=6) on a
-    /// stereo device reconnects the effects edges at N=6 and the spatial output + mixer + output at
-    /// M=2 — the spatial AU renders 6->2 via its S4 `device<N` stub (no naive mixer downmix). For
-    /// M == N the spatial AU is a bit-exact identity route. The real binaural fold is S4, on the
-    /// spatial AU side — see the `TODO(S4)` marker in `connectInitialGraph`.
-    private func applyReconfigure(
-        nodes: ReconfigureGraphNodes,
-        format: AVAudioFormat,
-        channels: AVAudioChannelCount
-    ) throws {
+    /// The device boundary is resolved by `deviceWidthFormat` (M2-d, §8½ C1) from the engine output
+    /// node's negotiated width: M = N when the device takes every channel (the spatial AU is then a
+    /// bit-exact identity route); stereo when it is narrower than a multichannel source — so a 5.1
+    /// source on a stereo device reconnects the effects edges at N = 6 and the spatial output + mixer
+    /// + output at 2, and the spatial AU folds 6 -> 2 (no naive mixer downmix).
+    private func applyReconfigure(nodes: ReconfigureGraphNodes, format: AVAudioFormat) throws {
         let engine = nodes.engine
         // Device width M = min(N, deviceChannels). Resolved BEFORE any stop/re-enable so the output
         // node still reports the in-effect device width (the manual-rendering width when offline).
@@ -177,7 +157,7 @@ extension AudioEngineBridge {
             // requires stop -> re-enable manual rendering at the new (device-width) format -> start.
             engine.stop()
             reconnectGraph(nodes: nodes, sourceFormat: format, deviceFormat: deviceFormat)
-            resizeAnalyzers(to: channels, sampleRate: format.sampleRate)
+            resizeAnalyzers(to: format.channelCount, sampleRate: format.sampleRate)
             try engine.enableManualRenderingMode(.offline, format: deviceFormat,
                                                  maximumFrameCount: manualRenderingBlockSize)
             try engine.start()
@@ -186,7 +166,7 @@ extension AudioEngineBridge {
             // fixed, so reconnecting at the resolved formats + restart re-allocates both AUs.
             engine.pause()
             reconnectGraph(nodes: nodes, sourceFormat: format, deviceFormat: deviceFormat)
-            resizeAnalyzers(to: channels, sampleRate: format.sampleRate)
+            resizeAnalyzers(to: format.channelCount, sampleRate: format.sampleRate)
             try engine.start()
         }
 

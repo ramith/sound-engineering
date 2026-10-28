@@ -14,8 +14,8 @@ import Foundation
 /// Design:
 /// - One `EnhancedResampleSession` per stream: each start, seek, re-establish and format-changing
 ///   seam makes a new one — the open file and its converter, file format →
-///   `player.outputFormat(forBus: 0)` (48 kHz, N-channel float), so `scheduleBuffer` triggers no
-///   further engine conversion. A seam to a track of the SAME format keeps the session: the next
+///   `player.outputFormat(forBus: 0)` (48 kHz float in the file's own layout, F1: the rate changes, never
+///   a channel's slot), so `scheduleBuffer` needs no further conversion. A SAME-format seam keeps it: the next
 ///   file's frames continue the stream through the same converter (`continueStreamIntoNextTrack`,
 ///   AudioEngineBridge+GaplessRoll), and the seam is counted when the player reaches it.
 /// - The chain runs on the serial `resampleQueue`: read a chunk → convert → `scheduleBuffer(…,
@@ -149,7 +149,10 @@ final class EnhancedResampleSession: @unchecked Sendable {
         let endingTrackSeconds: Double
     }
 
-    /// The converter: file format → the player's format (the Mastering `StreamingResampler`).
+    /// The converter: file format → the player's format (the Mastering `StreamingResampler`). For the track
+    /// a start or restart opens, the player's format is that file's own layout at the graph's rate
+    /// (`engineFormat`, F1), so it converts the rate only; a seam to a track in another layout (KI-GAP-05)
+    /// is re-laid into the playing one by label.
     let resampler: StreamingResampler
 
     /// The open source file, read sequentially chunk-by-chunk: the session's track, then each next

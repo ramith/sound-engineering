@@ -1,4 +1,4 @@
-// VerifyDeviceWidth.swift — M2-d: file-load device-width resolution (M = min(N, deviceChannels)).
+// VerifyDeviceWidth.swift — M2-d: file-load device-width resolution (M = N, or stereo on a narrower device).
 //
 // Extracted from main.swift (best-practices decomposition: one cohesive concern per file).
 // These are module-scope functions in the VerifyAUGraph executable; they reference the shared
@@ -6,13 +6,15 @@
 // connectTwoAUGraph) declared elsewhere in the same module. main.swift orchestrates by calling
 // verifyM2d().
 //
-// The file-load trigger re-widths the graph to the SOURCE width N and (for the device-boundary
-// edges) resolves M = min(N, deviceChannels). This mirrors `AudioEngineBridge.deviceWidthFormat`
-// + `applyReconfigure`: a 5.1 file (N = 6) on a STEREO device (deviceChannels = 2) must process at
-// N = 6 (effects-AU input + spatial-AU input) and render N->M = 2 at the spatial-AU output (mixer
-// + output also at M = 2). We simulate the fixed stereo device with an offline manual-rendering
-// width of 2, then run the offline reconfigure dance (the branch `applyReconfigure` takes when
-// `isInManualRenderingMode`) to the 6ch source and assert the bus widths.
+// The file-load trigger re-formats the graph to the SOURCE (its own layout, F1) and resolves the device
+// boundary: M = N when the device takes every channel; stereo when it is narrower than a multichannel
+// source, whatever its width (R1.1-B §8½ C1: fold to stereo, never keep the first M channels); a mono or
+// stereo source keeps M = min(N, device). This mirrors `AudioEngineBridge.deviceWidthFormat` +
+// `applyReconfigure`: a 5.1 file (N = 6) on a STEREO device must process at N = 6 (effects-AU input +
+// spatial-AU input) and render N->M = 2 at the spatial-AU output (mixer + output also at M = 2). We
+// simulate the fixed device with an offline manual-rendering width, then run the offline reconfigure dance
+// (the branch `applyReconfigure` takes when `isInManualRenderingMode`) to the source and assert the bus
+// widths against the expected M stated per case (never the resolver's own answer read back).
 //
 // Review finding TOOL-1 (RESOLVED, cluster F): the M = min(N, device) resolver was previously a
 // hand-copied mirror here. It now lives once in AudioFormatKit.deviceWidthFormat, which BOTH the
@@ -24,16 +26,31 @@ import AudioFormatKit
 import AVFoundation
 import Foundation
 
-/// Build the two-AU graph offline at the simulated `deviceChannels` width, then run the offline
-/// reconfigure dance to `sourceChannels` (effects edges at N; spatial output + mixer + output at
-/// M = min(N, deviceChannels)). Asserts the negotiated bus widths match the M2-d contract.
-func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
-                                 deviceChannels: AVAudioChannelCount) -> Bool {
-    let label = "[N=\(sourceChannels), device=\(deviceChannels)]"
-    print("--- M2-d device-width resolution \(label) (effects/spatial in = N; spatial out/device = min(N,device)) ---")
+/// A device of `channels` channels: the standard format for mono and stereo, unlabelled discrete wider.
+private func simulatedDeviceFormat(channels: AVAudioChannelCount) -> AVAudioFormat? {
+    if channels <= 2 {
+        return AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels)
+    }
+    return AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | channels)
+        .map { AVAudioFormat(standardFormatWithSampleRate: sampleRate, channelLayout: $0) }
+}
 
-    guard let deviceFmt = multichannelFormat(for: deviceChannels, sampleRate: sampleRate),
-          let sourceFmt = multichannelFormat(for: sourceChannels, sampleRate: sampleRate)
+/// Build the two-AU graph offline at the simulated `deviceChannels` width, then run the offline
+/// reconfigure dance to a source in `sourceLayout` (effects edges at N, the source's own format; spatial
+/// output + mixer + output at the resolved device boundary). Asserts the negotiated bus widths, with the
+/// boundary at `expectedDeviceChannels`.
+func verifyDeviceWidthResolution(sourceLayout: AudioChannelLayoutTag,
+                                 deviceChannels: AVAudioChannelCount,
+                                 expectedDeviceChannels: AVAudioChannelCount) -> Bool {
+    let sourceChannels = sourceLayout & 0xFFFF
+    let label = "[N=\(sourceChannels), device=\(deviceChannels)]"
+    print("--- M2-d device-width resolution \(label) (effects/spatial in = N; spatial out = "
+        + "\(expectedDeviceChannels)) ---")
+
+    guard let deviceFmt = simulatedDeviceFormat(channels: deviceChannels),
+          let sourceFmt = engineFormat(channelCount: sourceChannels,
+                                       layout: AVAudioChannelLayout(layoutTag: sourceLayout),
+                                       sampleRate: sampleRate)
     else {
         print("M2-d FAIL \(label): could not build device/source formats")
         return false
@@ -68,7 +85,7 @@ func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
     }
 
     return assertDeviceWidths(effects: effects, spatial: spatial, sourceChannels: sourceChannels,
-                              expectedDeviceChannels: resolvedDevice.channelCount, label: label)
+                              expectedDeviceChannels: expectedDeviceChannels, label: label)
 }
 
 /// The offline reconfigure dance (stop -> reconnect at N/M -> re-enable at M -> start), mirroring
@@ -121,17 +138,24 @@ func assertDeviceWidths(
         return false
     }
     print("M2-d PASS \(label): effects in/out = \(effectsIn)/\(effectsOut), spatial in = \(spatialIn) (= N), "
-        + "spatial out = \(spatialOut) (= M = min(N, device)); processes at N, renders at device width M")
+        + "spatial out = \(spatialOut) (= M); processes at N, renders at the device boundary M")
     return true
 }
 
 /// Run the M2-d device-width matrix. Returns true only if every case passes.
 func verifyM2d() -> Bool {
-    // 5.1 source on a stereo device: N = 6, device = 2 -> M = min(6, 2) = 2.
-    guard verifyDeviceWidthResolution(sourceChannels: 6, deviceChannels: 2) else { return false }
-    // 5.1 source on a 7.1-capable device: N = 6, device = 8 -> M = min(6, 8) = 6 (M == N).
-    guard verifyDeviceWidthResolution(sourceChannels: 6, deviceChannels: 8) else { return false }
-    // Stereo source on a stereo device: N = 2, device = 2 -> M = 2 (the unchanged stereo path).
-    guard verifyDeviceWidthResolution(sourceChannels: 2, deviceChannels: 2) else { return false }
+    let cases: [(source: AudioChannelLayoutTag, device: AVAudioChannelCount, expected: AVAudioChannelCount)] = [
+        (kAudioChannelLayoutTag_MPEG_5_1_A, 2, 2), // 5.1 on stereo: folds to 2
+        (kAudioChannelLayoutTag_MPEG_5_1_A, 8, 6), // 5.1 on a 7.1-capable device: M == N
+        (kAudioChannelLayoutTag_Stereo, 2, 2), // stereo on stereo: the unchanged path
+        (kAudioChannelLayoutTag_MPEG_7_1_A, 6, 2), // 7.1 on a 5.1 device: folds to stereo, never keeps six (C1)
+        (kAudioChannelLayoutTag_MPEG_3_0_A, 2, 2), // 3.0 on stereo: plays at 3, folds to 2 (was: a stereo graph)
+        (kAudioChannelLayoutTag_AAC_5_1, 6, 6), // AAC-order 5.1 on a 5.1 device: its own format, M == N
+    ]
+    for (source, device, expected) in cases
+        where !verifyDeviceWidthResolution(sourceLayout: source, deviceChannels: device,
+                                           expectedDeviceChannels: expected) {
+        return false
+    }
     return true
 }
