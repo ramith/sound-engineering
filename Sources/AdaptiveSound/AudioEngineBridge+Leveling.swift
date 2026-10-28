@@ -129,11 +129,20 @@ final class EngineLevelingState: Sendable {
     func becameAudible(_ url: URL, token: UInt64, gaplessSeam: Bool, unit: UInt?,
                        effects: EffectsDelivery) -> Bool {
         held.withLock { held -> Bool in
-            let pending = gaplessSeam ? held.armed : held.start
-            let matched = (pending?.url == url) ? pending : nil
+            // A seam plays the armed pick. A fresh start plays its own request — or, when that is not this URL,
+            // the armed pick started fresh (a gapless roll that could not join restarts it through playFile).
+            let matched: Pending?
             if gaplessSeam {
+                matched = (held.armed?.url == url) ? held.armed : nil
                 held.armed = nil
+            } else if held.start?.url == url {
+                matched = held.start
+                held.start = nil
             } else {
+                matched = (held.armed?.url == url) ? held.armed : nil
+                if matched != nil {
+                    held.armed = nil
+                }
                 held.start = nil
             }
             if !gaplessSeam, var audible = held.audible, audible.token == token {
