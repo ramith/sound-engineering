@@ -34,6 +34,7 @@ extension AudioEngineBridge {
                 guard let self else { completion(false); return }
                 guard let spatialUnit, error == nil else { completion(false); return }
                 self.setSpatialUnit(spatialUnit)
+                self.attachFoldPlanSink()
                 engine.attach(spatialUnit)
 
                 self.connectInitialGraph(engine: engine, player: player,
@@ -41,6 +42,18 @@ extension AudioEngineBridge {
                 self.allocateAnalysisState(engine: engine, format: format)
                 completion(true)
             }
+        }
+    }
+
+    /// Hand the fold's half of every plan to the spatial unit (lane 1's `setFoldPlanSink`; level-and-fold M1):
+    /// the same plan the effects unit gets, in the same turn. The sink only publishes into the unit's snapshot
+    /// through the counted borrow — no wait. The plan event does not reach the sink yet, so every plan snaps
+    /// (a fresh start's rule; a group's members share one trim, so a seam does not step); lane 2's report asks
+    /// for the event.
+    private func attachFoldPlanSink() {
+        setFoldPlanSink { [weak self] plan, output in
+            var (plan, output) = (plan, output)
+            _ = self?.withSpatialAU { asSpatialPublishPlan($0, &plan, &output, UInt8(AsPlanEventFreshStart.rawValue)) }
         }
     }
 

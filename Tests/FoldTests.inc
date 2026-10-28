@@ -31,6 +31,7 @@ namespace
         fold.trimDb = trimDb;
         fold.lfeGain = lfeGain;
         fold.ceilingLinear = kTruePeakCeilingLinear;
+        fold.fromPlan = true;
         return fold;
     }
 
@@ -290,9 +291,9 @@ static auto testFoldGlideLinearThenExact() -> void
 }
 
 // ---------------------------------------------------------------------------
-// Fold_KeepAcrossAllocate — M1: the unit keeps its last published fold across an allocate at the same
-// width; a width with no set plays the layout's fold at its worst-case trim — never trim 0 — and, with no
-// layout fold either, silence, never the first two channels.
+// Fold_KeepAcrossAllocate — M1: the unit keeps its last fold across an allocate at the same width; at a
+// width it has no fold for it plays silence, never the first two channels; the layout's fold for the new
+// width plays at its worst-case trim — never trim 0.
 // ---------------------------------------------------------------------------
 static auto testFoldKeepAcrossAllocate() -> void
 {
@@ -307,38 +308,36 @@ static auto testFoldKeepAcrossAllocate() -> void
 
     kernel.configure(kFold51, 2U); // a re-allocation at the same width: no new set
     FoldOut out = runFold(kernel, kFold51, 2U, centre);
-    const float planned = kFoldSide * kLevel * std::pow(10.0F, -3.0F / 20.0F);
+    const float planned = kLevel * (kFoldSide * std::pow(10.0F, -3.0F / 20.0F));
     if (std::fabs(out.left.back() - planned) > 1.0e-6F || !kernel.readout().fromPlan)
     {
         fail += std::format("\n  same width: {} (from plan: {}), expected the published {}", out.left.back(),
                             kernel.readout().fromPlan, planned);
     }
 
-    // 8 channels now, and the published fold is for 6: the layout's fold at its worst-case trim.
+    // 8 channels now, and the fold in force is for 6: silence, not L and R.
     constexpr uint32_t kSeven1 = 8U;
+    kernel.configure(kSeven1, 2U);
+    out = runFold(kernel, kSeven1, 2U, [](uint32_t, uint32_t) { return 0.5F; });
+    if (std::ranges::any_of(out.left, [](float sample) { return sample != 0.0F; }))
+    {
+        fail += "\n  a width with no fold played something, not silence";
+    }
+
+    // The layout's fold for the new width: its worst-case trim.
     constexpr float kWorstCaseTrimDb = -9.93F; // 7.1 at 0.5 surrounds on Bluetooth (design §4)
     FoldParams layout;
     layout.inChannels = kSeven1;
     layout.rows[0] = {1.0F, 0.0F, kFoldSide, 0.0F, 0.5F, 0.0F, 0.5F, 0.0F};
     layout.rows[1] = {0.0F, 1.0F, kFoldSide, 0.0F, 0.0F, 0.5F, 0.0F, 0.5F};
     layout.trimDb = kWorstCaseTrimDb;
-    kernel.configure(kSeven1, 2U);
-    kernel.setLayoutFold(layout);
+    (void)kernel.publishFold(layout);
     out = runFold(kernel, kSeven1, 2U, centre);
-    const float worstCase = kFoldSide * kLevel * std::pow(10.0F, kWorstCaseTrimDb / 20.0F);
+    const float worstCase = kLevel * (kFoldSide * std::pow(10.0F, kWorstCaseTrimDb / 20.0F));
     if (std::fabs(out.left.back() - worstCase) > 1.0e-6F || kernel.readout().fromPlan)
     {
-        fail += std::format("\n  new width, no set: {} (from plan: {}), expected the worst-case {}", out.left.back(),
+        fail += std::format("\n  the layout's fold: {} (from plan: {}), expected the worst-case {}", out.left.back(),
                             kernel.readout().fromPlan, worstCase);
-    }
-
-    // A width with neither: silence — L and R would have played through a truncation.
-    SpatialRenderKernel bare;
-    makeFoldKernel(bare, kFold51);
-    out = runFold(bare, kFold51, 2U, [](uint32_t, uint32_t) { return 0.5F; });
-    if (std::ranges::any_of(out.left, [](float sample) { return sample != 0.0F; }))
-    {
-        fail += "\n  no fold for the width: it played something, not silence";
     }
     if (!fail.empty())
     {

@@ -22,11 +22,11 @@
 //
 // The fold's parameters:
 //   - `publishFold` (off-RT, any control thread; serialized by a producer-side mutex the render never
-//     touches) hands the plan's FoldParams to the render through a TripleBufferSnapshot, copied once per
-//     block. They are kept across an allocate (keep-across-allocate, M1): a set made for this N plays.
-//   - `setLayoutFold` (off-RT, at allocate) supplies the fold for the current layout to play when no set
-//     matches N — the matrix at its worst-case trim, NEVER trim 0 (M1). With neither, the fold plays
-//     silence: the device boundary never truncates.
+//     touches) hands a FoldParams to the render through a TripleBufferSnapshot, copied once per block: the
+//     layout's fold when the graph is configured for a file (its matrix at the worst-case trim, NEVER trim
+//     0 — M1), then the playing track's plan. The newest set plays; it is kept across an allocate
+//     (keep-across-allocate, M1) and plays only at the width it was made for. With no set for this width
+//     the fold plays silence: the device boundary never truncates.
 //   - A change glides linearly over the set's `glideSeconds` (0: snap), per sample, from the coefficients
 //     in force; a change of N or M (configure) snaps.
 //
@@ -69,6 +69,8 @@ namespace AdaptiveSound
         float glideSeconds = 0.0F;
         // Numbered by publishFold (callers leave it 0): a new number is a new fold for the render.
         uint32_t generation = 0U;
+        // The playing track's plan; false: the layout's fold at its worst-case trim (no plan yet).
+        bool fromPlan = false;
     };
 
     // What the fold plays now, for the read-out (off-RT, any thread; from atomics).
@@ -77,7 +79,7 @@ namespace AdaptiveSound
         uint32_t sourceChannels = 0U;
         uint32_t outputChannels = 0U;
         bool folding = false;  // M < N with N > 2
-        bool fromPlan = false; // false: the layout's worst-case fold (no set for this N)
+        bool fromPlan = false; // false: the layout's worst-case fold (no plan yet)
         float trimDb = 0.0F;
         float lfeGain = 0.0F;
         float backstopPeakGrDb =
@@ -101,15 +103,11 @@ namespace AdaptiveSound
 
         // Off-RT: the routing — N source channels, M device channels (each clamped to kMaxChannels).
         // Call whenever the bus formats change (allocate). The published fold is kept; the next block
-        // snaps to whatever fold now applies.
+        // snaps to it if it is for this N.
         auto configure(uint32_t numInChannels, uint32_t numOutChannels) noexcept -> void;
 
-        // Off-RT (allocate; not rendering): the fold to play for the current layout when no published
-        // set is for this N — its matrix at the worst-case trim. Ignored when a value is not finite.
-        auto setLayoutFold(const FoldParams& fold) noexcept -> void;
-
-        // Off-RT, any control thread: the plan's fold for the next blocks. False — nothing changes — when
-        // any of its values is not finite.
+        // Off-RT, any control thread: the fold for the next blocks (the layout's, or the plan's). False —
+        // nothing changes — when any of its values is not finite.
         [[nodiscard]] auto publishFold(const FoldParams& fold) noexcept -> bool;
 
         // RT: process one block. NON-IN-PLACE: `input` (N channels) and `output` (M channels) must be
@@ -142,7 +140,7 @@ namespace AdaptiveSound
         auto foldBlock(const MultichannelView& input,
                        const MultichannelView& output,
                        uint32_t frames) noexcept -> void;
-        auto adoptFold(const FoldParams& fold, bool fromPlan, bool snap) noexcept -> void;
+        auto adoptFold(const FoldParams& fold, bool snap) noexcept -> void;
         auto mixRamped(const MultichannelView& input,
                        const MultichannelView& output,
                        uint32_t frames) noexcept -> uint32_t;
@@ -152,12 +150,10 @@ namespace AdaptiveSound
                        uint32_t frames) const noexcept -> void;
         auto runBackstop(const MultichannelView& output, uint32_t frames) noexcept -> void;
 
-        // Ordered by alignment (the cache-line-aligned snapshot and folds first), so nothing pads.
+        // Ordered by alignment (the cache-line-aligned snapshot and fold first), so nothing pads.
 
-        // The plan's fold: published off-RT (producer mutex), copied once per block on-RT.
+        // The fold: published off-RT (producer mutex), copied once per block on-RT.
         TripleBufferSnapshot<FoldParams> published_;
-        // The layout's fold (no set for this N): written off-RT at allocate, read on-RT.
-        FoldParams layoutFold_{};
         // RT: the last copied snapshot.
         FoldParams latest_{};
 
@@ -181,8 +177,7 @@ namespace AdaptiveSound
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
         uint32_t publishCount_ = 0U; // producer-owned, under publishMutex_
-        uint32_t appliedGeneration_ =
-            0U;                   // RT: which publish is in force (0 with the layout's fold)
+        uint32_t appliedGeneration_ = 0U; // RT: which publish is in force (0: none)
         uint32_t glideLeft_ = 0U; // RT
         uint32_t meterLookahead_ = 0U;
         uint32_t meterHead_ = 0U; // RT
@@ -195,7 +190,6 @@ namespace AdaptiveSound
         std::atomic<uint32_t> readoutIn_{0U};
         std::atomic<uint32_t> readoutOut_{0U};
 
-        bool appliedFromPlan_ = false; // RT
         bool needsSnap_ = true;        // set by configure(): the next fold snaps
         bool haveFold_ = false;        // RT: a fold for this N is in force
         std::atomic<bool> readoutFromPlan_{false};

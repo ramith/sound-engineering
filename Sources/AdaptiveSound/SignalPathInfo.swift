@@ -130,11 +130,18 @@ struct SignalPathInfo: Equatable {
     /// model each tick; `nil` when it doesn't.
     var crossfeedStrength: CrossfeedStrength?
 
+    /// Whether the crossfeed played on the effects unit's last block (S2, KI-SND-06): the engine's own bypass,
+    /// so `false` on a folded surround file — crossfeed is stereo-only and runs before the fold — and on the
+    /// bit-perfect path. `nil` when the engine doesn't say (no live effects unit; the test and sheet engines).
+    /// `snapshot()` reads it from the kernel's atomic; it is never stored.
+    var crossfeedEngaged: Bool?
+
     /// The crossfeed the listener hears — the hero's "XF" chip: its strength while it plays, on the
     /// Enhanced path, whatever Intensity is (crossfeed is an output stage of its own, founder
-    /// decision 2026-10-14); `nil` on Pure, which bypasses the DSP.
+    /// decision 2026-10-14); `nil` on Pure, which bypasses the DSP, and whenever the engine says it does
+    /// not play (a folded surround file, KI-SND-06).
     var audibleCrossfeed: CrossfeedStrength? {
-        path == .enhanced ? crossfeedStrength : nil
+        path == .enhanced && crossfeedEngaged != false ? crossfeedStrength : nil
     }
 }
 

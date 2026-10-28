@@ -153,6 +153,7 @@ extension AudioEngineBridge {
     /// Reset every stored field to its post-shutdown idle value and drop the taps' analysis.
     private func resetGraphStateAfterShutdown() {
         setEffectsUnit(nil)
+        setFoldPlanSink(nil) // before the unit goes: no plan reaches a torn-down fold
         setSpatialUnit(nil)
         setAvEngine(nil)
         setPlayerNode(nil)
