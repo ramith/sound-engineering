@@ -293,10 +293,9 @@ namespace AdaptiveSound
                         }
                     }
                 }
-                for (double& band : bands)
-                {
-                    band /= static_cast<double>(segments);
-                }
+                const auto count = static_cast<double>(segments);
+                std::ranges::transform(
+                    bands, bands.begin(), [count](double band) { return band / count; });
                 return bands;
             }
         };
@@ -576,12 +575,15 @@ namespace AdaptiveSound
                 const double r2 = correlation * correlation;
                 rSquared.push_back(r2);
                 coherent += (r2 >= kCoherentR2) ? 1U : 0U;
-                double mainPower = 0.0;
-                for (const std::vector<double>& main : mains)
-                {
-                    mainPower +=
-                        dot(main.data() + start, main.data() + start, kBlockSamples) / blockLength;
-                }
+                const double mainPower = std::accumulate(
+                    mains.begin(),
+                    mains.end(),
+                    0.0,
+                    [start, blockLength](double sum, const std::vector<double>& main)
+                    {
+                        return sum + (dot(main.data() + start, main.data() + start, kBlockSamples) /
+                                      blockLength);
+                    });
                 const double unexplained = (lfeEnergy / blockLength) * (1.0 - r2);
                 const double excessDb =
                     kDbPower * std::log10((unexplained / (mainPower + kTiny)) + kTiny);
