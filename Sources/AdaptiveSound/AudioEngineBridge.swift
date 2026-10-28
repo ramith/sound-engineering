@@ -371,12 +371,25 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     // EQ control plane (withEffectsAU + publishEQ) lives in AudioEngineBridge+EQControl.swift.
 
     /// The engine's state for the main thread (`AudioPlaybackEngine.snapshot`): the transport clock's
-    /// last sample, the signal path (a copy under `stateLock`, whose holders never call out), the
-    /// meter's atomics (through a strong copy of the meter) and the EQ design rate (an atomic,
-    /// through a borrow of the AU). No AVFAudio, no HAL, no queue hop.
+    /// last sample, the signal path (a copy under `stateLock`, whose holders never call out) with the fold
+    /// the spatial unit plays (its atomics, through a borrow of the AU), the meter's atomics (through a
+    /// strong copy of the meter) and the EQ design rate (an atomic, through a borrow of the AU). No
+    /// AVFAudio, no HAL, no queue hop.
     func snapshot() -> EngineSnapshot {
-        EngineSnapshot(transport: transportSnapshots.read(), signalPath: loadSignalPath(),
-                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
+        var signalPath = loadSignalPath()
+        signalPath.fold = signalPath.path == .enhanced ? foldReadout() : nil
+        return EngineSnapshot(transport: transportSnapshots.read(), signalPath: signalPath,
+                              loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
+    }
+
+    /// The fold the spatial unit plays (`asSpatialFoldState`: atomics, through a counted borrow), or `nil`
+    /// when it doesn't fold or isn't live.
+    private func foldReadout() -> FoldState? {
+        var state = AsFoldState()
+        guard withSpatialAU({ asSpatialFoldState($0, &state) }) == true, state.folding else { return nil }
+        return FoldState(sourceChannels: Int(state.sourceChannels), outputChannels: Int(state.outputChannels),
+                         fromPlan: state.fromPlan, trimDb: state.trimDb, lfeGain: state.lfeGain,
+                         backstopPeakGrDb: state.backstopPeakGrDb)
     }
 
     /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`), read through

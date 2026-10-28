@@ -44,6 +44,31 @@ enum DeviceVolume: Equatable {
     case decibels(Float)
 }
 
+// MARK: - FoldState
+
+/// The fold the spatial unit plays (R1.1-B, US-R1F-08; level-and-fold §S2): a file of 3 or more channels on a
+/// narrower output, folded to stereo by the BS.775 matrix behind a backstop. What the "5.1 → stereo" badge and
+/// the backstop's meter read. It describes the graph as configured for the current file — playing or paused.
+struct FoldState: Equatable {
+    /// N: the file's channels.
+    var sourceChannels: Int
+    /// M: the output's (2: the fold is stereo).
+    var outputChannels: Int
+    /// The fold is the playing track's plan; false: the layout's fold at its worst-case trim (no plan yet).
+    var fromPlan: Bool
+    /// The fold's trim, dB (≤ 0).
+    var trimDb: Float
+    /// The LFE's per-side gain in the fold (0: omitted).
+    var lfeGain: Float
+    /// The deepest gain reduction the backstop applied since this fold began, dB (≥ 0; the trim keeps it 0).
+    var backstopPeakGrDb: Float
+
+    /// Whether the fold plays the LFE.
+    var lfeIncluded: Bool {
+        lfeGain > 0
+    }
+}
+
 // MARK: - SignalPathInfo
 
 /// Snapshot of the active signal path, updated at 20 Hz from `engine.snapshot()`.
@@ -90,6 +115,10 @@ struct SignalPathInfo: Equatable {
     /// that turns the path Pure) and kept current by a listener on the device. `.fixed` holds the
     /// Master Gain slider at 0 dB (the device has no volume to turn down). `nil` on Enhanced.
     var deviceVolume: DeviceVolume?
+
+    /// The fold the spatial unit plays (S2): `nil` when nothing folds, and always on Pure. `snapshot()` reads
+    /// it from the unit's atomics; it is never stored.
+    var fold: FoldState?
 
     // MARK: - Enhancement overlay (F4 — copied from the VM: `refreshSignalPathIntents`, the tick)
 

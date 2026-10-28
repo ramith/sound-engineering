@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
 #include "../include/MultichannelView.h"
+#include "../include/SpatialBridge.h" // the fold's C-ABI (AsFoldState)
 #include "../Spatial/SpatialRenderKernel.h"
 #include "InProcessEffectAU.h" // the scaffold both in-process AUs share (C-87)
 #include <cstddef>
@@ -161,6 +162,12 @@ namespace
             scratch_.clear();
         }
 
+        // Any thread: what the fold plays now (atomics).
+        [[nodiscard]] FoldReadout readout() const noexcept
+        {
+            return kernel_.readout();
+        }
+
         AUAudioUnitStatus render(AudioUnitRenderActionFlags* flags,
                                  const AudioTimeStamp* timestamp,
                                  AUAudioFrameCount frames,
@@ -198,6 +205,8 @@ namespace
     InProcessEffectScaffold _scaffold;
 }
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
+// The render (kernel + scratch), for the C-ABI below: off the render thread only.
+- (std::shared_ptr<SpatialRender>)spatialRender;
 @end
 
 @implementation SpatialRendererAU
@@ -227,6 +236,10 @@ namespace
 
 - (AUInternalRenderBlock)internalRenderBlock {
     return _scaffold.renderBlock();
+}
+
+- (std::shared_ptr<SpatialRender>)spatialRender {
+    return _render;
 }
 
 // {-1, -1}: any input channel count, any output channel count. This lets AVAudioEngine's
@@ -283,6 +296,30 @@ void registerSpatialRendererAUSubclass(void) AUDIODSP_C_NOEXCEPT {
     InProcessEffectScaffold::registerOnce(onceToken, [SpatialRendererAU class],
                                           spatialRendererComponentDescription(),
                                           CFSTR("AdaptiveSound: SpatialRendererAU"));
+}
+
+// MARK: The fold (SpatialBridge.h)
+
+bool asSpatialFoldState(void* spatialAU, AsFoldState* out) AUDIODSP_C_NOEXCEPT {
+    if (spatialAU == nullptr || out == nullptr) {
+        return false;
+    }
+    SpatialRendererAU* audioUnit = (__bridge SpatialRendererAU*)spatialAU; // non-owning borrow
+    const std::shared_ptr<SpatialRender> render = [audioUnit spatialRender];
+    if (render == nullptr) {
+        return false;
+    }
+    const FoldReadout state = render->readout();
+    *out = AsFoldState{
+        .sourceChannels = state.sourceChannels,
+        .outputChannels = state.outputChannels,
+        .folding = state.folding,
+        .fromPlan = state.fromPlan,
+        .trimDb = state.trimDb,
+        .lfeGain = state.lfeGain,
+        .backstopPeakGrDb = state.backstopPeakGrDb,
+    };
+    return true;
 }
 
 } // extern "C"
