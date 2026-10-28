@@ -176,9 +176,9 @@ namespace AdaptiveSound
         uint32_t outChannels_ = 0U;
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
-        uint32_t publishCount_ = 0U; // producer-owned, under publishMutex_
+        uint32_t publishCount_ = 0U;      // producer-owned, under publishMutex_
         uint32_t appliedGeneration_ = 0U; // RT: which publish is in force (0: none)
-        uint32_t glideLeft_ = 0U; // RT
+        uint32_t glideLeft_ = 0U;         // RT
         uint32_t meterLookahead_ = 0U;
         uint32_t meterHead_ = 0U; // RT
         float peakGrDb_ = 0.0F;   // RT-owned; mirrored into readoutPeakGrDb_
@@ -190,8 +190,8 @@ namespace AdaptiveSound
         std::atomic<uint32_t> readoutIn_{0U};
         std::atomic<uint32_t> readoutOut_{0U};
 
-        bool needsSnap_ = true;        // set by configure(): the next fold snaps
-        bool haveFold_ = false;        // RT: a fold for this N is in force
+        bool needsSnap_ = true; // set by configure(): the next fold snaps
+        bool haveFold_ = false; // RT: a fold for this N is in force
         std::atomic<bool> readoutFromPlan_{false};
     };
 
