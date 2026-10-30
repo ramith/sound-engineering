@@ -6,7 +6,7 @@ import Testing
 // MARK: - R1.1-B break-it, the one search rule (BI-P)
 
 //
-// Red tests written against the combined sprint branch (f52de075): the shipped `SearchRule`, the tabs'
+// Red tests written against the combined sprint branch (34ad6efe): the shipped `SearchRule`, the tabs'
 // `FacetTextFilter`, the `SearchQueryGate` that Songs and ⌘F share, and the Songs search over a real store.
 
 @Suite("R1.1-B break-it — the one search rule (BI-P)")

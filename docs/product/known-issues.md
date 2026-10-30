@@ -915,7 +915,7 @@ These are not defects; each is a decision or a planned feature. They are listed 
 Council C-16, C-65, C-61 (its R1.1-B half) and C-54, with the founder's answers at R1.1-B's plan check, 2026-10-25
 (US-R1F-01, US-R1F-14, US-R1F-03; the loose files of US-LIB-02 and US-PLIST-02 are under *Known limitations*). Two
 lanes, transport and library, combined; then a code review and a break-it, and one fix round. Each lane's new tests
-were first seen failing against a planted bug. The break-it's red tests, BI-P01…BI-P10 (committed red at `b34acf8f`),
+were first seen failing against a planted bug. The break-it's red tests, BI-P01…BI-P10 (committed red at `bdeba067`),
 pass after the fix round. Two of them changed at the fix, as the [sprint record](../sprints/r1-1b-record.md) says:
 BI-P05 was rewritten, because its stand-in store meant both "still opening" and "never opens", and now opens while the
 store is opening and checks that the open waits; BI-P01 / BI-P02's precondition required the reused id, which is the
