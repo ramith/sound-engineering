@@ -109,8 +109,9 @@ struct SettingsStoreTests {
         #expect(settings.chosenOutputUID == nil)
         #expect(settings.masterGainDecibels == -.infinity, "version 1 always writes it: absent is damage, Silent")
 
-        // A later build's value: its new fields are ignored, the known ones read.
-        stored(#"{"version":2,"shuffle":true,"leveling":"album","masterGainDecibels":-6}"#)
+        // A later build's value: its new fields are ignored, the known ones read. (Leveling was this test's
+        // unknown field until R1.1-B made it a setting; S14-lite's bass layer stands in now.)
+        stored(#"{"version":2,"shuffle":true,"keepBassAtLowVolume":true,"masterGainDecibels":-6}"#)
         #expect(load() == ListeningSettings(masterGainDecibels: -6, shuffle: true))
     }
 
