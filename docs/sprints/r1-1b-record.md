@@ -36,6 +36,14 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
 6. **Unknown loudness:** −5 dB for now; revisited once the founder's named files are measured.
 7. **A never-measured song with an EQ on** starts at once; its level settles within the first second, on that first play only.
 
+**During the build — the founder, 2026-10-28 / 30:**
+- **Lanes stay at two agents at once** (asked when lane 1 sized at 13 days and was split; "measure" waited for a slot).
+- **A scrub while playing saves your place at once, like a pause** (asked when the crash-restore stress test showed a
+  small backward scrub could resume up to ~5 s off). Only the song's own progress waits for the 5 s cadence.
+- **In Track mode, a run of songs that join without a pause shares the level of the run's own loudest member**, not
+  the whole album's (asked when lane 3 sized and found backlog item 7 and plan check §6 disagreeing). When the run
+  is the whole album the two are the same; the level never steps mid-music either way.
+
 **Test data — the founder, 2026-10-28:** the sprint proceeds on the test corpus as it stands; the gaps are recorded
 below ([Test material](#test-material)), and the founder supplies the missing data later. No lane waits for data.
 
