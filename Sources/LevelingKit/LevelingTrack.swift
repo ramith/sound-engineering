@@ -20,7 +20,7 @@ public enum LevelingMode: String, Sendable, CaseIterable {
     /// The album's level: its loudest song at −18 LUFS (founder, 2026-10-26).
     case album
     /// Each track at its own level; a run of tracks that join without a pause shares the level of the run's own
-    /// loudest member (founder, 2026-10-30).
+    /// loudest member (founder, 2026-10-30) — when they play in album order, the only order in which they join.
     case track
 }
 

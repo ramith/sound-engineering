@@ -29,8 +29,9 @@ public struct LevelingLibrary: Sendable, Equatable {
     ///   never steps inside the music, whatever has landed since (an album finished analysing, a tag read).
     /// - Otherwise the scope decides. Album, and Auto beside a song of the same album, take the album's numbers
     ///   when every song is analysed, else its album tags when every song has the same ones, else the track's
-    ///   own. Track and Off take the track's continuous run's numbers when every song of the run is analysed,
-    ///   else the track's own: its analysis, then its track tags, then the unknown cut.
+    ///   own. Track and Off take the track's continuous run's numbers when the track joins its run in play order
+    ///   and every song of the run is analysed, else the track's own: its analysis, then its track tags, then the
+    ///   unknown cut.
     public func decision(for request: LevelingRequest) -> TrackLevelingDecision {
         guard let track = tracks[request.key] else {
             return Self.unknown(leveled: request.mode != .off)
@@ -52,7 +53,8 @@ public struct LevelingRequest: Sendable, Equatable {
     /// The listener's setting.
     public var mode: LevelingMode
     /// The track heard just before this one: at a seam, the one it follows; at a fresh start, the one played last
-    /// in this session, if any. Auto reads it ("the one just played"); continuity reads it at a seam.
+    /// in this session, if any. Auto reads it ("the one just played"); continuity reads it at a seam; a continuous
+    /// run reads it and `next` (the track joins its run only beside its neighbour in the run).
     public var previous: String?
     /// The track queued to play after this one, in play order (shuffle's permutation included), if any.
     public var next: String?
@@ -124,7 +126,7 @@ extension LevelingLibrary {
         if albumScope, let album = albumDecision(for: track, leveled: leveled) {
             return album
         }
-        return trackDecision(for: track, key: request.key, leveled: leveled)
+        return trackDecision(for: track, request: request, leveled: leveled)
     }
 
     /// Whether the track `key` is from `track`'s album. A song with no album shares none.
@@ -145,10 +147,12 @@ extension LevelingLibrary {
         return Self.albumTags(members.map { $0?.tags?.albumLevel }, leveled: leveled)
     }
 
-    /// The track's numbers: its continuous run's when every song of the run is analysed, else its own.
-    private func trackDecision(for track: LevelingTrack, key: String, leveled: Bool) -> TrackLevelingDecision {
-        let run = continuousRun(of: key, album: track.album)
-        if run.count > 1 {
+    /// The track's numbers: its continuous run's when it joins the run as it plays and every song of the run is
+    /// analysed, else its own.
+    private func trackDecision(for track: LevelingTrack, request: LevelingRequest,
+                               leveled: Bool) -> TrackLevelingDecision {
+        let run = continuousRun(of: request.key, album: track.album)
+        if Self.joins(run, request) {
             let measured = run.compactMap { tracks[$0]?.measurement }
             if measured.count == run.count {
                 return Self.group(measured, own: track.measurement, leveled: leveled)
@@ -193,6 +197,18 @@ extension LevelingLibrary {
             last += 1
         }
         return Array(members[first ... last])
+    }
+
+    /// Whether `request`'s track joins `run` as it plays: the song before it in play order is the one before it in
+    /// the run, or the song after it is the one after. A run shares one level because its songs join without a
+    /// pause (founder, 2026-10-30); out of album order — shuffled, played alone, or the other way round — they never
+    /// do, and each plays at its own level (founder, 2026-10-26, decision 2). Auto and Track alike; Off keeps the
+    /// run's peaks by the same rule.
+    private static func joins(_ run: [String], _ request: LevelingRequest) -> Bool {
+        guard let index = run.firstIndex(of: request.key) else { return false }
+        let before = index > run.startIndex ? run[index - 1] : nil
+        let after = index + 1 < run.endIndex ? run[index + 1] : nil
+        return (before != nil && request.previous == before) || (after != nil && request.next == after)
     }
 }
 
