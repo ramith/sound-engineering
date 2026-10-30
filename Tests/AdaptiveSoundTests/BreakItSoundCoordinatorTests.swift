@@ -45,4 +45,24 @@ struct BreakItSoundCoordinatorTests {
         #expect(second.source == .analysis && second.mode == .leveled && second.folded != nil,
                 "the second play re-sent the first play's decision: \(second.mode) from \(second.source)")
     }
+
+    @Test("BI-S12: a song that cannot be played says so and the queue moves on to the next song")
+    func unplayableSongMovesOn() async throws {
+        // The brief's clean failure for 11-broken-files, KI-LIB-12 (5.1 Opus) and KI-PB-22: a clear "can't play",
+        // and the queue moves on. FakeEngine refuses the start as the bridge refuses a file that won't open.
+        let player = try await FakePlayer.launched(tracks: 3)
+        player.engine.state.withLock { $0.startError = AudioBridgeError.unsupportedFormat("opus") }
+        player.vm.playTrack(at: 0)
+        try await player.vm.settled()
+        player.engine.state.withLock { $0.startError = nil }
+        try await player.vm.settled()
+        let started = player.calls.compactMap { call -> URL? in
+            if case let .start(url, _, _, _, _) = call {
+                return url
+            }
+            return nil
+        }
+        #expect(player.vm.errorMessage != nil, "the listener is told")
+        #expect(started.contains(track(1)), "the queue stopped at the song it could not play: \(started)")
+    }
 }

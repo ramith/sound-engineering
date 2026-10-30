@@ -107,6 +107,24 @@ struct BreakItSoundBridgeTests {
         await rig.finish()
     }
 
+    @Test("BI-S11: a damaged FLAC (zero bytes; 11-broken-files 113) is refused as damaged, not as an unsupported type")
+    func damagedFileSaysDamaged() async throws {
+        let rig = try await MultichannelDeviceRig.make(deviceChannels: 2)
+        let url = try BreakItTinyFlac.write(named: "zero-bytes", rate: 48000, blockSize: 4096)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data().write(to: url)
+        var said: String?
+        do {
+            try await rig.play(url)
+        } catch {
+            said = error.localizedDescription
+        }
+        await rig.finish()
+        let message = try #require(said, "a zero-byte file started")
+        // The banner reads "Playback failed: " + this. FLAC is a type the app plays (LibraryScanner's list).
+        #expect(!message.contains("isn't supported"), "the listener is told FLAC isn't supported: \"\(message)\"")
+    }
+
     @Test("BI-S08: a mode change the view model sent before it saw a seam never plans the new song from the old one's")
     func modeChangeRacingASeam() async throws {
         // Song A plays; song B is armed with its decision (g +2 dB). The seam passes on the engine; the view model,
