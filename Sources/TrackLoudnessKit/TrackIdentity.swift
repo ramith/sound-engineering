@@ -25,6 +25,13 @@ public struct TrackIdentity: Hashable, Sendable, Codable {
         self.modified = modified.timeIntervalSince1970
     }
 
+    /// An identity from its three fields, as the analysis store keeps them.
+    init(path: String, size: UInt64, modified: Double) {
+        self.path = path
+        self.size = size
+        self.modified = modified
+    }
+
     /// The engine's token for this track (FNV-1a 64 of "path|size|mtime"; never 0).
     public var token: UInt64 {
         var hash: UInt64 = 0xCBF2_9CE4_8422_2325

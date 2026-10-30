@@ -14,9 +14,11 @@ import Synchronization
 /// - The scalar record (numbers, histograms, LFE statistics: a few KB) is kept for every analysed track; the
 ///   compact −ΔL profiles (up to ~600 KB per basis) are capped at `defaultProfileBudgetBytes` in all, the least
 ///   recently used going first. A track whose profiles went keeps its numbers.
-/// - Everything here can be rebuilt by analysing again, so a file that will not open is recreated (closed, then
-///   the file and its `-wal` / `-shm` deleted), and one found broken while open is erased on its connection —
-///   never `eraseDatabaseOnSchemaChange`, never a refusal.
+/// - Everything here can be rebuilt by analysing again, so a file that is not a database or is corrupt is
+///   recreated (closed, then the file and its `-wal` / `-shm` deleted), and one found so while open is erased on
+///   its connection — never `eraseDatabaseOnSchemaChange`. A file that merely cannot be used now (another
+///   connection holds it locked past the busy timeout, a disk or permission error) is never touched: the open
+///   throws, and the app plays unanalysed.
 ///
 /// Every method is async and runs one read or one write transaction on the store's own queue: call it from any
 /// task, never wait on it from the main thread.
@@ -31,15 +33,17 @@ public final class TrackAnalysisStore: Sendable {
     private let profileBudgetBytes: Int
     private let queue: DatabaseQueue
 
-    /// Open the store in `directory` (created when missing), recreating a file that will not open. Throws only
-    /// when even a fresh file cannot be made.
+    /// Open the store in `directory` (created when missing), recreating a file that is not a database or is
+    /// corrupt (`isBroken`). Throws, deleting nothing, when the file cannot be used now — another connection holds it
+    /// locked past the 5 s busy timeout (BI-S20), a disk or permission error — or when even a fresh file cannot be
+    /// made.
     public init(directory: URL, profileBudgetBytes: Int = defaultProfileBudgetBytes) throws {
         url = directory.appending(path: Self.fileName, directoryHint: .notDirectory)
         self.profileBudgetBytes = profileBudgetBytes
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         do {
             queue = try Self.open(url)
-        } catch {
+        } catch let error as DatabaseError where Self.isBroken(error) {
             Self.remove(url)
             queue = try Self.open(url)
         }
@@ -76,7 +80,7 @@ public final class TrackAnalysisStore: Sendable {
             try stride(from: 0, to: paths.count, by: Self.chunk).flatMap { start in
                 let slice = Array(paths[start ..< min(start + Self.chunk, paths.count)])
                 return try Row.fetchAll(db, sql: Self.selectAnalysesSQL(count: slice.count),
-                                        arguments: StatementArguments(slice)).compactMap(Record.init)
+                                        arguments: StatementArguments(slice)).map(Record.init)
             }
         }
         var found: [TrackIdentity: TrackAnalysis] = [:]
@@ -95,7 +99,7 @@ public final class TrackAnalysisStore: Sendable {
         guard !bases.isEmpty else { return [:] }
         return try await perform { db in
             guard let record = try Row.fetchOne(db, sql: Self.selectRecordSQL, arguments: [identity.path])
-                .flatMap(Record.init), record.identity == identity, record.isCurrent else { return [:] }
+                .map(Record.init), record.identity == identity, record.isCurrent else { return [:] }
             var found: [Int: TrackAnalysis.Profile] = [:]
             for basis in Set(bases) {
                 guard let row = try Row.fetchOne(db, sql: Self.selectProfileSQL, arguments: [identity.path, basis])
@@ -216,6 +220,12 @@ extension TrackAnalysisStore {
         return queue
     }
 
+    /// Whether `error` says the file itself is broken — not a database, or corrupt — so recreating it loses
+    /// nothing that analysing again would not restore. Busy, locked, I/O and permission errors are not.
+    private static func isBroken(_ error: DatabaseError) -> Bool {
+        [.SQLITE_CORRUPT, .SQLITE_NOTADB].contains(error.resultCode)
+    }
+
     /// Delete the file at `url` and its sidecars.
     private static func remove(_ url: URL) {
         for suffix in ["", "-wal", "-shm", "-journal"] {
@@ -229,7 +239,7 @@ extension TrackAnalysisStore {
         -> Value {
         do {
             return try await queue.write(body)
-        } catch let error as DatabaseError where [.SQLITE_CORRUPT, .SQLITE_NOTADB].contains(error.resultCode) {
+        } catch let error as DatabaseError where Self.isBroken(error) {
             try? await queue.erase()
             try? Self.migrator.migrate(queue)
             throw error
@@ -263,11 +273,10 @@ extension TrackAnalysisStore {
             modified = row["mtime"]
         }
 
-        /// The identity it names (`TrackIdentity` is made from a file, or decoded).
-        var identity: TrackIdentity? {
-            let fields: [String: Any] = ["path": path, "size": size, "modified": modified]
-            guard let json = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
-            return try? JSONDecoder().decode(TrackIdentity.self, from: json)
+        /// The identity it names, field for field (review N10: never through a coder, whose round trip of the
+        /// mtime every record's match would hang on).
+        var identity: TrackIdentity {
+            TrackIdentity(path: path, size: size, modified: modified)
         }
     }
 
@@ -277,9 +286,8 @@ extension TrackAnalysisStore {
         let version: Int
         let payload: Data
 
-        init?(_ row: Row) {
-            guard let identity = RecordKey(row).identity else { return nil }
-            self.identity = identity
+        init(_ row: Row) {
+            identity = RecordKey(row).identity
             version = row["version"]
             payload = row["payload"]
         }
