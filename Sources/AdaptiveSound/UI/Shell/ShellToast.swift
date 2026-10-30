@@ -70,16 +70,20 @@ struct ShellToastHost: View {
     let systemImage: String
     /// VoiceOver's hint for the tap, e.g. "Opens Now Playing".
     let hint: String
+    /// The tap opens what the toast is about (the chevron says so); `false`: it only dismisses the toast.
+    let opens: Bool
     let open: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The token of a toast already up when the host was created: stale, never shown or spoken.
     @State private var staleToken: Int?
 
-    init(toast: ShellToastSlot.Toast?, systemImage: String, hint: String, open: @escaping () -> Void) {
+    init(toast: ShellToastSlot.Toast?, systemImage: String, hint: String, opens: Bool = true,
+         open: @escaping () -> Void) {
         self.toast = toast
         self.systemImage = systemImage
         self.hint = hint
+        self.opens = opens
         self.open = open
         // A State's initial value is taken once, when the host is created: whatever toast is up then
         // was raised while no window showed it.
@@ -116,8 +120,10 @@ struct ShellToastHost: View {
                 Text(message)
                     .font(DesignSystem.Font.body)
                     .foregroundStyle(DesignSystem.Color.label)
-                Image(systemName: "chevron.forward")
-                    .foregroundStyle(DesignSystem.Color.labelTertiary)
+                if opens {
+                    Image(systemName: "chevron.forward")
+                        .foregroundStyle(DesignSystem.Color.labelTertiary)
+                }
             }
             .padding(.horizontal, DesignSystem.Spacing.medium)
             .padding(.vertical, DesignSystem.Spacing.small)

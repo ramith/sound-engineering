@@ -91,6 +91,16 @@ struct SoundUITests {
         #expect(second.token == first.token + 1, "a second give-back is a second toast")
     }
 
+    @Test("SOUND-UI-10: \"Volume restored\" on Now Playing only dismisses — no promise to open what is already open")
+    func volumeRestoredToastOnNowPlaying() {
+        #expect(VolumeRestoredToast.opensNowPlaying(from: .nowPlaying) == false)
+        for tab in TabSelection.allCases where tab != .nowPlaying {
+            #expect(VolumeRestoredToast.opensNowPlaying(from: tab), "\(tab)")
+        }
+        #expect(VolumeRestoredToast.hint(opening: false) == "Dismisses")
+        #expect(VolumeRestoredToast.hint(opening: true) == "Opens Now Playing")
+    }
+
     // MARK: The fold
 
     private static func fold(channels: Int, fromPlan: Bool = true) -> FoldState {
@@ -159,14 +169,15 @@ struct SoundUITests {
             #expect(LevelingRowText.meaning(of: setting).hasSuffix("."))
         }
         #expect(LevelingRowText.target == "Target −18 LUFS")
+        // One minus sign on the line (F4 fix round, review-ui nit): the target's U+2212, the song's gain too.
         let leveled = LevelingReadout(mode: .leveled, gainDb: -4.24, foldMeasured: true, sourceLayout: nil)
         #expect(LevelingRowText.nowPlaying(setting: .track, readout: leveled, source: .analysis)?.text
-            == "This song -4.2 dB, from analysis")
+            == "This song −4.2 dB, from analysis")
         #expect(LevelingRowText.nowPlaying(setting: .album, readout: leveled, source: .tags)?.text
-            == "This song -4.2 dB, from file tags")
+            == "This song −4.2 dB, from file tags")
         let unknown = LevelingReadout(mode: .unknownCut, gainDb: -5, foldMeasured: true, sourceLayout: nil)
         #expect(LevelingRowText.nowPlaying(setting: .auto, readout: unknown, source: .unknownCut)?.text
-            == "This song -5.0 dB, loudness unknown")
+            == "This song −5.0 dB, loudness unknown")
         #expect(LevelingRowText.nowPlaying(setting: .auto, readout: unknown, source: .unknownCut)?.spoken
             == "This song minus 5 decibels, loudness unknown")
         #expect(LevelingRowText.nowPlaying(setting: .off, readout: leveled, source: .analysis) == nil,
