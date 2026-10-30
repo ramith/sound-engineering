@@ -90,12 +90,21 @@
         case monitorMono = "1ch"
         case monitor51 = "6ch"
         case monitor71 = "8ch"
+        /// The sound worlds (R1.1-B W5): a 5.1 file folded to stereo on its first, unmeasured play, Pure asked for
+        /// (the hero's "5.1 → stereo · measuring" beside "Pure off: channels", crossfeed "not active on surround
+        /// albums", Settings' fold reason and Leveling's line) — at both sizes, for the hero's width; Now Playing
+        /// while Pure plays (crossfeed's row inert, "Not in bit-perfect mode"); and "Volume restored" raised.
+        case soundFold = "fold"
+        case soundPure = "np-pure"
+        case volumeRestored = "volume-restored"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
         /// The hard window minimum.
         private static let minimumSize = NSSize(width: DesignSystem.ShellMetrics.windowMinWidth,
                                                 height: DesignSystem.ShellMetrics.windowMinHeight)
+        /// A tall window, so the whole Settings column shows in one sheet (the fold world's every card).
+        private static let tallSize = NSSize(width: 1000, height: 1280)
 
         /// The file-name slug, or nil for `standard`.
         var slug: String? {
@@ -144,13 +153,15 @@
         }
 
         /// The default window size and the hard minimum for `standard`, the grids, the playlist page and
-        /// the Monitoring worlds; the minimum alone for the long presets list (where the card scrolls) and
-        /// the folded Tone card; the default size for the rest.
+        /// the Monitoring worlds; those and a tall one for the fold world (the hero's width; the whole Settings
+        /// column); the minimum alone for the long presets list (where the card scrolls) and the folded Tone card;
+        /// the default size for the rest.
         var sizes: [NSSize] {
             switch self {
             case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage,
                  .monitorMono, .monitor51, .monitor71, .search:
                 [Self.defaultSize, Self.minimumSize]
+            case .soundFold: [Self.defaultSize, Self.minimumSize, Self.tallSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
             }
@@ -188,12 +199,23 @@
             case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates,
                  .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
                  .playlistFailure, .folderRemove, .folderPaused, .folderChecking, .search: [.library]
-            case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure: [.settings]
+            case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure, .soundFold, .soundPure,
+                 .volumeRestored: settingsAndSoundTabs
             case .monitorMono, .monitor51, .monitor71: [.monitoring]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
             }
             return request.tabs.filter { wanted?.contains($0) ?? true }
+        }
+
+        /// The Settings worlds' tab, and the sound worlds' (R1.1-B): the fold on Now Playing and in Settings, Pure on
+        /// Now Playing and the toast there.
+        private var settingsAndSoundTabs: Set<TabSelection> {
+            switch self {
+            case .soundFold: [.nowPlaying, .settings]
+            case .soundPure, .volumeRestored: [.nowPlaying]
+            default: [.settings]
+            }
         }
 
         /// The requested appearances this variant renders: all of them for `standard`, the grids and
