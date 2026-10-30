@@ -5,7 +5,7 @@ import Foundation
 
 /// The widest source the engine graph carries: the DSP kernel's `kMaxChannels` (AudioDSP's
 /// `AudioConstants.h`, C++ and so not visible here). A wider file plays through today's stereo fallback.
-public let engineMaxChannels: AVAudioChannelCount = 8
+let engineMaxChannels: AVAudioChannelCount = 8
 
 /// The format a source plays in on the Enhanced path, and is analysed in, at the engine's rate: **its own
 /// channels in its own order** (level-and-fold design, F1). This is the one function the graph's source width
