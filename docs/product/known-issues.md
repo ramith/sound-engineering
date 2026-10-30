@@ -818,7 +818,9 @@ fixed both.)* Every start and seam now probes a file's first frames before it co
 (`AudioBridgeError`, `Sources/AdaptiveSound/AudioBridgeError.swift:58`), and the queue moves on: the banner reads
 "Skipped “<song>”. …" and the next song plays; it stops only when no song left can play (the founder's rule,
 2026-10-30; `UnplayableFileTests`, `UnplayableQueueTests` VM-UQ-01…06). What is left is the listing: the scan still
-admits the file.
+admits the file. *(2026-10-30, main's CI after R1.1-B merged: the CI runner's newer macOS, image `xcode-27-arm64`,
+decodes 5.1 Opus, and the app plays it there. The refusal holds on macOS 26, and the test now checks whichever
+this macOS does.)*
 
 ### KI-LIB-13 — macOS 26 turns a supplementary-plane letter followed by a combining accent into another character
 

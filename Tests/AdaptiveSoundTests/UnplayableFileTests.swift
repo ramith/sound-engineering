@@ -55,12 +55,26 @@ struct UnplayableFileTests {
         #expect(said == "macOS can't decode this kind of file (.flac).", "\(said)")
     }
 
-    @Test("a 5.1 Opus file (KI-LIB-12) is a variant macOS can't decode")
+    @Test("a 5.1 Opus file (KI-LIB-12) plays where macOS decodes it, and is otherwise a variant macOS can't decode")
     func surroundOpusIsAVariant() async throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Fixtures/reader/surround-5.1-48k.opus")
-        let said = try #require(try await Self.refusal(playing: url), "the 5.1 Opus started")
-        #expect(said == "macOS can't decode this kind of file (.opus).", "\(said)")
+        let said = try await Self.refusal(playing: url)
+        if Self.appleDecodes(url) {
+            // A later macOS decodes multichannel Opus (the CI runner's does; macOS 26 doesn't): then it plays.
+            #expect(said == nil, "macOS decodes this 5.1 Opus, but the app refused it: \(said ?? "")")
+        } else {
+            let words = try #require(said, "the 5.1 Opus started, though macOS can't decode it")
+            #expect(words == "macOS can't decode this kind of file (.opus).", "\(words)")
+        }
+    }
+
+    /// Whether Apple's decoder opens `url` and reads its first frames: the fact the app's refusal follows, which
+    /// changes between macOS versions.
+    private static func appleDecodes(_ url: URL) -> Bool {
+        guard let file = try? AVAudioFile(forReading: url),
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1024) else { return false }
+        return (try? file.read(into: buffer, frameCount: 1024)) != nil && buffer.frameLength > 0
     }
 
     @Test("a .wav of random bytes (11-broken-files 115) can't be read — it may be damaged")

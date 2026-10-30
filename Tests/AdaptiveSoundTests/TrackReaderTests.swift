@@ -76,8 +76,9 @@ struct TrackReaderTests {
         #expect(seeking.position == place + 2048)
     }
 
-    @Test("a decoder that reads short (48 kHz AC-3) ends on the frames it delivered, with no failure after")
+    @Test("the reader ends on the frames the decoder delivers (a short-reading 48 kHz AC-3 too), no failure after")
     func shortReadEndsOnDeliveredFrames() throws {
+        let decoded = try Self.framesDecoded(at: Self.shortRead48k)
         let file = try AVAudioFile(forReading: Self.shortRead48k)
         let reader = try TrackFileReader(reading: file)
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 8192))
@@ -86,10 +87,24 @@ struct TrackReaderTests {
             try reader.read(into: buffer, frameCount: 8192)
             delivered += AVAudioFramePosition(buffer.frameLength)
         }
-        #expect(file.length == 96768)
-        #expect(delivered == 96480, "the decoder delivers 288 frames fewer than the file states")
-        try reader.read(into: buffer, frameCount: 8192) // AVAudioFile throws here
+        // Whatever this macOS's decoder gives — macOS 26 delivers 96 480 of the 96 768 frames `length` states, then
+        // throws; the CI runner's newer decoder differs — the reader ends exactly there.
+        #expect(delivered == decoded, "the reader delivered \(delivered) frames; the decoder gives \(decoded)")
+        #expect(decoded <= file.length, "the decoder gave \(decoded) frames, more than the \(file.length) stated")
+        try reader.read(into: buffer, frameCount: 8192) // past the end: AVAudioFile throws here on macOS 26
         #expect(buffer.frameLength == 0)
+    }
+
+    /// The frames Apple's decoder delivers for `url`, read through a plain `AVAudioFile` until it gives no more or
+    /// throws: the end the bridge's reader must stop on. The count is the running macOS's, never a constant.
+    static func framesDecoded(at url: URL) throws -> AVAudioFramePosition {
+        let file = try AVAudioFile(forReading: url)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 8192))
+        var frames: AVAudioFramePosition = 0
+        while (try? file.read(into: buffer, frameCount: 8192)) != nil, buffer.frameLength > 0 {
+            frames += AVAudioFramePosition(buffer.frameLength)
+        }
+        return frames
     }
 
     @Test("the open probes Apple's decoder: a tiny-block FLAC is refused before anything commits to it")
