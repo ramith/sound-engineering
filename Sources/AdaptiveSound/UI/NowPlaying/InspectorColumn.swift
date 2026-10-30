@@ -158,10 +158,10 @@ struct HeadphonesSectionView: View {
 
             if !isEnabled {
                 // One line + tooltip (deviations §4): the full rationale lives in .help, not
-                // permanently on screen.
+                // permanently on screen. The section's notes share the Pure note's style.
                 Text("Connect headphones to enable.")
-                    .font(DesignSystem.Font.trackSubtitle)
-                    .foregroundStyle(Color.asLabelTertiary)
+                    .font(DesignSystem.Font.caption)
+                    .foregroundStyle(DesignSystem.Color.labelSecondary)
                     .help("On a speaker device the only consequence of crossfeed is a mild, "
                         + "reversible centre-image change — crossfeed is offered here, not "
                         + "auto-applied.")
@@ -175,25 +175,34 @@ struct HeadphonesSectionView: View {
                     deviceEnabled: isEnabled
                 )
                 .fixedSize()
+                // Crossfeed is on but a folded surround file plays without it (US-R1F-08 item 7): the switch says so to
+                // VoiceOver too, not only the line under it.
+                .accessibilityHint(Self.notActiveOnSurround, isEnabled: bvm.signalPath.crossfeedHeldBySurround)
                 Spacer(minLength: 0)
                 if bvm.crossfeedPlays {
                     CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
                         .fixedSize()
                 }
             }
-            .disabledDim(!isEnabled) // the control only (dark 50%, guide E1); light: its own look
-            .bitPerfectGate(.crossfeed, availability)
+            // The control only (dark 50%, guide E1); light: its own look. One dim for either reason — no headphones,
+            // or Pure playing — never both on top of each other (25%).
+            .disabledDim(!isEnabled || !availability.isLive)
+            .bitPerfectGate(.crossfeed, availability, ownDisabledLook: true)
 
             BitPerfectRowNote(row: .crossfeed, availability: availability, leavePure: bvm.leavePure)
             if bvm.signalPath.crossfeedHeldBySurround {
-                Text("Not active on surround albums")
-                    .font(DesignSystem.Font.trackSubtitle)
-                    .foregroundStyle(Color.asLabelTertiary)
+                Text(Self.notActiveOnSurround)
+                    .font(DesignSystem.Font.caption)
+                    .foregroundStyle(DesignSystem.Color.labelSecondary)
+                    .accessibilityHidden(true) // the switch's hint says it
                     .help("Crossfeed works on stereo. A surround file is folded to stereo after it, so it "
                         + "plays without crossfeed.")
             }
         }
     }
+
+    /// Crossfeed on, a folded surround file playing: it plays without crossfeed (US-R1F-08 item 7).
+    static let notActiveOnSurround = "Not active on surround albums"
 }
 
 // MARK: - Crossfeed Toggle Row
