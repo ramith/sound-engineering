@@ -64,10 +64,20 @@ struct TrackAnalysisSchedulerTests {
     /// What a scheduler reported.
     private final class Reports: Sendable {
         private let analysed = Mutex<[String]>([])
+        private let refused = Mutex<[String]>([])
         private let lines = Mutex<[String]>([])
 
         func add(_ analysis: TrackAnalysis) {
             analysed.withLock { $0.append((analysis.identity.path as NSString).lastPathComponent) }
+        }
+
+        func fail(_ url: URL) {
+            refused.withLock { $0.append(url.lastPathComponent) }
+        }
+
+        /// The files reported as not analysable, in the order reported.
+        var failed: [String] {
+            refused.withLock { $0 }
         }
 
         func log(_ line: String) {
@@ -84,7 +94,8 @@ struct TrackAnalysisSchedulerTests {
     }
 
     private static func make(_ store: TrackAnalysisStore, _ reports: Reports) -> TrackAnalysisScheduler {
-        TrackAnalysisScheduler(store: store, log: { reports.log($0) }, onAnalysed: { reports.add($0) })
+        TrackAnalysisScheduler(store: store, log: { reports.log($0) }, onAnalysed: { reports.add($0) },
+                               onFailed: { reports.fail($0) })
     }
 
     private static func files(_ prefix: String, count: Int, seconds: Double = 2) throws -> [URL] {
@@ -150,6 +161,29 @@ struct TrackAnalysisSchedulerTests {
                               .init(id: "slow", files: [slow.url], startsIn: 60)])
         try await until("every steady track analysed while the slow file's header is still being read",
                         cap: .seconds(30)) { reports.names.count == steady.count }
+    }
+
+    @Test("SCHED-09: a file it cannot analyse is reported once — not there, not audio, refused by the pass")
+    func reportsWhatCannotBeAnalysed() async throws {
+        // Its analysis is not coming: the coordinator stops the fold badge's "· measuring" for it.
+        let store = try TrackAnalysisStore(directory: StoreFolder().url)
+        let reports = Reports()
+        let scheduler = Self.make(store, reports)
+        let missing = Fixtures.directory.appending(path: "sched-missing-\(UUID().uuidString).wav") // never written
+        let garbage = try Fixtures.garbage(named: "sched-not-audio")
+        let refused = try TinyFlac.write(named: "sched-refused", blockSize: 128) // the decoder refuses it
+        let good = try Self.files("sched-reported-good", count: 1)
+        let unanalysable = Set([missing, garbage, refused].map(\.lastPathComponent))
+        scheduler.setHorizon([.init(id: "mixed", files: [missing, garbage, refused, good[0]], startsIn: 0)])
+        try await until("the good file analysed and the three reported") {
+            reports.names.contains("sched-reported-good-0.wav") && Set(reports.failed) == unanalysable
+        }
+        #expect(reports.failed.count == 3)
+        let marker = try Self.files("sched-reported-later", count: 1)
+        scheduler.setHorizon([.init(id: "again", files: [missing, garbage, refused], startsIn: 0),
+                              .init(id: "later", files: marker, startsIn: 600)])
+        try await until("the later job analysed") { reports.names.contains("sched-reported-later-0.wav") }
+        #expect(reports.failed.count == 3, "reported again: \(reports.failed)")
     }
 
     @Test("SCHED-07: a file that cannot be analysed is tried once, logged, and skipped after")
