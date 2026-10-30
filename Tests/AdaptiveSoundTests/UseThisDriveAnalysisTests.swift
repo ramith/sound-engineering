@@ -61,6 +61,6 @@ struct UseThisDriveAnalysisTests {
                       foldedLufs: [nil, nil, nil, nil], foldedTruePeakDbtp: [nil, nil, nil, nil],
                       lfe: .init(activeBlocks: 0, lagMs: nil, lagPeak: nil, coherentShare: nil, medianR2: nil,
                                  p90R2: nil, excess20Share: nil, explainGainDb: nil),
-                      histograms: [], profiles: [], analysedAt: Date(timeIntervalSince1970: 0))
+                      histograms: [], profiles: [])
     }
 }

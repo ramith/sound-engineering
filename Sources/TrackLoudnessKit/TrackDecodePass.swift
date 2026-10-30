@@ -155,13 +155,11 @@ enum DecodeChunk {
 /// rates differ, and the C++ analyzer (`asTrackAnalyzer*`) fed the converted stream.
 final class EngineRateMeasurement {
     let analyzer: OpaquePointer
-    let roles: [UInt8]
     let sourceRate: Double
     private let resampler: StreamingResampler?
 
-    private init(analyzer: OpaquePointer, roles: [UInt8], sourceRate: Double, resampler: StreamingResampler?) {
+    private init(analyzer: OpaquePointer, sourceRate: Double, resampler: StreamingResampler?) {
         self.analyzer = analyzer
-        self.roles = roles
         self.sourceRate = sourceRate
         self.resampler = resampler
     }
@@ -188,7 +186,7 @@ final class EngineRateMeasurement {
             return .failure(DecodeFailure(reason: "\(source.channelCount) channels at \(Int(engineRate)) Hz is "
                     + "outside the analyzer"))
         }
-        return .success(EngineRateMeasurement(analyzer: analyzer, roles: roles, sourceRate: source.sampleRate,
+        return .success(EngineRateMeasurement(analyzer: analyzer, sourceRate: source.sampleRate,
                                               resampler: resampler))
     }
 
@@ -288,7 +286,7 @@ public enum TrackAnalysisPass {
         case let .success(analysis):
             let whole = pass.profiler.flatMap { TrackLoudnessProfileHandle(taking: asLoudnessProfilerFinishFull($0)) }
             return .analysed(TrackAnalysis(analysis, analyzer: measurement.analyzer, identity: identity,
-                                           sourceRateHz: measurement.sourceRate, analysedAt: Date()),
+                                           sourceRateHz: measurement.sourceRate),
                              profile: whole)
         case let .failure(failure):
             return .failed(failure.reason)

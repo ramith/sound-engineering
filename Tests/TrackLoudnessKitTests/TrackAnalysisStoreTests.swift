@@ -191,8 +191,7 @@ enum StoreFixtures {
             lfe: .init(activeBlocks: 120, lagMs: 1.5, lagPeak: 0.25, coherentShare: 0.1, medianR2: 0.2, p90R2: 0.4,
                        excess20Share: 0.75, explainGainDb: nil),
             histograms: (0 ..< bases).map { [.init(bin: UInt32(500 + $0), count: 3, energy: 0.125)] },
-            profiles: (0 ..< bases).map(profile),
-            analysedAt: Date(timeIntervalSince1970: 1_760_000_000)
+            profiles: (0 ..< bases).map(profile)
         )
     }
 }
