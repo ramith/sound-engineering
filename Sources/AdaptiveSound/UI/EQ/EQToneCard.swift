@@ -72,6 +72,14 @@ struct EQToneCard: View {
         .onChange(of: highlighted, initial: true) { _, region in
             eq.highlightedRegion = region
         }
+        // Inert, the rows take no pointer: whatever one was hovered or dragged lets go of the graph's shading (the
+        // slider ends its own drag, and with it the stroke).
+        .onChange(of: availability.isLive) { _, live in
+            if !live {
+                hovered = nil
+                dragged = nil
+            }
+        }
         .onDisappear(perform: clearHighlight)
         #if DEBUG
             .onAppear(perform: seedSheetState)
