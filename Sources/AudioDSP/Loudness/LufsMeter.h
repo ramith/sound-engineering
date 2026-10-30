@@ -3,8 +3,10 @@
 // LufsMeter — ITU-R BS.1770-5 / EBU R128 gated loudness measurement.
 //
 // Pure, synchronous, header-only DSP — NO threading, NO atomics, NO Accelerate.
-// This is the measurement core that LoudnessModule's off-RT worker drives, and
-// that unit tests drive directly with a full buffer (deterministic, no thread).
+// This is the measurement core the playback loudness meter drives from the tap
+// (LoudnessMeterBridge.cpp: the readout's Integrated), whose K-weighting and
+// histogram form the one analysis pass follows (TrackAnalyzer), and that unit
+// tests drive directly with a full buffer (deterministic, no thread).
 //
 // Pipeline (BS.1770-5 §2, EBU Tech 3341):
 //   per channel:  x → [stage-1 high-shelf] → [stage-2 RLB high-pass] → y   (K-weighting)
@@ -42,7 +44,7 @@
 //
 // Non-finite input (Sprint EQ fix round, amendment 14): a NaN or an infinity is measured as
 // silence. One such sample in the K-weighting recursion would otherwise make every later hop NaN,
-// which blockLoudness() reads as silence — the meter (and the normaliser it drives) would stay
+// which blockLoudness() reads as silence — the meter (and the loudness readout it feeds) would stay
 // frozen until the next reset(). Finite input is measured exactly as before.
 //
 // References:

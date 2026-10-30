@@ -3,9 +3,8 @@
 namespace AdaptiveSound
 {
 
-    // The enable glide's time constant. Mirrors the EQ master-gain / loudness makeup / intensity
-    // smoothers (32 ms one-pole, QW1 §3) so turning crossfeed on or off is click-free; ~98 % in
-    // 5τ ≈ 160 ms.
+    // The enable glide's time constant. Mirrors the kernel's Intensity smoother (kIntensityRampTauSeconds:
+    // a 32 ms one-pole, QW1 §3) so turning crossfeed on or off is click-free; ~98 % in 5τ ≈ 160 ms.
     static constexpr float kCrossfeedRampTauSeconds = 0.032F;
 
     // The glide counts as ended this close to its endpoint, and is snapped there: at 0 the module
