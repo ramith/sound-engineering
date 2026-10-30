@@ -118,6 +118,28 @@ struct TrackAnalysisStoreTests {
         #expect(try await store.profiles(for: next.identity, bases: [0, 1, 2, 3, 4]).count == 5)
     }
 
+    @Test("STORE-08: a record matches the identity it was saved with, field for field — awkward mtimes and sizes")
+    func identityFieldForField() async throws {
+        // Review N10: a record's identity is rebuilt from its row. Sub-microsecond and pre-1970 mtimes, the
+        // largest size, and a decomposed path each come back as the very identity that was saved.
+        let store = try TrackAnalysisStore(directory: StoreFolder().url)
+        let identities = [
+            TrackIdentity(path: "/music/a.flac", size: 1, modified: 1_761_800_000.987_654_321),
+            TrackIdentity(path: "/music/b.flac", size: .max, modified: -86400.000_000_1),
+            TrackIdentity(path: "/music/Ame\u{301}lie.flac", size: (1 << 53) + 1, modified: 0.1),
+            TrackIdentity(path: "/music/d.flac", size: 0, modified: .leastNonzeroMagnitude),
+        ]
+        for identity in identities {
+            try await store.save(StoreFixtures.analysis(identity: identity))
+        }
+        let read = try await store.analyses(for: identities)
+        #expect(Set(read.keys) == Set(identities))
+        for identity in identities {
+            #expect(read[identity]?.identity.modified.bitPattern == identity.modified.bitPattern)
+            #expect(try await store.profiles(for: identity, bases: [0]).count == 1)
+        }
+    }
+
     @Test("STORE-07: 'Use this drive' moves the records whose file is at the new place with the same size and mtime")
     func rekey() async throws {
         let folder = try StoreFolder()
@@ -173,7 +195,7 @@ enum StoreFixtures {
     /// `profileBlocks`-block, 4-band profile per basis.
     static func analysis(path: String, size: UInt64 = 1234, modified: Double = 1_700_000_000,
                          profileBlocks: Int = 2) throws -> TrackAnalysis {
-        try analysis(identity: .make(path: path, size: size, modified: modified), profileBlocks: profileBlocks)
+        analysis(identity: TrackIdentity(path: path, size: size, modified: modified), profileBlocks: profileBlocks)
     }
 
     static func analysis(identity: TrackIdentity, profileBlocks: Int = 2) -> TrackAnalysis {
@@ -193,14 +215,5 @@ enum StoreFixtures {
             histograms: (0 ..< bases).map { [.init(bin: UInt32(500 + $0), count: 3, energy: 0.125)] },
             profiles: (0 ..< bases).map(profile)
         )
-    }
-}
-
-extension TrackIdentity {
-    /// An identity for a file that need not exist (through its Codable form: the type reads a real file's
-    /// attributes otherwise).
-    static func make(path: String, size: UInt64, modified: Double) throws -> TrackIdentity {
-        let fields: [String: Any] = ["path": path, "size": size, "modified": modified]
-        return try JSONDecoder().decode(TrackIdentity.self, from: JSONSerialization.data(withJSONObject: fields))
     }
 }
