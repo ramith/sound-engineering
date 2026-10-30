@@ -97,6 +97,15 @@ struct LevelingKnowledge: Sendable {
     var tags: [TrackIdentity: GainTags?] = [:]
     /// The songs whose record (or its absence) and tags were looked up.
     var resolved: Set<String> = []
+    /// The analysed songs whose saved profiles were looked up too (C2: a start or arm carries them, so an analysed
+    /// song's fresh start never glides).
+    var profiled: Set<String> = []
+
+    /// Whether a start of `key` has everything it needs: its record looked up, and its profiles if it has one.
+    func isReadyToStart(_ key: String) -> Bool {
+        resolved.contains(key) && (library.tracks[key]?.measurement == nil || profiled.contains(key))
+    }
+
     /// The analysis jobs the horizon needs, most urgent first.
     var jobs: [TrackAnalysisScheduler.Job] = []
 
@@ -107,6 +116,7 @@ struct LevelingKnowledge: Sendable {
         files.merge(other.files) { _, new in new }
         tags.merge(other.tags) { _, new in new }
         resolved.formUnion(other.resolved)
+        profiled.formUnion(other.profiled)
     }
 }
 
@@ -129,8 +139,8 @@ struct LevelingLoad: Sendable {
     /// What the builder needs for `upcoming` — the play order from the current slot, the first entry the song
     /// playing (or about to) — within the horizon (`LevelingHorizon`): every song of each album it needs, every
     /// loose song it reaches, each with our analysis or else its tags, and the saved profiles of the songs in
-    /// `profilesFor` (the current and the next: the ones the engine starts or arms). Off the main thread; one store
-    /// transaction for the analyses.
+    /// `profilesFor` (the ones the engine starts or arms next). Off the main thread; one store transaction for the
+    /// analyses.
     @concurrent
     func horizon(_ upcoming: [LevelingSlot], profilesFor: Set<String>) async -> LevelingKnowledge {
         let albumOf = await sources.albums(of: upcoming.compactMap(\.trackID))
@@ -220,6 +230,7 @@ struct LevelingLoad: Sendable {
             var profiles: [Int: TrackAnalysis.Profile] = [:]
             if let analysis, let identity, profilesFor.contains(slot.key) {
                 profiles = await sources.profiles(for: identity, bases: Self.profileBases(folds: analysis.folds))
+                knowledge.profiled.insert(slot.key)
             }
             knowledge.library.tracks[slot.key] = LevelingTrack(
                 album: albumOfKey[slot.key], measurement: analysis?.levelingMeasurement(profiles: profiles), tags: tags
