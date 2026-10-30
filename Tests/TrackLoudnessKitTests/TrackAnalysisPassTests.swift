@@ -62,6 +62,27 @@ struct TrackAnalysisPassTests {
         #expect(analysis.profiles.allSatisfy { $0 != nil })
     }
 
+    @Test("PASS-10: a fold with no LFE is measured once for its four variants; with an LFE, each on its own")
+    func foldProfileSources() throws {
+        // Review N11: the store keeps a profile once per measurement (`profileSource`), so this rule must be the
+        // analyzer's own. Five label-less channels are 5.0 by the count fallback (no LFE); six are 5.1.
+        let rising: (Int, Int) -> Float = { channel, _ in 0.05 * Float(channel + 1) }
+        let fiveZero = try Self.analyse(ToneFixtures.write(named: "pass-5ch", rate: 48000, channels: 5, seconds: 3,
+                                                           level: rising))
+        #expect(fiveZero.folds && !fiveZero.roles.contains(UInt8(AsChannelRoleLfe.rawValue)))
+        #expect((1 ... 4).map(fiveZero.profileSource(of:)) == [1, 1, 1, 1] && fiveZero.profileSource(of: 0) == 0)
+        #expect((2 ... 4).allSatisfy { fiveZero.profiles[$0] == fiveZero.profiles[1] })
+        let lfeLoud: (Int, Int) -> Float = { channel, _ in channel == 3 ? 0.3 : 0.05 }
+        let fiveOne = try Self.analyse(ToneFixtures.write(named: "pass-6ch-lfe", rate: 48000, channels: 6, seconds: 3,
+                                                          level: lfeLoud))
+        #expect((1 ... 4).map(fiveOne.profileSource(of:)) == [1, 2, 3, 4])
+        #expect(fiveOne.profiles[2] != fiveOne.profiles[1], "the LFE plays in the music variant, so its fold differs")
+        let even: (Int, Int) -> Float = { _, _ in 0.1 }
+        let stereo = try Self.analyse(ToneFixtures.write(named: "pass-2ch-src", rate: 48000, channels: 2, seconds: 3,
+                                                         level: even))
+        #expect((0 ... 4).map(stereo.profileSource(of:)) == [0, 1, 2, 3, 4]) // nothing folds: no basis shares
+    }
+
     @Test("PASS-04: with the profiler, the prefix comes first — before the SRC — then the whole profile")
     func prefixBeforeTheConverter() throws {
         let url = try ToneFixtures.write(named: "pass-prefix", rate: 44100, channels: 2, seconds: 8) { _, _ in 0.1 }

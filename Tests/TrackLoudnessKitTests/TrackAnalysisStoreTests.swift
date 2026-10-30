@@ -140,6 +140,29 @@ struct TrackAnalysisStoreTests {
         }
     }
 
+    @Test("STORE-09: a fold without an LFE keeps one profile for its four variants, read under each (review N11)")
+    func foldWithoutLfeStoredOnce() async throws {
+        // A 5.0 file's fold sounds the same at every LFE variant: the analyzer measures it once, and the store keeps
+        // that profile once (about 1.8 MB saved per track), answering every variant with it.
+        let store = try TrackAnalysisStore(directory: StoreFolder().url)
+        let fiveZero = StoreFixtures.analysis(identity: TrackIdentity(path: "/music/5.0.flac", size: 1, modified: 1),
+                                              profileBlocks: 10, lfe: false)
+        let fiveOne = try StoreFixtures.analysis(path: "/music/5.1.flac", profileBlocks: 10)
+        try await store.save(fiveZero)
+        try await store.save(fiveOne)
+        let perFile = "SELECT path, COUNT(*) AS n FROM profile GROUP BY path"
+        let rows = try await DatabaseQueue(path: store.url.path).read { db in
+            try Dictionary(uniqueKeysWithValues: Row.fetchAll(db, sql: perFile).map { ($0["path"] as String,
+                                                                                       $0["n"] as Int) })
+        }
+        #expect(rows == ["/music/5.0.flac": 2, "/music/5.1.flac": 5], "profile rows per file: \(rows)")
+        let read = try await store.profiles(for: fiveZero.identity, bases: [0, 1, 2, 3, 4])
+        #expect(read.keys.sorted() == [0, 1, 2, 3, 4])
+        #expect([2, 3, 4].allSatisfy { read[$0] == fiveZero.profiles[1] } && read[0] == fiveZero.profiles[0])
+        #expect(try await store.profiles(for: fiveZero.identity, bases: [3]) == [3: fiveZero.profiles[1]])
+        #expect(try await store.profiles(for: fiveOne.identity, bases: [3]) == [3: fiveOne.profiles[3]])
+    }
+
     @Test("STORE-07: 'Use this drive' moves the records whose file is at the new place with the same size and mtime")
     func rekey() async throws {
         let folder = try StoreFolder()
@@ -198,15 +221,20 @@ enum StoreFixtures {
         analysis(identity: TrackIdentity(path: path, size: size, modified: modified), profileBlocks: profileBlocks)
     }
 
-    static func analysis(identity: TrackIdentity, profileBlocks: Int = 2) -> TrackAnalysis {
+    /// `lfe: false` makes it a 5.0 file (L R C Ls Rs): its four fold variants are one measurement, as the analyzer
+    /// makes them.
+    static func analysis(identity: TrackIdentity, profileBlocks: Int = 2, lfe: Bool = true) -> TrackAnalysis {
         let bases = Int(AS_PROFILE_BASES)
         let profile = { (basis: Int) in
-            TrackAnalysis.Profile(sampleRate: 48000, bandsPerOctave: 24, bandCount: 4, blockCount: profileBlocks,
-                                  blockStrideHops: 1,
-                                  powers: (0 ..< profileBlocks * 4).map { UInt16(truncatingIfNeeded: $0 * 7 + basis) })
+            let measured = lfe ? basis : min(basis, 1)
+            return TrackAnalysis.Profile(
+                sampleRate: 48000, bandsPerOctave: 24, bandCount: 4, blockCount: profileBlocks, blockStrideHops: 1,
+                powers: (0 ..< profileBlocks * 4).map { UInt16(truncatingIfNeeded: $0 * 7 + measured) }
+            )
         }
+        let roles: [UInt8] = lfe ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 5, 6]
         return TrackAnalysis(
-            version: Int(AS_TRACK_ANALYSIS_VERSION), identity: identity, channelCount: 6, roles: [1, 2, 3, 4, 5, 6],
+            version: Int(AS_TRACK_ANALYSIS_VERSION), identity: identity, channelCount: roles.count, roles: roles,
             sourceRateHz: 44100, peakRateHz: 48000, durationSeconds: 201.5, integratedLufs: -14.25,
             truePeakDbtp: -0.75, headBlockLufs: -33.5, tailBlockLufs: -200, folds: true,
             foldedLufs: [-15.5, -15, -14.5, nil], foldedTruePeakDbtp: [0.25, 0.5, 1, nil],
