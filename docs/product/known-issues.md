@@ -55,6 +55,8 @@ red test on a reference branch) where one exists, the place in the code, and whe
 > sound half's break-it, review and fix round; three Known limitations rows (peak-bound tracks under −18, a track not
 > yet measured plays quieter, files wider than 8 channels). KI-GAP-01 gains evidence; KI-GAP-05, KI-PB-16, KI-ENG-06
 > and ENH-002 are amended; the Known limitations row on the shared Pure state carries the words decided 2026-10-30.
+> At the sprint's close (the sound half merged as #103): KI-PB-18 and KI-SND-02, fixed in R1.1-A but still listed
+> open, moved to [Closed](#fixed-in-r11-a--recorded-at-r11-bs-close).
 >
 > - **Severity:** **HIGH** = wrong audio, a stuck state, or user data lost; **MEDIUM** = visibly wrong behaviour that
 >   has a workaround; **LOW** = rare, cosmetic or wording; **internal** = a developer-only follow-up.
@@ -78,7 +80,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | ID | Issue | Severity | Scheduled | Forward link |
 |---|---|---|---|---|
 | KI-MC-01 | ~~A 5.1 / 7.1 file on a stereo output plays only its front left and right: centre, LFE and surrounds are dropped~~ *(R1.1-B: it folds to stereo — BS.775 by the file's roles, a per-track trim, the LFE decided per track; open on one proof, the founder's two-album LFE listen)* | ~~HIGH~~ LOW (one proof pending) | R1.1-B (the listen); the Engine sprint moves the fold into the engine; S18 renders in that slot | US-R1F-08 |
-| KI-PB-18 | Dragging the scrubber to the end of a track that isn't 48 kHz stops playback for good | HIGH | R1.1-A | US-R1F-11 |
 | KI-GAP-05 | An Enhanced gapless join to a file with a different channel count drops channels | HIGH | Engine sprint | US-R1F-02 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-PB-06 | After a relaunch the restored song shows `--:--` and its scrubber is dead until Play | MEDIUM | R1.1-A | US-R1F-01 |
@@ -88,7 +89,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-PB-12 | A single click on a playlist row replaces the queue and plays | MEDIUM | pool | US-R1F-04 |
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-GAP-02 | At a resampled seam to another rate or width, the title and track B's gain switch up to ~0.2 s early | MEDIUM | Engine sprint (Leveling's seam tolerance until then, 2026-10-23) | US-R1F-02 |
-| KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
 | KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | ~~pool (first candidate)~~ S12 (decided 2026-10-23: fixed with the per-output memory extension) | US-R1F-06 |
 | KI-SND-06 | Crossfeed does nothing on a 5.1 / 7.1 file (it is stereo-only and runs before the fold)~~, while the "XF" chip still shows~~ *(R1.1-B: the chip hides and the switch says why)* | ~~MEDIUM~~ LOW (the screen is honest; crossfeed itself is missing there) | ~~R1.1-B (the chip and the switch read the kernel's bypass);~~ the Engine sprint (crossfeed after the fold) | US-R1F-08, US-R1F-12 |
 | KI-SND-07 | The EQ-only −0.1 dBTP ceiling is chosen by the transport alone, never by the output's rate — a wired DAC at 44.1 or 96 kHz would get it today, into an unmeasured conversion after the engine | LOW (latent: no non-48 kHz wired output in use) | Engine sprint (decided 2026-10-23: the rate condition; the conversion measured) | US-PE-03, NFR-QUAL-05 |
@@ -950,15 +950,7 @@ The council's register rows that a user can meet and that had no entry above. Ea
 and the merged source IDs live. File:line references are from the council's reading (`7d7c2cd`, re-checked at
 `9df49e3` where the register marks them ✓).
 
-### KI-PB-18 — Dragging the scrubber to the end of a track that isn't 48 kHz stops playback for good
-
-**Status:** OPEN · **Severity:** HIGH (a stuck state) · **Source:** council C-25 (P3 breaker D37; the pre-mortem's
-spot-check 1) · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-11.
-
-The scrubber drag sends `seek(to: dragFraction * duration)` (`UI/Shell/NowPlayingBar.swift:332-333`), and the view
-model passes it through unclamped. On the Enhanced resampler path the bridge moves its position base first, then
-refuses the seek at `frame < totalFrames` (`AudioEngineBridge+EnhancedResampler.swift:193-202`): playback stays silent
-and never moves on. Every file that isn't 48 kHz takes that path, including 44.1 kHz CD rips. A NaN target traps.
+*(KI-PB-18 — dragging the scrubber to the end of a track that isn't 48 kHz stopped playback for good — was fixed in R1.1-A (council C-25); see [Closed](#fixed-in-r11-a--recorded-at-r11-bs-close).)*
 
 *(KI-MC-02 — channel roles came from positions, not the file's labels — was closed in R1.1-B; see
 [Closed](#fixed-in-r11-b--the-sound-half-pr-2-branch-r11bsound).)*
@@ -982,16 +974,7 @@ the graph keeps the first file's layout. R1.1-B's fix of the graph format (KI-MC
 *(KI-PB-21 — a crash or force-quit lost the place in the queue — was closed in R1.1-B (council C-65); see
 [Closed](#fixed-in-r11-b--the-player-half-pr-1-branch-r11bintegration).)*
 
-### KI-SND-02 — Enhanced sample-rate conversion rolls off the treble and lets aliases through
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-26 (P3 D37, D38; [engine research
-§1](../reviews/2026-10-council/working/engine-research.md#1-new-measurements-avaudioengines-own-sample-rate-conversion-offline-probes))
-· **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-11.
-
-The Enhanced resampler uses `AVAudioConverter`'s Normal algorithm (`AudioEngineBridge+EnhancedResampler.swift:82`):
-−8.25 dB at 20 kHz on 44.1 → 48 kHz, and 192 → 48 kHz aliases at −21 dB. A device not at 48 kHz gets a hidden second
-conversion. `SRCQualityMeasure` prints −7.23 dB at 20 kHz and still says PASS (council R-6). Apple's Mastering
-converter measured flat to 21 kHz, with aliases at or below −160 dB.
+*(KI-SND-02 — Enhanced sample-rate conversion rolled off the treble and let aliases through — was fixed in R1.1-A (council C-26); see [Closed](#fixed-in-r11-a--recorded-at-r11-bs-close).)*
 
 ### KI-DEV-03 — An Enhanced start just after a device connects can end silent or on the wrong device
 
@@ -2143,6 +2126,28 @@ was not affected (`onDeckURL` is simply replaced).
   gate.
 - **Pure resume played the intro** (start-then-seek): fixed by edc9b4e (PR #86), `startAudio(…, startAt:)`
   (`AudioEngineBridge+PureMode.swift:128`).
+
+### Fixed in R1.1-A — recorded at R1.1-B's close
+
+Two council findings R1.1-A fixed (US-R1F-11) but this file still listed as open until R1.1-B's close-out checked them
+against the code. Both commits are on `main`.
+
+#### KI-PB-18 — Dragging the scrubber to the end of a track that isn't 48 kHz stops playback for good
+
+**Status:** ✅ CLOSED in R1.1-A, "a seek to the end ends the track — one seek entry, one place rule" (council C-25;
+`5f3e128d`). Every seek is placed by one rule (`SeekTarget.place`, `Sources/PlaybackQueueKit/SeekTarget.swift`): a
+target that is not a number makes no seek, and a seek to the end ends the track, on both paths. The Enhanced path
+plays from a place through one entry (`AudioEngineBridge+EnhancedRestart.swift`). Proof: `EnhancedSeekTests` on the
+real bridge, and `SeekTargetTests` over 2,000 random lengths per rate.
+
+#### KI-SND-02 — Enhanced sample-rate conversion rolls off the treble and lets aliases through
+
+**Status:** ✅ CLOSED in R1.1-A, "Enhanced SRC plays through Apple's Mastering converter, gated in make gate" (council
+C-26, R-6; `12511f21`). The Enhanced path converts with Apple's Mastering converter
+(`Sources/AudioFormatKit/StreamingResampler.swift`), measured flat to 21 kHz with aliases at or below −160 dB, and R1.1-B's
+reader keeps it for every file off the graph's rate. Proof: `SRCQualityMeasure` runs the real converter at every rate
+pair, with a control that must fail, inside `make gate`; `EnhancedResamplerTests` shows the treble reaching the output
+through the real bridge.
 
 ## SEQ-1 — Hard sequencing gates before S9/S10 playlists ship (library data integrity)
 
