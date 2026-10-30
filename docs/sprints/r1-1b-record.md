@@ -57,7 +57,9 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
   - On a folded file with Pure asked for, Now Playing shows the "5.1 → stereo" badge, not a second "Pure off:
     channels" chip (once the badge row's overflow is fixed).
   - **All EQ editing is inactive in Pure**: the graph, presets, Reset and Save as well as the switch and Tone.
-    Nothing you can't hear can be changed, and the switch never flips by itself.
+    Nothing you can't hear can be changed, and the switch never flips by itself. **The presets' Rename and Delete
+    stay inactive too**: one rule for the whole list (asked after the UI fix round, which found that they don't
+    change the sound).
   - The shared note reads **"Off in bit-perfect mode"** (was "Not in bit-perfect mode", which read as "Pure is off").
   - **VoiceOver keeps an inactive control's value and gives the state as a hint** ("Leveling, Auto, dimmed" + "Off
     in bit-perfect mode"); US-R1F-20's VoiceOver line changes with it.
@@ -75,13 +77,20 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
   blocks under 192 samples, which is legal but which Apple's decoder refuses) / "This file can't be found — it may have
   been moved, or its drive disconnected." / "Skipped “<song>”. <reason>" / "Playback stopped — no song left in the
   queue can be played. <reason>". The banner names the song by its title as the queue shows it, falling back to the
-  file name. Before, every failure read "This file type isn't supported".
+  file name. Before, every failure read "This file type isn't supported". **When the last song can't play** (nothing
+  left to move on to after one song), the banner names it: "Couldn't play “<song>”. <reason>" — not "Playback
+  failed: …" (VM-AA-08 pins it).
 - **Coordinator, on the break-it (2026-10-30):**
   - **A resume keeps the song's level; a new play decides it again.** Pause → Play continues the same listen, so the
     level never steps mid-song, even when the analysis landed during the pause. Play after Stop, after the queue
     ended, Previous restarting the song, or Repeat One is a new listen, and takes the measured level.
   - **In shuffle every song plays at its own level, in Auto and in Track mode.** A run shares its loudest member's
     level only between songs that join without a pause in play order; shuffled songs never join.
+- **Settled in the sound fix round (2026-10-30):**
+  - **Off follows the same play-order run rule**: a song played alone or shuffled keeps its own fold trim, not its
+    run's worst; songs that join in play order share the run's, so the fold never steps at a continuous seam.
+  - **`LevelingSetting` stays, for now, as an alias of LevelingKit's `LevelingMode`** (one enum; the stored words
+    unchanged); folding the alias away is a later tidy-up (review N6).
 
 **Test data — the founder, 2026-10-28:** the sprint proceeds on the test corpus as it stands; the gaps are recorded
 below ([Test material](#test-material)), and the founder supplies the missing data later. No lane waits for data.
@@ -133,6 +142,75 @@ Lane 3 is one lane again: with the Pure loan deferred, the plan check's 3a / 3b 
     precondition required the reused id, which is the bug itself.
 - **The combined check (T3) after the fix round (2026-10-26):** 29/29, exit 0 — 1,082 Swift tests, 245 C++ null
   tests, the main-thread stall check, VerifyLibraryStore (schema v13, 182 checks). Both fix branches applied cleanly.
+- **The sound lanes (2026-10-28 / 30)** — each lane's acceptance numbers; "provisional" marks a result on stand-in data
+  ([Test material](#test-material)):
+  - **The analysis against the answer key:** 61 of 61 EBU / ITU loudness signals with a verdict pass (integrated within
+    ±0.1 LU, worst 0.048; true peaks within +0.2 / −0.4 dB); 19 of 19 voice files resolve every channel's role to its
+    label's, in every codec order.
+  - **F1 on the corpus, through the real bridge:** every voice in its labelled slot (AAC and ALAC 5.1 at 44.1 kHz: 0 of
+    16 windows before, 16 of 16 after); Pavlik's 5.0 at 88.2, 96 and 352.8 kHz plays all five channels (C, Ls, Rs were
+    absent).
+  - **The fold's backstop over the corpus's surround files:** under 0.01 dB of gain reduction with the trim (worst
+    0.004 dB); untrimmed it would have worked up to 6.15 dB (THX *Amazing Life*). Provisional.
+  - **The leveled corpus (lane 3-A's harness, Bluetooth):** the 15 loud masters at −18.00 LUFS in Track mode, the
+    limiter 4.2–9.0 dB clear (provisional); no level step at any continuous seam of the continuous albums or the live
+    show, in any mode (provisional); the lossless classical album 9g anchored on its loudest song, Album and Auto
+    one gain for all four (not provisional).
+  - **The analysis's cost (M4 Pro, one job, a 4-minute track):** under two minutes for every class at default QoS
+    (hi-res about one minute); 3.8–4.4 minutes for hi-res multichannel at `.background`, which the scheduler's deadline
+    rule answers. A four-album horizon, hi-res included, analysed in 314 s with no playback, UI or resampler deadline
+    missed.
+- **The combined check (T3) on the sound half (2026-10-30):** 29/29, exit 0 — 1,206 Swift tests, 294 C++ null
+  tests, the main-thread stall check, VerifyAUGraph, VerifyLibraryStore.
+- **The sound break-it and the whole-app break-it (2026-10-30)** — 2 HIGH, 3 MEDIUM, 6 LOW; 12 red tests (BI-S01…S03,
+  S05…S12, S20), plus BI-S04 (the crash harness's control) and BI-S21 (a store guard), which pass:
+  - **HIGH:** KI-PB-22 proven — a FLAC with blocks under 192 samples killed the app on Play at any rate but 48 kHz and
+    at any gapless seam into one (BI-S01…S03); mono leveled 3.01 dB loud in every mode (BI-S09; corpus 05 at −15.3
+    LUFS).
+  - **MEDIUM:** a direct replay kept the first, unmeasured play's decision (BI-S06, S07); Auto in shuffle took a
+    continuous run's level (BI-S10); 48 kHz AC-3 / E-AC-3 tracks ended about 1 s early (BI-S05).
+  - **−18 LUFS end to end** — the app's own analysis → the decision → the real bridge → ffmpeg's `ebur128`: stereo at
+    22.05 kHz through the resampler **−18.0**; a loud classical track (g −7.80) **−18.0**; THX *Eclipse* folded
+    **−17.9** (true peak −3.0 dBTP, the backstop at 0 dB); cap-bound by design: *Vienna 1728* 5.0 −18.6, corpus 34
+    −21.1, Dohnányi −18.8. **The first unmeasured surround play** (corpus 34, forced): −31.6 LUFS, **10.5 dB under**
+    its measured play, clean (gain reduction 0).
+  - **TSan:** 0 warnings over 97 Swift tests (the leveling bridge, fold, coordinator, store, scheduler, seams, seeks,
+    resampler, end of queue, engine lifecycle, crossfeed, sound UI, "Use this drive", multichannel sources).
+  - **The library at 10k:** the stress library (10,043 files) scans into a temporary store in **4.65 s**; searches take
+    **≤ 4 ms**; a Sinhala name is found with and without its zero-width joiner; FTS syntax finds nothing, with no error.
+  - **Picture sheets:** 226 of 226.
+  - **Cleared:** truncated files end at their cut, with no crash and no hang (KI-PB-23); the other broken files are
+    refused at open without a crash.
+- **The sound fix round (2026-10-30)** — four lanes in two waves, the reader and leveling, then the analysis and the
+  UI; each new test was first seen failing, and the stress runs (20 of 20) and TSan were clean on every lane.
+  - **The reader** closed HIGH-1 (KI-PB-22: the bridge reads through its own counted reader, probes every file at open
+    and at every seam, and never touches `framePosition`), MEDIUM-3 and LOW-6 (a lossy 48 kHz file streams through the
+    reader unconverted and ends on its last frame), LOW-3 (three kinds of refusal, each with its words) and LOW-4 (the
+    founder's "move on").
+  - **Leveling** closed HIGH-2 (review B1: mono's width), MEDIUM-1 (a start says resume or new play; review B2, N2,
+    N3), LOW-1 (a mode change's decisions name their songs; review S2), and review S1, S3, S4, S7, N4, N5, N12, N14 and
+    N16 (one glide law).
+  - **The analysis** closed MEDIUM-2 (a run is shared only in play order), LOW-2 (the store never deletes a file it
+    could not lock; review N9), and review N1, N6, N8, N10, N11; "· measuring" shows only while a measurement is
+    coming; a new play starts the loudness readout afresh.
+  - **The UI** closed the UI review's must-fixes M1–M4 and its S1–S6, the sound review's N13 and S6 (a Semgrep rule
+    holds every DSP control to its row; Intensity, never registered, now is), the founder's UI decisions, the rows
+    going live when Pure paused, and the missing-file words.
+  - **Became known issues:** review S5 (KI-MC-03, ~1–1.5 days, the W2 transport owner) and N15 (KI-LEV-03, ~1.5
+    days), the break-it's LOW-5 (KI-LEV-01) and its ReplayGain 1 observation (KI-LEV-02), the analysis lane's
+    candidates (KI-LEV-04…06) and the reader lane's (KI-PB-26; KI-GAP-01's evidence).
+  - **Measured after it, on the corpus through the real bridge:** corpus 05 (mono) **−18.0 LUFS** (was −15.3);
+    corpus 34 over its first 20 s, measured play then Pause → Play, **−30.0 / −30.0**, and replay after Stop **−30.0**
+    against −40.5 for its first, unmeasured play; THX *Eclipse* measured / after resume / first unmeasured / replay
+    after Stop −35.0 / −35.0 / −40.2 / −35.0 (20 s figures are relative); files 45, 43, 42 and 32 (AC-3 / E-AC-3 at
+    48 kHz) **end on their last frame** (they ended ~1 s early); truncated 111 and 112 end exactly at their cut; a mode
+    change that trades g for the trim swells **0.055 dB** (was 1.18 dB, LG-1).
+  - **Tests changed at the fix, as their lanes reported:** LB-2 pinned the bug ("a fresh start of the same song sends
+    nothing") and now pins the resume / new-play rule; LB-6 was retired with the fallback it pinned; VM-AA-08 and
+    REARM-OPEN-FAILS pinned "a refused start stops the queue" and now pin "move on"; DEC-05 and DEC-10 now state the
+    album order they meant.
+- **The combined check (T3) after the sound fix round (2026-10-30):** 29/29, exit 0 — 1,283 Swift tests, 294 C++
+  null tests, the main-thread stall check, VerifyAUGraph, VerifyLibraryStore.
 
 ## Test material
 
@@ -195,19 +273,24 @@ record and re-run when the real file arrives.
 
 ```
 Sprint R1.1-B — the decided medium items · routine: full · SP 8+8+player items · cap 2 weeks (≈3 as sized)
-Plan check   ☐ routine named ☐ owners and seams named (stubs agreed) ☐ Kits named
-             ☐ lanes and waves ☐ counter-examples for rule changes ☐ founder check written
-Build        ☐ every acceptance line of the roadmap row met by its named measurement
-             ☐ tests on the real code ☐ every breaker's red test committed
-Gates        ☐ T3 combine-check exit 0 ☐ T4 strict-gate / CI exit 0, run complete
-             ☐ break-it findings fixed, or logged in known issues with a forward
-             ☐ the whole-app break-it (release close-out)
+Plan check   ☑ routine named ☑ owners and seams named (stubs agreed) ☑ Kits named
+             ☑ lanes and waves ☑ counter-examples for rule changes ☑ founder check written
+Build        ☑ every acceptance line of the roadmap row met by its named measurement
+               (stand-in results marked provisional; the LFE include level waits on the founder's listen)
+             ☑ tests on the real code ☑ every breaker's red test committed
+Gates        ☑ T3 combine-check exit 0 (both halves, and after each fix round)
+             ☐ T4 strict-gate / CI exit 0, run complete — PR 1's: 35/35, exit 0; the sound half's is running
+             ☑ break-it findings fixed, or logged in known issues with a forward (both fix rounds)
+             ☑ the whole-app break-it (release close-out)
 Founder      ☐ checklist passed (by ear / eye / hand) ☐ the two LFE albums, pass / fail
-Merge        ☐ PR 1 (player) merged by the founder ☐ PR 2 (sound) merged by the founder
-             ☐ main CI green on the merge commit
+               — the player half's check was done before PR 1 merged; the sound check, the two LFE albums
+                 included, is pending
+Merge        ☑ PR 1 (player) merged by the founder (#101) ☐ PR 2 (sound) merged by the founder
+             ☐ main CI green on the merge commit — the founder watches CI
 Close        ☐ this record + five-line retro ☐ known issues ☐ sprint-plan §Status line
              ☐ documents reconciled (plan + reasons only) ☐ memory updated
              ☐ worktrees removed (no running app inside) ☐ points and duration recorded
+               — the close items: drafted with PR 2, ticked at the close; the retro after the merge
 ```
 
 ## Retro
