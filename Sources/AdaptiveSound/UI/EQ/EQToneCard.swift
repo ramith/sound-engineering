@@ -56,7 +56,8 @@ struct EQToneCard: View {
                         EQToneRow(region: region, isHighlighted: region == highlighted, focus: $focused) { dragging in
                             dragChanged(region, dragging: dragging)
                         }
-                        .onHover { hovering in hoverChanged(region, hovering: hovering) }
+                        // An inert row never lights up teal under the pointer.
+                        .onHover { hovering in hoverChanged(region, hovering: hovering && availability.isLive) }
                         .bitPerfectGate(.tone, availability)
                     }
                 }

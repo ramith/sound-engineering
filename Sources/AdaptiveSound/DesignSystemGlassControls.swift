@@ -74,9 +74,12 @@ struct CarvedGroove: View {
 
 /// The 8a carved knob/thumb: a token-filled circle with a bottom inner shade (the physical
 /// cue, both appearances) and, in light, a 1pt dark ring — the white knob's edge on the white
-/// card (S10.8 B2a). Shared by the slider knob and the footer scrubber's hover thumb.
+/// card (S10.8 B2a). Shared by the slider knob and the footer scrubber's hover thumb. `isInert`
+/// (a disabled slider in light, `CarvedTrack`): flat — no shade, only the faint control edge —
+/// the knob of a control that takes no input.
 struct CarvedKnob: View {
     var size: CGFloat = .init(GlassDecor.sliderKnobSize)
+    var isInert = false
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -88,8 +91,9 @@ struct CarvedKnob: View {
                 LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.knobShade)],
                                startPoint: .center, endPoint: .bottom)
                     .clipShape(Circle())
+                    .opacity(isInert ? 0 : 1)
             }
-            .lightEdge(GlassDecor.knobRingLight, in: Circle())
+            .lightEdge(isInert ? GlassDecor.controlEdgeLight : GlassDecor.knobRingLight, in: Circle())
             .frame(width: size, height: size)
     }
 }
@@ -102,17 +106,26 @@ struct CarvedKnob: View {
 /// the origin to the knob on either side, and a short tertiary mark in the groove shows where the
 /// origin is, so "0" reads with the knob away from it. At the origin the fill is empty and the
 /// knob covers the mark.
+///
+/// DISABLED, in light, the track shows its own inert look (R1.1-B, review-ui M4 — the grammar
+/// `GlassSwitchStyle` follows: the control's own disabled look, never a dim on top): the fill in
+/// `labelDisabled` grey with no glow, and a flat knob. Dark keeps its look: a disabled row dims 50%
+/// there (`disabledDim`), and twice would be too faint.
 struct CarvedTrack: View {
     /// The knob's position, as a fraction [0, 1] of its travel.
     let fraction: Double
     /// Where the fill grows from, as a fraction [0, 1] of the travel: the leading end by default.
     var origin: Double = 0
 
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
     private static let knobSize = CGFloat(GlassDecor.sliderKnobSize)
     /// The centre-zero mark: a hairline a little shorter than the knob.
     private static let originMark = CGSize(width: 1, height: 10)
 
     var body: some View {
+        let isInert = !isEnabled && colorScheme != .dark
         GeometryReader { geo in
             let width = geo.size.width
             let isCentred = origin > 0 && origin < 1
@@ -122,7 +135,10 @@ struct CarvedTrack: View {
             ZStack(alignment: .leading) {
                 // The teal reaches the knob's CENTER at every position (the PR-5 fill width
                 // `knobX + knobSize/2`, expressed as a fraction of the track width).
-                CarvedGroove(fillFraction: Self.knobCentre(atTravel: fraction, width: width), fillOrigin: fillOrigin)
+                CarvedGroove(fillFraction: Self.knobCentre(atTravel: fraction, width: width), fillOrigin: fillOrigin,
+                             fillStyle: isInert ? AnyShapeStyle(DesignSystem.Color.labelDisabled)
+                                 : AnyShapeStyle(DesignSystem.Gradient.meterFill),
+                             glow: !isInert)
                 if isCentred {
                     Rectangle()
                         .fill(DesignSystem.Color.labelTertiary)
@@ -130,7 +146,7 @@ struct CarvedTrack: View {
                         .offset(x: width * fillOrigin - Self.originMark.width / 2)
                         .frame(maxHeight: .infinity, alignment: .center)
                 }
-                CarvedKnob()
+                CarvedKnob(isInert: isInert)
                     .offset(x: max(width - Self.knobSize, 0) * CGFloat(min(max(fraction, 0), 1)))
                     .frame(maxHeight: .infinity, alignment: .center)
             }
@@ -152,16 +168,12 @@ struct CarvedTrack: View {
 /// edges the track with a 1pt dark hairline (grammar rule 2: the off track alone is ~1.09:1 on the
 /// card) and shows DISABLED by the switch's own look plus a tertiary label, never a dim on top.
 struct GlassSwitchStyle: ToggleStyle {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.isEnabled) private var isEnabled
-
     func makeBody(configuration: Configuration) -> some View {
-        let light = colorScheme != .dark
         // The native labeled switch's own layout (label, 8pt, switch; pixel-identical), re-composed
         // so the hairline sits on the track alone — the labels-hidden switch's frame IS its track.
         HStack(spacing: DesignSystem.Spacing.small) {
             configuration.label
-                .foregroundStyle(light && !isEnabled ? DesignSystem.Color.labelTertiary : DesignSystem.Color.label)
+                .controlLabelStyle(DesignSystem.Color.label)
                 .accessibilityHidden(true) // the switch below carries the label
             Toggle(isOn: configuration.$isOn) { configuration.label }
                 .toggleStyle(.switch)
@@ -172,6 +184,29 @@ struct GlassSwitchStyle: ToggleStyle {
                 // only while keyboard-driven, in place of the system ring in the user's (blue) accent.
                 .controlFocusRing(around: Capsule())
         }
+    }
+}
+
+// MARK: - A control's label, disabled (S10.8 B2a; R1.1-B review-ui M4)
+
+extension View {
+    /// A control's label in `style` — and, DISABLED in light, in `labelTertiary`: the control's own
+    /// disabled look (grammar: never a dim on top). Dark keeps `style`; a disabled control dims 50%
+    /// there (`disabledDim`). The switch's label (`GlassSwitchStyle`) and the Tone rows' name and
+    /// level take it.
+    func controlLabelStyle(_ style: SwiftUI.Color) -> some View {
+        modifier(ControlLabelStyle(style: style))
+    }
+}
+
+private struct ControlLabelStyle: ViewModifier {
+    let style: SwiftUI.Color
+
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(!isEnabled && colorScheme != .dark ? DesignSystem.Color.labelTertiary : style)
     }
 }
 
