@@ -62,35 +62,31 @@ final class EngineLevelingState: Sendable {
         let saved: [SavedLoudnessProfile]
         let resumes: Bool
 
+        /// `decision`'s, its saved profiles rebuilt for the engine (the ones that can be): binary16 → float, so
+        /// never on the main thread or at a seam.
         init(url: URL, decision: TrackLevelingDecision, resumes: Bool = false) {
-            self.url = url
-            self.decision = decision
-            saved = Self.savedProfiles(of: decision)
-            self.resumes = resumes
+            self.init(url: url, decision: decision, saved: decision.profiles.compactMap { SavedLoudnessProfile($0) },
+                      resumes: resumes)
         }
 
-        /// `decision`'s saved profiles, rebuilt for the engine (the ones that can be).
-        static func savedProfiles(of decision: TrackLevelingDecision) -> [SavedLoudnessProfile] {
-            decision.profiles.compactMap { SavedLoudnessProfile($0) }
-        }
-
-        init(url: URL, decision: TrackLevelingDecision, saved: [SavedLoudnessProfile]) {
+        init(url: URL, decision: TrackLevelingDecision, saved: [SavedLoudnessProfile], resumes: Bool) {
             self.url = url
             self.decision = decision
             self.saved = saved
-            resumes = false
+            self.resumes = resumes
         }
     }
 
-    /// The audible track: its decision, its plan and the output it was planned against, the effects unit that has
-    /// it, and its saved profile.
+    /// The audible track: its file, its decision, its plan and the output it was planned against, the effects unit
+    /// that has it, and its saved profile in force.
     private struct Audible: Sendable {
         let token: UInt64
+        let url: URL
         var decision: TrackLevelingDecision?
         var plan: AsTrackPlan
         var plannedFor: AsOutputState
         var deliveredTo: UInt? // the effects AU's address its play reached (B1 holds per unit)
-        let savedProfile: SavedLoudnessProfile?
+        var savedProfile: SavedLoudnessProfile?
     }
 
     private struct Held: Sendable {
@@ -148,38 +144,48 @@ final class EngineLevelingState: Sendable {
                     + "worst-case trim (a bug: every start and arm carries one)")
             }
             let plan = Self.plan(matched?.decision, output: held.output, frozen: nil)
-            let basis: CompactLoudnessProfile.Basis = plan.folds != 0 ? .fold(lfeVariant: Int(plan.lfeVariant))
-                : .decoded
-            let profile = matched?.saved.first { $0.basis == basis }
+            let profile = matched?.saved.first { $0.basis == Self.basis(of: plan) }
             let event = gaplessSeam ? AsPlanEventGaplessSeam : AsPlanEventFreshStart
             let delivered = Self.deliver(.init(token: token, event: event, plan: plan,
                                                continuous: matched?.decision.continuousWithPrevious ?? false,
                                                saved: profile),
                                          held: held, effects: effects)
-            held.audible = Audible(token: token, decision: matched?.decision, plan: plan, plannedFor: held.output,
-                                   deliveredTo: delivered, savedProfile: profile)
+            held.audible = Audible(token: token, url: url, decision: matched?.decision, plan: plan,
+                                   plannedFor: held.output, deliveredTo: delivered, savedProfile: profile)
             logUX("leveling: '\(url.lastPathComponent)' audible (\(gaplessSeam ? "gapless seam" : "fresh start")) — "
                 + Self.describe(plan) + (profile != nil ? ", saved profile" : ""))
             return profile != nil
         }
     }
 
-    /// The listener changed the mode: the audible track re-plans from `current` (0.15 s glide); `next` replaces the
-    /// armed pick's decision (N11), its saved profiles `nextSaved`.
-    func changeMode(current: TrackLevelingDecision, next: TrackLevelingDecision?, nextSaved: [SavedLoudnessProfile],
-                    effects: EffectsDelivery) {
+    /// The listener changed the mode (R1.1-B, review S2): each decision goes to the song it names, wherever it is now.
+    /// `current` re-plans the audible track (0.15 s glide), or replaces a start's decision not yet audible; `next`
+    /// replaces the armed pick's (N11), or — when a seam has already made that pick audible — re-plans it. One that
+    /// names a song this state no longer has is dropped: the caller re-sends once its requests have landed.
+    func changeMode(current: Pending?, next: Pending?, effects: EffectsDelivery) {
         held.withLock { held in
-            if var audible = held.audible {
-                audible.decision = current
-                audible.plan = Self.plan(current, output: held.output, frozen: nil)
-                audible.plannedFor = held.output
-                _ = Self.deliver(.init(token: audible.token, event: AsPlanEventModeChange, plan: audible.plan,
-                                       continuous: false, saved: nil),
-                                 held: held, effects: effects)
-                held.audible = audible
+            var replan: Pending?
+            if let current {
+                if held.audible?.url == current.url {
+                    replan = current
+                } else if let start = held.start, start.url == current.url {
+                    held.start = Pending(url: start.url, decision: current.decision, saved: current.saved,
+                                         resumes: start.resumes)
+                } else {
+                    logUX("leveling: a mode change for '\(current.url.lastPathComponent)', no longer playing — dropped")
+                }
             }
-            if let armed = held.armed, let next {
-                held.armed = Pending(url: armed.url, decision: next, saved: nextSaved)
+            if let next {
+                if held.armed?.url == next.url {
+                    held.armed = next
+                } else if held.audible?.url == next.url {
+                    replan = next // the seam has already made the armed pick audible
+                } else {
+                    logUX("leveling: a mode change for '\(next.url.lastPathComponent)', not armed — dropped")
+                }
+            }
+            if let replan {
+                Self.replanForMode(replan, held: &held, effects: effects)
             }
         }
     }
@@ -250,6 +256,29 @@ final class EngineLevelingState: Sendable {
         return audible.savedProfile != nil
     }
 
+    /// The audible track re-plans from the listener's new mode (0.15 s glide, both units alike). A plan on another
+    /// basis than the saved profile in force sends the new basis's first (S3), as a play would choose it.
+    private static func replanForMode(_ request: Pending, held: inout Held, effects: EffectsDelivery) {
+        guard var audible = held.audible else { return }
+        audible.decision = request.decision
+        audible.plan = plan(request.decision, output: held.output, frozen: nil)
+        audible.plannedFor = held.output
+        let basis = basis(of: audible.plan)
+        let resent = audible.savedProfile?.basis == basis ? nil : request.saved.first { $0.basis == basis }
+        _ = deliver(.init(token: audible.token, event: AsPlanEventModeChange, plan: audible.plan, continuous: false,
+                          saved: resent),
+                    held: held, effects: effects)
+        audible.savedProfile = resent ?? audible.savedProfile
+        held.audible = audible
+        logUX("leveling: the mode changed — '\(audible.url.lastPathComponent)' re-planned: " + describe(audible.plan)
+            + (resent != nil ? ", its saved profile on the new basis" : ""))
+    }
+
+    /// The −ΔL basis `plan` plays on: the fold at its LFE variant, or as decoded.
+    private static func basis(of plan: AsTrackPlan) -> CompactLoudnessProfile.Basis {
+        plan.folds != 0 ? .fold(lfeVariant: Int(plan.lfeVariant)) : .decoded
+    }
+
     /// The protective re-plan of the audible track against the output now held (F5): g and the LFE variant frozen.
     /// The unit that has the track's play keeps it (N3: an output change is not a play).
     private static func replanForOutput(_ held: inout Held, effects: EffectsDelivery) {
@@ -299,102 +328,6 @@ final class EngineLevelingState: Sendable {
     }
 }
 
-/// A saved compact −ΔL profile rebuilt for the engine (`asLoudnessProfileFromCompact`, C2): one owned reference,
-/// released on deinit. Immutable; the C-ABI makes a profile safe to read from any thread.
-final class SavedLoudnessProfile: @unchecked Sendable {
-    // @unchecked: the pointer is immutable after init and the profile behind it immutable and documented
-    // thread-safe for reads (TrackLoudnessBridge.h, THREADS).
-
-    let basis: CompactLoudnessProfile.Basis
-    let pointer: OpaquePointer
-
-    /// The engine's profile of `compact`; nil when it cannot be rebuilt (another grid, a short payload).
-    init?(_ compact: CompactLoudnessProfile) {
-        var info = AsCompactProfileInfo()
-        info.sampleRate = compact.sampleRate
-        info.bandsPerOctave = UInt32(clamping: compact.bandsPerOctave)
-        info.bandCount = UInt32(clamping: compact.bandCount)
-        info.blockCount = UInt32(clamping: compact.blockCount)
-        info.blockStrideHops = UInt32(clamping: compact.blockStrideHops)
-        let made = compact.powers.withUnsafeBufferPointer { powers in
-            asLoudnessProfileFromCompact(&info, powers.baseAddress, UInt32(clamping: powers.count))
-        }
-        guard let made else { return nil }
-        basis = compact.basis
-        pointer = made
-    }
-
-    deinit {
-        asLoudnessProfileDestroy(pointer)
-    }
-}
-
-extension AsOutputState {
-    /// The output before the graph has said otherwise: the engine's 48 kHz, stereo in and out, transport unknown.
-    static var unknownStereo: AsOutputState {
-        var state = AsOutputState()
-        state.engineRateHz = 48000
-        state.sourceChannels = 2
-        state.outputChannels = 2
-        state.sourceRoles.0 = UInt8(AsChannelRoleL.rawValue)
-        state.sourceRoles.1 = UInt8(AsChannelRoleR.rawValue)
-        return state
-    }
-
-    /// The same output, field by field.
-    func isSame(as other: AsOutputState) -> Bool {
-        var (left, right) = (sourceRoles, other.sourceRoles)
-        let rolesMatch = withUnsafeBytes(of: &left) { lhs in withUnsafeBytes(of: &right) { lhs.elementsEqual($0) } }
-        return transportType == other.transportType && engineRateHz == other.engineRateHz
-            && sourceChannels == other.sourceChannels && outputChannels == other.outputChannels && rolesMatch
-    }
-}
-
-extension AsTrackLeveling {
-    /// The decision's C mirror (TrackPlanBridge.h): NaN for every unknown number.
-    init(_ decision: TrackLevelingDecision) {
-        self.init()
-        mode = switch decision.mode {
-        case .off: UInt8(AsLevelingModeOff.rawValue)
-        case .leveled: UInt8(AsLevelingModeLeveled.rawValue)
-        case .unknownCut: UInt8(AsLevelingModeUnknownCut.rawValue)
-        }
-        source = switch decision.source {
-        case .analysis: UInt8(AsLevelingSourceAnalysis.rawValue)
-        case .tags: UInt8(AsLevelingSourceTags.rawValue)
-        case .unknownCut: UInt8(AsLevelingSourceUnknownCut.rawValue)
-        }
-        continuousWithPrevious = decision.continuousWithPrevious ? 1 : 0
-        let measuredRoles = Array(decision.roles.prefix(Int(AS_MAX_CHANNELS)))
-        channelCount = UInt8(measuredRoles.count)
-        Self.fill(&roles, with: measuredRoles, count: Int(AS_MAX_CHANNELS),
-                  padding: UInt8(AsChannelRoleUnknown.rawValue))
-        peakRateHz = decision.peakRate ?? 0
-        loudnessLufs = decision.unfolded.loudness ?? .nan
-        truePeakDbtp = decision.unfolded.truePeak ?? .nan
-        let variants = Int(AS_FOLD_LFE_VARIANTS)
-        if let folded = decision.folded {
-            hasFolded = 1
-            lfeVariant = UInt8(clamping: max(0, min(folded.variant, variants - 1)))
-        }
-        Self.fill(&foldedLufs, with: decision.folded?.loudness ?? [], count: variants, padding: .nan)
-        Self.fill(&foldedTruePeakDbtp, with: decision.folded?.truePeak ?? [], count: variants, padding: .nan)
-    }
-
-    /// Fill the C array `tuple` (`count` elements of `Element`) from `values`, `padding` past their end.
-    private static func fill<Tuple, Element>(_ tuple: inout Tuple, with values: [Element], count: Int,
-                                             padding: Element) {
-        precondition(MemoryLayout<Tuple>.size == count * MemoryLayout<Element>.stride, "not a C array of Element")
-        withUnsafeMutablePointer(to: &tuple) { pointer in
-            pointer.withMemoryRebound(to: Element.self, capacity: count) { elements in
-                for index in 0 ..< count {
-                    elements[index] = values.indices.contains(index) ? values[index] : padding
-                }
-            }
-        }
-    }
-}
-
 /// Caseless-enum namespace holding the effects unit's leveling C-ABI, so the extension's own methods never shadow
 /// the free functions (the `CIntensityABI` pattern). Immutable C-function pointers.
 private enum CLevelingABI {
@@ -431,12 +364,21 @@ extension AudioEngineBridge {
 
     // MARK: AudioPlaybackEngine
 
-    /// The listener changed the Leveling mode (`AudioPlaybackEngine.applyLevelingChange`): the audible track
-    /// re-plans from `current` and both units glide there (0.15 s); `next` replaces the armed pick's decision (N11).
-    /// Non-blocking: the leveling lock, the effects unit's borrow, and the fold's snapshot hand-over.
-    func applyLevelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?) {
-        let nextSaved = next.map(EngineLevelingState.Pending.savedProfiles(of:)) ?? []
-        leveling.changeMode(current: current, next: next, nextSaved: nextSaved, effects: deliverToEffects)
+    /// The listener changed the Leveling mode (`AudioPlaybackEngine.applyLevelingChange`): each decision goes to the
+    /// song it names (`EngineLevelingState.changeMode`). Off the main thread: the decisions' saved profiles are
+    /// rebuilt on `engineQueue` (binary16 → float, N14) — after every start already there — and applied on
+    /// `resampleQueue`, after every arm already admitted (the on-deck slot is set there). Returns once applied.
+    func applyLevelingChange(current: SongLeveling?, next: SongLeveling?) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            engineQueue.async {
+                let current = current.map { EngineLevelingState.Pending(url: $0.url, decision: $0.decision) }
+                let next = next.map { EngineLevelingState.Pending(url: $0.url, decision: $0.decision) }
+                self.resampleQueue.async {
+                    self.leveling.changeMode(current: current, next: next, effects: self.deliverToEffects)
+                    continuation.resume()
+                }
+            }
+        }
     }
 
     // MARK: The requests and audibility (+Playback, +Gapless, +TrackLoudness)

@@ -29,6 +29,10 @@ private final class FoldRecord: Sendable {
         plans.withLock(\.count)
     }
 
+    var isEmpty: Bool {
+        plans.withLock(\.isEmpty)
+    }
+
     var last: (plan: AsTrackPlan, event: UInt32)? {
         plans.withLock(\.last)
     }
@@ -149,7 +153,8 @@ struct LevelingBridgeTests {
         rig.bridge.setFoldPlanSink(record.sink)
         let next = try rig.writeTrack([440], named: "lb-mode-c", rate: 48000, frames: 24000 ..< 72000)
         await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 2), leveling: .off)
-        rig.bridge.applyLevelingChange(current: measured(-22, peak: -8), next: measured(-21, peak: -8))
+        await rig.bridge.applyLevelingChange(current: SongLeveling(url: rig.url, decision: measured(-22, peak: -8)),
+                                             next: SongLeveling(url: next, decision: measured(-21, peak: -8)))
         let changed = try #require(record.last)
         #expect(changed.event == AsPlanEventModeChange.rawValue)
         #expect(abs(changed.plan.levelGainDb - 4.0) < 1e-9, "the audible track's new g: \(changed.plan.levelGainDb)")
@@ -158,6 +163,35 @@ struct LevelingBridgeTests {
         let seam = try #require(record.last)
         #expect(seam.event == AsPlanEventGaplessSeam.rawValue)
         #expect(abs(seam.plan.levelGainDb - 3.0) < 1e-9, "the re-armed pick's g: \(seam.plan.levelGainDb)")
+        await rig.finish()
+    }
+
+    @Test("LB-7: a mode change goes to the songs it names, wherever they are; one naming none here is dropped (S2)")
+    func aModeChangeGoesToTheSongsItNames() async throws {
+        let rig = try await Rig.playing([440], rate: 48000, frames: 24000, thenNext: 48000, name: "lb-names")
+        let record = FoldRecord()
+        rig.bridge.setFoldPlanSink(record.sink)
+        let pickB = try rig.writeTrack([440], named: "lb-names-b", rate: 48000, frames: 24000 ..< 72000)
+        let pickC = try rig.writeTrack([440], named: "lb-names-c", rate: 48000, frames: 0 ..< 48000)
+        await rig.bridge.setNextTrack(pickB, ticket: OnDeckTicket(session: 0, sequence: 2),
+                                      leveling: measured(-20, peak: -8))
+        let playing = try #require(rig.bridge.leveling.audiblePlan)
+
+        // The view model has armed C, but that request has not reached the engine: a mode change naming C as the song
+        // playing and as the pick changes nothing here — B keeps its own decision, A its plan.
+        let songC = SongLeveling(url: pickC, decision: measured(-30, peak: -20))
+        await rig.bridge.applyLevelingChange(current: songC, next: songC)
+        #expect(record.isEmpty, "a mode change for songs the engine does not have re-planned \(record.count)")
+        #expect(try samePlan(#require(rig.bridge.leveling.audiblePlan), playing))
+
+        // Naming the armed pick replaces its decision; the seam plays it.
+        let newB = SongLeveling(url: pickB, decision: measured(-21, peak: -8))
+        await rig.bridge.applyLevelingChange(current: nil, next: newB)
+        _ = try #require(await rig.samples(frames: 24000 + 9600))
+        try await until("the seam to be counted") { rig.bridge.gaplessTransitionCount == 1 }
+        let seam = try #require(record.last)
+        #expect(seam.event == AsPlanEventGaplessSeam.rawValue)
+        #expect(abs(seam.plan.levelGainDb - 3.0) < 1e-9, "the pick's new g (−18 − (−21)): \(seam.plan.levelGainDb)")
         await rig.finish()
     }
 

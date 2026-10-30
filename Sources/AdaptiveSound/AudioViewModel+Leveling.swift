@@ -187,7 +187,7 @@ extension AudioViewModel {
             key: slot.key, mode: levelingMode, previous: previous, next: next?.key, atSeam: false
         ))
         if transportCommand == .start(epoch) {
-            levelingState.play(.init(key: slot.key, decision: decision, atSeam: false, previous: previous))
+            levelingState.play(.init(url: slot.url, decision: decision, atSeam: false, previous: previous))
         }
         logUX("leveling: start '\(file.name)' — \(Self.describe(decision))")
         return LevelingStart(decision: decision, listen: resuming ? .resume : .newPlay)
@@ -240,7 +240,7 @@ extension AudioViewModel {
             key: slot.key, mode: levelingMode, previous: playing?.key, next: levelingSlot(after: index)?.key,
             atSeam: true, previousDecision: playing?.decision
         ))
-        return .init(key: slot.key, decision: decision, atSeam: true, previous: playing?.key)
+        return .init(url: slot.url, decision: decision, atSeam: true, previous: playing?.key)
     }
 
     /// A seam since the last arm made the armed pick the song playing: its decision is the one playing now.
@@ -282,8 +282,10 @@ extension AudioViewModel {
     // MARK: - The listener's mode change
 
     /// Leveling changed from `old`: the song playing re-plans with the new mode at once — both units glide 0.15 s —
-    /// and the armed pick's decision is replaced (N11). Nothing playing, or Pure playing: nothing to send (the next
-    /// start decides with the new mode).
+    /// and the armed pick's decision is replaced (N11), each decision naming its song so the engine applies it to
+    /// that song only (review S2). Nothing playing, or Pure playing: nothing to send (the next start decides with
+    /// the new mode). A start or an on-deck request still on its way carries the old mode's decision: the change is
+    /// sent again once they have landed (`levelingArmLanded`).
     func levelingChanged(from old: LevelingSetting) {
         guard leveling != old else { return }
         logUX("leveling → \(leveling.rawValue)")
@@ -297,17 +299,40 @@ extension AudioViewModel {
             next: selectedTrackIndex.flatMap { levelingSlot(after: $0) }?.key,
             atSeam: playing.atSeam, previousDecision: playing.atSeam ? previousDecision : nil
         ))
-        levelingState.play(.init(key: playing.key, decision: current, atSeam: playing.atSeam,
+        levelingState.play(.init(url: playing.url, decision: current, atSeam: playing.atSeam,
                                  previous: playing.previous))
-        var next: TrackLevelingDecision?
         if let armed = levelingState.armed, let index = pendingNextIndex, index < queue.count,
            levelingSlot(queue[index].file).key == armed.key {
-            let sent = armedDecision(for: levelingSlot(queue[index].file), at: index)
-            levelingState.armed = sent
-            next = sent.decision
+            levelingState.armed = armedDecision(for: levelingSlot(queue[index].file), at: index)
         }
-        engine.applyLevelingChange(current: current, next: next)
-        refreshLevelingReadout() // paused, the tick sleeps
+        if transportCommand != nil || levelingState.armsInFlight > 0 {
+            levelingState.modeChangeOutran = true
+        }
+        sendLevelingChange()
+    }
+
+    /// An on-deck request landed (`armOnDeck`). Once none is on its way — a start's prime arms one, so a start has
+    /// landed by then too — a mode change that went out ahead of them is sent again for what the engine has now: the
+    /// song playing and the armed pick, their decisions the new mode's.
+    func levelingArmLanded() {
+        levelingState.armsInFlight -= 1
+        guard levelingState.armsInFlight == 0, levelingState.modeChangeOutran else { return }
+        levelingState.modeChangeOutran = false
+        guard signalPath.path != .pure, levelingState.playing != nil else { return }
+        logUX("leveling: the mode changed while a request was on its way — sent again")
+        sendLevelingChange()
+    }
+
+    /// Send the song playing's decision and the armed pick's, each naming its song, after the mode change before
+    /// (they apply in order); then show the plan it made (paused, the tick sleeps).
+    private func sendLevelingChange() {
+        let (current, next) = (levelingState.playing?.song, levelingState.armed?.song)
+        let before = levelingState.modeChange
+        levelingState.modeChange = work.spawn { [self] in
+            await before?.value
+            await engine.applyLevelingChange(current: current, next: next)
+            refreshLevelingReadout()
+        }
     }
 
     /// The song playing's plan as the engine made it, read now (the tick carries it while a song plays).

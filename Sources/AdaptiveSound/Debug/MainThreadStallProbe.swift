@@ -1,7 +1,6 @@
 #if DEBUG
     import AudioToolbox
     import Foundation
-    import LevelingKit
     import SettingsKit
 
     // MARK: - Every main-thread entry into the engine, timed (`make main-thread-stall`)
@@ -26,11 +25,6 @@
         let progress = StallProgress()
         private var toggle = false
         private let flatPoints = [Float](repeating: 0, count: 31)
-        /// A leveled decision with nothing measured (the unknown-loudness rule): the mode-change entry's other side.
-        private let unknownLoudness = TrackLevelingDecision(
-            mode: .unknownCut, source: .unknownCut, continuousWithPrevious: false,
-            unfolded: .init(loudness: nil, truePeak: nil), folded: nil, roles: []
-        )
         private var bands = [Float](repeating: 0, count: 64)
         /// Pure's loan journal, over the view model's own (isolated) defaults.
         private var loanJournal: PureVolumeLoanJournal {
@@ -61,9 +55,7 @@
                 }
             }
             measure("vm.publishEQ") { viewModel.publishEQ(points: flatPoints, isOn: flip, comparing: !flip) }
-            measure("engine.applyLevelingChange") {
-                bridge.applyLevelingChange(current: flip ? .off : unknownLoudness, next: flip ? nil : .off)
-            }
+            measure("vm.leveling didSet (a mode change)") { viewModel.leveling = flip ? .album : .track }
             measure("vm.intensity didSet") { viewModel.intensity = flip ? 0.3 : 0.2 }
             measure("vm.crossfeedEnabled didSet") { viewModel.crossfeedEnabled = flip }
             measure("vm.selectedDevice didSet (EQ identity, transport)") {
