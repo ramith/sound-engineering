@@ -88,12 +88,11 @@ struct StoreLevelingSources: LevelingSources {
 // MARK: - What the coordinator knows of the horizon
 
 /// What the coordinator knows of the queue's horizon, as one value: the decision builder's input (every song it may
-/// be asked about, with its album-mates), each song's file and identity, what was looked up, and the scheduler's
-/// jobs. Built off the main thread (`LevelingLoad`), kept on it (`LevelingState`).
+/// be asked about, with its album-mates), each song's file, what was looked up, and the scheduler's jobs. Built
+/// off the main thread (`LevelingLoad`), kept on it (`LevelingState`).
 struct LevelingKnowledge: Sendable {
     var library = LevelingLibrary()
     var files: [String: URL] = [:]
-    var identities: [String: TrackIdentity] = [:]
     /// Each looked-up file's tags, by its identity (an edited file is read again); nil when it has none.
     var tags: [TrackIdentity: GainTags?] = [:]
     /// The songs whose record (or its absence) and tags were looked up.
@@ -106,7 +105,6 @@ struct LevelingKnowledge: Sendable {
         library.tracks.merge(other.library.tracks) { _, new in new }
         library.albums.merge(other.library.albums) { _, new in new }
         files.merge(other.files) { _, new in new }
-        identities.merge(other.identities) { _, new in new }
         tags.merge(other.tags) { _, new in new }
         resolved.formUnion(other.resolved)
     }
@@ -223,7 +221,6 @@ struct LevelingLoad: Sendable {
             if let analysis, let identity, profilesFor.contains(slot.key) {
                 profiles = await sources.profiles(for: identity, bases: Self.profileBases(folds: analysis.folds))
             }
-            knowledge.identities[slot.key] = identity
             knowledge.library.tracks[slot.key] = LevelingTrack(
                 album: albumOfKey[slot.key], measurement: analysis?.levelingMeasurement(profiles: profiles), tags: tags
             )
