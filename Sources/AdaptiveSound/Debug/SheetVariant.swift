@@ -97,6 +97,12 @@
         case soundFold = "fold"
         case soundPure = "np-pure"
         case volumeRestored = "volume-restored"
+        /// The badge row's crowded worlds (R1.1-B fix round, review-ui M2), on the XM4 (Bluetooth headphones) with
+        /// Pure asked for — the founder's daily setup: the fold world there ("Pure off: Bluetooth" beside "5.1 →
+        /// stereo · measuring"), and a stereo song with crossfeed playing ("XF" beside the reason). Each is four
+        /// chips, wider than the hero's text column, so the reason shows as its glyph. At both sizes.
+        case soundFoldBluetooth = "fold-bt"
+        case soundBluetoothCrossfeed = "bt-xf"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
@@ -159,7 +165,7 @@
         var sizes: [NSSize] {
             switch self {
             case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage,
-                 .monitorMono, .monitor51, .monitor71, .search:
+                 .monitorMono, .monitor51, .monitor71, .search, .soundFoldBluetooth, .soundBluetoothCrossfeed:
                 [Self.defaultSize, Self.minimumSize]
             case .soundFold: [Self.defaultSize, Self.minimumSize, Self.tallSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
@@ -200,7 +206,7 @@
                  .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
                  .playlistFailure, .folderRemove, .folderPaused, .folderChecking, .search: [.library]
             case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure, .soundFold, .soundPure,
-                 .volumeRestored: settingsAndSoundTabs
+                 .volumeRestored, .soundFoldBluetooth, .soundBluetoothCrossfeed: settingsAndSoundTabs
             case .monitorMono, .monitor51, .monitor71: [.monitoring]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
@@ -213,7 +219,7 @@
         private var settingsAndSoundTabs: Set<TabSelection> {
             switch self {
             case .soundFold: [.nowPlaying, .settings]
-            case .soundPure, .volumeRestored: [.nowPlaying]
+            case .soundPure, .volumeRestored, .soundFoldBluetooth, .soundBluetoothCrossfeed: [.nowPlaying]
             default: [.settings]
             }
         }

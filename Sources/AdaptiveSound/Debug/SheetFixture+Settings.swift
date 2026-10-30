@@ -13,8 +13,8 @@
         static func seedSettings(_ audio: AudioViewModel, for variant: SheetVariant) {
             // Pure is asked for wherever it plays or was declined: a Pure world with the switch off would be one
             // whose Leave Pure was already pressed.
-            audio.pureModeEnabled = [.settingsStates, .settingsFallback, .settingsPure, .eqPure, .soundFold, .soundPure]
-                .contains(variant)
+            audio.pureModeEnabled = [.settingsStates, .settingsFallback, .settingsPure, .eqPure, .soundFold, .soundPure,
+                                     .soundFoldBluetooth, .soundBluetoothCrossfeed].contains(variant)
             audio.pinPlaybackToSelectedDevice = variant != .settingsStates
             audio.signalPath.pureReason = variant == .settingsFallback ? .rateUnsupported : nil
             switch variant {
