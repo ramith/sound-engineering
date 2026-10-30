@@ -70,6 +70,12 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
   playback moves on to the next song, whether Play was pressed on it or the queue reached it. The song stays in the
   queue, unmarked. If no song left can play (one full pass fails, under Repeat All and in shuffle too), playback
   stops with the message. Before, the queue stopped at the broken song.
+- **The words for a song that can't play (2026-10-30):** "This file type isn't supported (.xyz)." / "This file can't
+  be read — it may be damaged (.flac)." / "macOS can't decode this kind of file (.opus)." (5.1 Opus; a FLAC with
+  blocks under 192 samples, which is legal but which Apple's decoder refuses) / "This file can't be found — it may have
+  been moved, or its drive disconnected." / "Skipped “<song>”. <reason>" / "Playback stopped — no song left in the
+  queue can be played. <reason>". The banner names the song by its title as the queue shows it, falling back to the
+  file name. Before, every failure read "This file type isn't supported".
 - **Coordinator, on the break-it (2026-10-30):**
   - **A resume keeps the song's level; a new play decides it again.** Pause → Play continues the same listen, so the
     level never steps mid-song, even when the analysis landed during the pause. Play after Stop, after the queue
