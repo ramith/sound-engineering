@@ -132,7 +132,7 @@ Step 4 — Volume Adjustment and the loudness button ("Keep bass at low volume",
       easing the mids, never by boosting — so the music is a little quieter, the safety net
       never works, and the caption says "nudge the volume up a notch". Turning the volume up
       to or past the reference adds nothing. The filters glide; there is no click.
-  4d. In Pure the button shows "Not in bit-perfect mode" and does nothing.
+  4d. In Pure the button shows "Off in bit-perfect mode" and does nothing.
 
 Step 5 — Track Skip / Change
   New track begins; content analyser re-evaluates within 2–5 seconds.
@@ -465,7 +465,7 @@ Step 5 — Turn it off
   with nothing else on, the file is as recorded.
 
 Step 6 — In Pure
-  The row reads "Not in bit-perfect mode — leave Pure?" with one tap to leave Pure. The Pure card
+  The row reads "Off in bit-perfect mode", with one tap to leave Pure ("Leave Pure"). The Pure card
   answers, in one sentence, why there are two untouched states (Pure; Enhanced with nothing on).
 ```
 
