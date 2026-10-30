@@ -25,7 +25,7 @@ final class FakeEngine: AudioPlaybackEngine {
         case stop(epoch: UInt64, pausing: Bool)
         case seek(Double, epoch: UInt64)
         case setNextTrack(URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?)
-        case levelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?)
+        case levelingChange(current: SongLeveling?, next: SongLeveling?)
         case masterGain(Float)
         case keepPureVolumeLoans([PureVolumeLoan])
         case eq(points: [Float], isOn: Bool, comparing: Bool)
@@ -86,7 +86,7 @@ final class FakeEngine: AudioPlaybackEngine {
         record(.setNextTrack(fileURL, ticket: ticket, leveling: leveling))
     }
 
-    func applyLevelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?) {
+    func applyLevelingChange(current: SongLeveling?, next: SongLeveling?) async {
         record(.levelingChange(current: current, next: next))
     }
 
@@ -333,6 +333,14 @@ extension FakeEngine.State {
         recorded { call in
             guard case let .start(_, _, _, _, leveling) = call else { return nil }
             return leveling.listen
+        }
+    }
+
+    /// Every mode change's decisions, each naming its song.
+    var levelingChanges: [(current: SongLeveling?, next: SongLeveling?)] {
+        recorded { call in
+            guard case let .levelingChange(current, next) = call else { return nil }
+            return (current, next)
         }
     }
 

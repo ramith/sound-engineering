@@ -19,8 +19,8 @@
                 unfolded: .init(loudness: measured ? -13.8 : nil, truePeak: measured ? -0.6 : nil), folded: nil,
                 roles: []
             )
-            audio.levelingState.play(.init(key: LevelingSlot.key(of: audio.queue[index].file.absoluteURL),
-                                           decision: decision, atSeam: false, previous: nil))
+            audio.levelingState.play(.init(url: audio.queue[index].file.absoluteURL, decision: decision, atSeam: false,
+                                           previous: nil))
             audio.signalPath.leveling = measured
                 ? LevelingReadout(mode: .leveled, gainDb: -4.2, foldMeasured: true, sourceLayout: "2.0")
                 : LevelingReadout(mode: .unknownCut, gainDb: -6.3, foldMeasured: false, sourceLayout: "5.1")

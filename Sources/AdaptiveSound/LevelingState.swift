@@ -14,15 +14,25 @@ import TrackLoudnessKit
 @MainActor
 @Observable
 final class LevelingState {
-    /// A decision the engine has, for the song `key`.
+    /// A decision the engine has, for the song at `url`.
     struct Sent: Equatable {
-        /// The song (`LevelingSlot.key`).
-        let key: String
+        /// The song's file, as the engine's requests name it.
+        let url: URL
         let decision: TrackLevelingDecision
         /// Whether the song becomes (or became) audible at a seam rather than a fresh start.
         let atSeam: Bool
         /// The song heard before it (Auto's neighbour; continuity's other side at a seam).
         let previous: String?
+
+        /// The song (`LevelingSlot.key`).
+        var key: String {
+            LevelingSlot.key(of: url)
+        }
+
+        /// The decision, named by its song, as a mode change sends it.
+        var song: SongLeveling {
+            SongLeveling(url: url, decision: decision)
+        }
     }
 
     /// The song playing (or paused, or starting): the decision it was started or armed with, or the mode change's
@@ -33,6 +43,14 @@ final class LevelingState {
     @ObservationIgnored var armed: Sent?
     /// The seam count when the pick was armed: a seam since makes it the song playing.
     @ObservationIgnored var armedAtTransition: UInt64 = 0
+
+    /// On-deck requests sent (`armOnDeck`) and not yet landed.
+    @ObservationIgnored var armsInFlight = 0
+    /// A mode change went out while a start or an on-deck request was still on its way, with the old mode's
+    /// decision: it is sent again once they have landed.
+    @ObservationIgnored var modeChangeOutran = false
+    /// The newest mode change on its way to the engine; each waits for the one before, so they apply in order.
+    @ObservationIgnored var modeChange: Task<Void, Never>?
 
     /// What is known of the horizon (`LevelingLoad`).
     @ObservationIgnored var knowledge = LevelingKnowledge()

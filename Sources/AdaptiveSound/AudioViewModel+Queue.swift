@@ -202,8 +202,10 @@ extension AudioViewModel {
         // The pick's leveling decision is armed with it (R1.1-B, §S3): LevelingKit's, decided after the song
         // playing, from what the prefetch knows (+Leveling).
         let leveling = levelingDecisionForArm(at: url == nil ? nil : index)
-        return work.spawn { [engine] in
+        levelingState.armsInFlight += 1
+        return work.spawn { [self] in
             await engine.setNextTrack(url, ticket: ticket, leveling: leveling)
+            levelingArmLanded()
         }
     }
 }
