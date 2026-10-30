@@ -16,9 +16,10 @@ struct LevelingSettingsSection: View {
             CapsuleSwitch("Leveling", selection: $audioViewModel.leveling, options: LevelingSetting.allCases,
                           title: LevelingRowText.title)
                 .fixedSize()
-                .bitPerfectGate(.leveling, availability)
+                // Its segments draw their own disabled look (plain buttons): no dim on top (review-ui nit).
+                .bitPerfectGate(.leveling, availability, ownDisabledLook: true)
         } content: {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xSmall) {
                 Text(LevelingRowText.meaning(of: audioViewModel.leveling))
                     .font(DesignSystem.Font.caption)
                     .foregroundStyle(DesignSystem.Color.labelSecondary)
@@ -37,7 +38,7 @@ struct LevelingSettingsSection: View {
                                          source: audioViewModel.levelingState.playing?.decision.source)
             : nil
         Text([LevelingRowText.target, now?.text].compactMap(\.self).joined(separator: " · "))
-            .font(DesignSystem.Font.caption.monospaced())
+            .font(DesignSystem.Font.monoSmall)
             .foregroundStyle(DesignSystem.Color.labelTertiary)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel([LevelingRowText.spokenTarget, now?.spoken].compactMap(\.self).joined(separator: ", "))
@@ -89,7 +90,9 @@ enum LevelingRowText {
         let gain = Float(readout.gainDb)
         let from: String? = readout.mode == .unknownCut ? "loudness unknown" : sourceWords(source)
         let tail = from.map { ", \($0)" } ?? ""
-        return ("This song \(EQLevelText.level(gain))" + tail, "This song \(EQLevelText.spoken(gain))" + tail)
+        // One minus sign on the line: the target's (U+2212), not the EQ readout's hyphen.
+        let level = EQLevelText.level(gain).replacing("-", with: "\u{2212}")
+        return ("This song \(level)" + tail, "This song \(EQLevelText.spoken(gain))" + tail)
     }
 
     /// Where a leveled song's loudness came from.

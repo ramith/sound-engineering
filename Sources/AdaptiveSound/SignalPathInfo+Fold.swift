@@ -17,8 +17,9 @@ extension SignalPathInfo {
         return foldIsMeasuring ? spoken + ", measuring" : spoken
     }
 
-    /// The fold plays its track's plan, and that plan's trim is the worst case: the track was not measured.
-    private var foldIsMeasuring: Bool {
+    /// The fold plays its track's plan, and that plan's trim is the worst case: the track was not measured. (The
+    /// badge's "· measuring", and its tooltip's sentence.)
+    var foldIsMeasuring: Bool {
         fold?.fromPlan == true && leveling?.foldMeasured == false
     }
 
