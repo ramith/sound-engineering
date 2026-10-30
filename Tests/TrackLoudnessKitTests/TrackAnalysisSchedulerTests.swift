@@ -134,6 +134,24 @@ struct TrackAnalysisSchedulerTests {
         #expect(longDone < long.count) // it stopped: at most the track in flight finished after the cancel
     }
 
+    @Test("SCHED-08: a file whose header is slow to read (a drive waking up) holds neither the scheduler nor a job")
+    func slowHeaderRead() async throws {
+        // Review N8: the header reads ran on the scheduler's actor, on the cooperative pool. A slow drive then held
+        // a pool thread, and the actor with it: the jobs already running could not record their tracks.
+        let store = try TrackAnalysisStore(directory: StoreFolder().url)
+        let reports = Reports()
+        let scheduler = Self.make(store, reports)
+        let steady = try Self.files("sched-steady", count: 24, seconds: 4)
+        scheduler.setHorizon([.init(id: "steady", files: steady, startsIn: 0)])
+        try await until("the first steady track analysed") { !reports.names.isEmpty }
+        let slow = try SlowFile(named: "sched-slow-drive")
+        defer { slow.release() }
+        scheduler.setHorizon([.init(id: "steady", files: steady, startsIn: 0),
+                              .init(id: "slow", files: [slow.url], startsIn: 60)])
+        try await until("every steady track analysed while the slow file's header is still being read",
+                        cap: .seconds(30)) { reports.names.count == steady.count }
+    }
+
     @Test("SCHED-07: a file that cannot be analysed is tried once, logged, and skipped after")
     func failure() async throws {
         let store = try TrackAnalysisStore(directory: StoreFolder().url)
@@ -150,5 +168,25 @@ struct TrackAnalysisSchedulerTests {
                               .init(id: "later", files: marker, startsIn: 600)])
         try await until("the later job analysed") { reports.names.contains("sched-later-0.wav") }
         #expect(reports.log.filter { $0.contains("cannot analyse") }.count == 1)
+    }
+}
+
+/// A named pipe standing in for a file on a drive that takes its time to answer: opening it for reading blocks until
+/// `release()` gives it a writer; the read then meets its end at once (not audio).
+final class SlowFile: Sendable {
+    let url: URL
+
+    init(named name: String) throws {
+        url = Fixtures.directory.appending(path: "\(name)-\(UUID().uuidString).wav")
+        guard mkfifo(url.path, 0o600) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+
+    /// Let every open waiting on it through, and remove it.
+    func release() {
+        let writer = open(url.path, O_RDWR)
+        unlink(url.path)
+        if writer >= 0 {
+            close(writer)
+        }
     }
 }
