@@ -213,6 +213,44 @@ struct LevelingNumbersTests {
         #expect(decide("s2", .track, in: mixed).profiles.map(\.basis) == [.decoded, .fold(lfeVariant: 0)])
     }
 
+    @Test("DEC-18: a mono song is heard as dual mono: the anchor compares it so, the decision is in its own measure")
+    func monoInAGroup() {
+        // A mono song plays on both sides at 0 dB (F8): −22 LUFS on its one channel is heard at −18.99, louder than
+        // the stereo song's −20, so it anchors the album. Every member's decision states that level in its own
+        // measure, and the planner adds dual mono back for the mono one alone — one g for the album.
+        let lib = Fixture.library([9: [
+            ("st", Fixture.stereo(-20, peak: -10, head: -200, tail: -200)),
+            ("mo", Fixture.mono(-22, peak: -10, head: -200, tail: -200)),
+        ]])
+        let heard = -22 + LevelingRules.dualMonoLu
+        let stereo = decide("st", .album, in: lib)
+        let mono = decide("mo", .album, in: lib)
+        #expect(stereo.loudness.map { abs($0 - heard) < 1e-9 } == true, "anchor \(stereo.loudness ?? .nan)")
+        #expect(mono.loudness.map { abs($0 - (heard - LevelingRules.dualMonoLu)) < 1e-9 } == true,
+                "mono member's L \(mono.loudness ?? .nan)")
+        #expect(mono.roles == Fixture.monoRoles && stereo.roles == Fixture.stereoRoles)
+        #expect(decide("mo", .track, in: lib).loudness == -22) // alone: its own measure, as the planner expects
+        #expect(decide("st", .track, in: lib).loudness == -20)
+    }
+
+    @Test("DEC-18b: a continuous seam between a stereo and a mono song carries the level on as heard")
+    func monoInheritsAsHeard() throws {
+        // One live album whose three songs run on: stereo −20, mono −25 (heard −21.99), stereo −30. Played in
+        // order, the first takes the run's level (−20, its own: the loudest as heard); the others inherit it.
+        let lib = Fixture.library([9: [
+            ("st", Fixture.stereo(-20, peak: -10)), ("mo", Fixture.mono(-25, peak: -10)), ("st2", Fixture.stereo(-30)),
+        ]])
+        let first = decide("st", .track, next: "mo", in: lib)
+        #expect(first.loudness == -20)
+        let mono = decide("mo", .track, previous: "st", next: "st2", atSeam: true, previousDecision: first, in: lib)
+        #expect(mono.continuousWithPrevious && mono.roles == Fixture.monoRoles)
+        let monoL = try #require(mono.loudness)
+        #expect(abs(monoL - (-20 - LevelingRules.dualMonoLu)) < 1e-9, "mono after stereo: L \(monoL)")
+        let last = decide("st2", .track, previous: "mo", atSeam: true, previousDecision: mono, in: lib)
+        #expect(last.continuousWithPrevious)
+        #expect(last.loudness.map { abs($0 - -20) < 1e-9 } == true, "stereo after mono: L \(last.loudness ?? .nan)")
+    }
+
     @Test("DEC-12b: a stereo song keeps its decoded profile; a group's decision keeps the song's own roles")
     func profilesAndRoles() {
         let stereo = decide("x2", .album)

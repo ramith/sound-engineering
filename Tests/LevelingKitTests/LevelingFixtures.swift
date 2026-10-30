@@ -5,6 +5,8 @@ import LevelingKit
 enum Fixture {
     /// The stereo roles (L, R) as the analysis records them.
     static let stereoRoles: [UInt8] = [1, 2]
+    /// A mono file's role (`AsChannelRoleMono`).
+    static let monoRoles: [UInt8] = [14]
     /// A 5.1 file's roles (L R C LFE Ls Rs).
     static let surroundRoles: [UInt8] = [1, 2, 3, 4, 5, 6]
 
@@ -13,6 +15,15 @@ enum Fixture {
                        tail: Double? = -20, album: Int64? = nil) -> LevelingTrack {
         LevelingTrack(album: album, measurement: .init(
             loudness: loudness, truePeak: peak, peakRate: 48000, roles: stereoRoles, durationSeconds: seconds,
+            headLoudness: head, tailLoudness: tail, folded: nil, profiles: [profile(.decoded)]
+        ))
+    }
+
+    /// A mono track (one channel, the Mono role) measured on its one channel at `loudness` LUFS and `peak` dBTP.
+    static func mono(_ loudness: Double?, peak: Double = -1, seconds: Double = 200, head: Double? = -20,
+                     tail: Double? = -20) -> LevelingTrack {
+        LevelingTrack(album: nil, measurement: .init(
+            loudness: loudness, truePeak: peak, peakRate: 48000, roles: monoRoles, durationSeconds: seconds,
             headLoudness: head, tailLoudness: tail, folded: nil, profiles: [profile(.decoded)]
         ))
     }

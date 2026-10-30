@@ -219,6 +219,8 @@ namespace AdaptiveSound
         else
         {
             plan.peakDbtp = peakN;
+            // The dual-mono rule's one application (F8). The decision's L is in the playing file's own measure, a
+            // group's anchor included: LevelingKit compares the members as heard and states the anchor so (N1).
             if (channels == 1U && outputs >= 2U)
             {
                 plannedLoudness += kDualMonoLu;
