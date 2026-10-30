@@ -1,4 +1,4 @@
-// DSPRowAvailability — the shared "Not in bit-perfect mode" row state (R1.1-B, US-R1F-20 items 1–2), and the
+// DSPRowAvailability — the shared "Off in bit-perfect mode" row state (R1.1-B, US-R1F-20 items 1–2), and the
 // registry of the rows that wear it.
 //
 // Pure sends the file to the device untouched, so no control that changes the sound in the app's engine can act
@@ -54,12 +54,12 @@ public enum DSPRowAvailability: Equatable, Sendable {
         self == .live
     }
 
-    /// The shared words.
-    public static let stateText = "Not in bit-perfect mode"
+    /// The shared words — and what VoiceOver hears as an inert control's hint, after its own value (founder,
+    /// 2026-10-30: "Off in bit-perfect mode"; "Not in bit-perfect mode" read as "Pure is off"; VoiceOver keeps the
+    /// control's value and gives the state as a hint).
+    public static let stateText = "Off in bit-perfect mode"
     /// The one action.
     public static let leaveAction = "Leave Pure"
-    /// What VoiceOver adds to an inert row's value.
-    public static let spokenState = "unavailable, not in bit-perfect mode"
     /// After Leave Pure, until the next start (the Pure switch's own timing, US-R1F-13).
     public static let leavingText = "Enhanced starts the next time you start a song."
 }

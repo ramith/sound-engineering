@@ -1,4 +1,4 @@
-// DSP-ROW — the shared "Not in bit-perfect mode" row state (R1.1-B, US-R1F-20 items 1–2): every control that
+// DSP-ROW — the shared "Off in bit-perfect mode" row state (R1.1-B, US-R1F-20 items 1–2): every control that
 // changes the sound in the app's engine is registered, and while the path actually playing is Pure each one reads
 // the state, with one action, Leave Pure. The state follows the path in use, never the Pure switch alone: Pure
 // asked for while Enhanced plays (Bluetooth, a channel mismatch) leaves every row live.
@@ -20,14 +20,16 @@ struct DSPRowAvailabilityTests {
         #expect(!row.bitPerfectText.isEmpty)
     }
 
-    @Test("DSP-ROW-02: the words — the shared state, Leveling's own, the action, what VoiceOver reads")
+    @Test("DSP-ROW-02: the words — the shared state (also VoiceOver's hint), Leveling's own, the action")
     func words() {
+        // Founder, 2026-10-30: "Off in bit-perfect mode" (it was "Not in bit-perfect mode", read as "Pure is off"); and
+        // VoiceOver keeps the control's value and hears this state as the hint — the one constant.
+        #expect(DSPRowAvailability.stateText == "Off in bit-perfect mode")
         #expect(DSPRow.leveling.bitPerfectText == "Leveling off (bit-perfect)")
         for row in DSPRow.allCases where row != .leveling {
-            #expect(row.bitPerfectText == "Not in bit-perfect mode", "\(row)")
+            #expect(row.bitPerfectText == "Off in bit-perfect mode", "\(row)")
         }
         #expect(DSPRowAvailability.leaveAction == "Leave Pure")
-        #expect(DSPRowAvailability.spokenState == "unavailable, not in bit-perfect mode")
         #expect(DSPRowAvailability.leavingText == "Enhanced starts the next time you start a song.")
         #expect(DSPRowAvailability.live.isLive)
         #expect(!DSPRowAvailability.notInBitPerfectMode(leaving: false).isLive)

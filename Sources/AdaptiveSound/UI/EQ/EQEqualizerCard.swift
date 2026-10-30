@@ -6,7 +6,7 @@ import SwiftUI
 /// "Equalizer" with its On/Off switch (`GlassSwitchStyle`), over the presets list. The card hugs its
 /// content and, where the window is too short, its list scrolls inside it — the switch stays put. Any
 /// edit turns an Off EQ on; VoiceOver hears "Equalizer on" then (unless its focus is on the switch,
-/// which already said so). While Pure plays the switch is inert and the shared "Not in bit-perfect mode" note
+/// which already said so). While Pure plays the switch is inert and the shared "Off in bit-perfect mode" note
 /// sits under it, with Leave Pure (R1.1-B, US-R1F-20).
 struct EQEqualizerCard: View {
     @Environment(EQViewModel.self) private var eq
