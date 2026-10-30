@@ -211,17 +211,18 @@ enum OnDeckScenarios {
             + "SHOWS \(name(rig.shown))")
     }
 
-    /// Pure: Play Next a file that won't open: the old pick must not play; the app tries the file
-    /// and reports it.
+    /// Pure: Play Next a file that won't open: the old pick must not play; the app tries the file,
+    /// reports it, and goes on to the song after it (break-it LOW-4, the founder's "Move on").
     static func rearmOpenFails(semantics: ArmSemantics) async throws -> Outcome {
         let rig = try await Rig.playing(pure: true, semantics: semantics, unreadable: [track(9)])
         rig.vm.playNext([audioFile(9)])
         try await rig.settle()
         rig.engine.drain()
         try await rig.endTrackAndFollow()
+        try await rig.quiesce()
         let heard = rig.engine.heard
-        let ok = heard == [.start(track(0))] && rig.shown == track(9) && rig.vm.errorMessage != nil
-            && !rig.vm.isPlaying
+        let ok = heard == [.start(track(0)), .start(track(1))] && rig.shown == track(1)
+            && rig.vm.errorMessage?.contains("“t9”") == true && rig.vm.isPlaying
         return Outcome(ok: ok, detail: "REARM-OPEN-FAILS [\(semantics)]: heard \(heard); SHOWS "
             + "\(name(rig.shown)), error \(rig.vm.errorMessage ?? "none"), playing \(rig.vm.isPlaying)")
     }

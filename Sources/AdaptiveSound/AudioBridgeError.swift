@@ -28,6 +28,14 @@ enum AudioBridgeError: Error, Equatable {
         guard LibraryScanner.supportedExtensions.contains(ext) else { return .unsupportedFormat(ext) }
         return status == kAudioFileUnsupportedDataFormatError ? .undecodableFormat(ext) : .unreadableFile(ext)
     }
+
+    /// The file can't play, whatever plays it, and the engine is fine: the queue goes on past it (break-it LOW-4).
+    var isUnplayableFile: Bool {
+        switch self {
+        case .unsupportedFormat, .unreadableFile, .undecodableFormat: true
+        case .engineNotInitialized, .seekFailed: false
+        }
+    }
 }
 
 /// Founder-facing copy (break-it): without this, the error banner rendered the raw bridged
