@@ -395,6 +395,12 @@ struct LevelingBoundaryTests {
         #expect(second.leveling == .auto)
     }
 
+    @Test("LEVEL-VM-17: one Leveling enum — the setting the listener keeps is the rules' own mode (review N6)")
+    func oneLevelingEnum() {
+        #expect(ObjectIdentifier(LevelingSetting.self) == ObjectIdentifier(LevelingMode.self),
+                "the setting and the rules' mode are two enums mapped onto each other")
+    }
+
     @Test("LEVEL-VM-13: a start is ready with its record, album, profiles and next song; a merge keeps profiles")
     func readinessAndMerge() throws {
         let measured = try LevelingFixture.analysis("/m/a.flac", loudness: -12, truePeak: -1).levelingMeasurement()
@@ -450,8 +456,5 @@ struct LevelingBoundaryTests {
         #expect(GainTags(TrackGainTags()) == nil)
         let tags = TrackGainTags(replayGainTrack: -6.2, replayGainTrackPeak: 0.98, r128Album: -1536)
         #expect(GainTags(tags) == GainTags(replayGainTrack: -6.2, replayGainTrackPeak: 0.98, r128Album: -1536))
-        for setting in LevelingSetting.allCases {
-            #expect(LevelingMode(setting).rawValue == setting.rawValue)
-        }
     }
 }

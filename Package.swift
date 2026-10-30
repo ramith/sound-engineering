@@ -196,10 +196,11 @@ let package = Package(
         // default the faithful one) and the ONE store that keeps it in the launch's defaults, coalesced,
         // with safe decoding — Master Gain never restored louder than it was left. Same rationale as
         // PlaybackQueueKit: SettingsKitTests gate the exact rules the app restores by. Pure Swift over
-        // Foundation's UserDefaults; EQEditKit for the Master Gain law. No UI.
+        // Foundation's UserDefaults; EQEditKit for the Master Gain law; LevelingKit for the Leveling mode it
+        // keeps (one enum for the setting and the rules, R1.1-B review N6). No UI.
         .target(
             name: "SettingsKit",
-            dependencies: ["EQEditKit"],
+            dependencies: ["EQEditKit", "LevelingKit"],
             path: "Sources/SettingsKit"
         ),
         // Track loudness analysis (Sprint EQ, EQ1c part 2; amendments item 3): the analyzer that
