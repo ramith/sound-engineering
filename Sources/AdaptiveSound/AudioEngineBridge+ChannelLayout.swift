@@ -70,6 +70,9 @@ extension AudioEngineBridge {
         channelLayout: AVAudioChannelLayout?
     ) {
         let tag = resolveSourceLayoutTag(channelLayout: channelLayout, channelCount: channelCount)
+        // The device's own width, read before the reconfigure as the reconfigure reads it: offline, re-enabling
+        // manual rendering at a narrower boundary would make that boundary the stand-in device.
+        let deviceChannels = outputDeviceChannels()
 
         // 1. Re-format the live graph to the source (stereo -> same-format no-op; existing path untouched).
         reconfigureGraph(channelCount: channelCount, layout: channelLayout)
@@ -78,7 +81,8 @@ extension AudioEngineBridge {
         publishChannelLayout(tag)
 
         // 3. The output state (M2) for the planner, and the layout's fold for the spatial unit.
-        var state = outputState(roles: sourceRoles(channelCount: channelCount, layout: channelLayout))
+        var state = outputState(roles: sourceRoles(channelCount: channelCount, layout: channelLayout),
+                                deviceChannels: deviceChannels)
         applyOutputState(state)
         _ = withSpatialAU { asSpatialPublishLayoutFold($0, &state) }
     }
@@ -90,18 +94,21 @@ extension AudioEngineBridge {
     func refreshOutputState() {
         let current = leveling.outputState
         let roles = withUnsafeBytes(of: current.sourceRoles) { Array($0.prefix(Int(current.sourceChannels))) }
-        applyOutputState(outputState(roles: roles))
+        applyOutputState(outputState(roles: roles, deviceChannels: outputDeviceChannels()))
     }
 
     /// The one output state (M2) for the graph as it is configured now: the view model's transport hand-over,
-    /// the graph's rate, its source width N with the file's `roles`, and the spatial unit's output width M.
-    private func outputState(roles: [UInt8]) -> AsOutputState {
+    /// the graph's rate, its source width N with the file's `roles`, and the width M the listener's output plays
+    /// it on (`heardOutputChannels`) — `deviceChannels` the device's own width.
+    private func outputState(roles: [UInt8], deviceChannels: AVAudioChannelCount) -> AsOutputState {
         var state = AsOutputState()
         state.transportType = levelingOutputTransport()
         let graph = playerNode?.outputFormat(forBus: 0)
         state.engineRateHz = (graph?.sampleRate ?? 0) > 0 ? graph?.sampleRate ?? 48000 : 48000
         state.sourceChannels = UInt32(graph?.channelCount ?? 2)
-        state.outputChannels = UInt32(spatialNode?.outputFormat(forBus: 0).channelCount ?? graph?.channelCount ?? 2)
+        let boundary = spatialNode?.outputFormat(forBus: 0).channelCount ?? graph?.channelCount ?? 2
+        state.outputChannels = UInt32(Self.heardOutputChannels(source: graph?.channelCount ?? 2, boundary: boundary,
+                                                               device: deviceChannels))
         let width = min(Int(state.sourceChannels), Int(AS_MAX_CHANNELS))
         withUnsafeMutableBytes(of: &state.sourceRoles) { slots in
             for slot in 0 ..< width {
@@ -109,6 +116,22 @@ extension AudioEngineBridge {
             }
         }
         return state
+    }
+
+    /// M, the width the listener's output plays a source of `source` channels on, the spatial unit's output being
+    /// `boundary` channels wide on a device of `device` (0: not negotiated). The spatial unit shapes a multichannel
+    /// source: every channel, or the stereo fold (C1) — so M is its output. A mono or stereo source crosses the
+    /// boundary as it is and the system lays it out on the device: a mono file plays on both sides of a stereo device
+    /// at 0 dB (F8, the founder's XM4 listen, 2026-10-26), heard as dual mono — so M is the device's width. The
+    /// planner's mono rule (+3.01 LU when one channel plays on two or more) reads it.
+    static func heardOutputChannels(source: AVAudioChannelCount, boundary: AVAudioChannelCount,
+                                    device: AVAudioChannelCount) -> AVAudioChannelCount {
+        source > 2 ? boundary : max(boundary, device)
+    }
+
+    /// The output device's own width as the engine reports it (its output node's), 0 before it is known.
+    private func outputDeviceChannels() -> AVAudioChannelCount {
+        avEngine?.outputNode.outputFormat(forBus: 0).channelCount ?? 0
     }
 
     /// The file's channel roles, from its labels: the one resolver (TrackLoudnessKit's `ChannelRoles`, over

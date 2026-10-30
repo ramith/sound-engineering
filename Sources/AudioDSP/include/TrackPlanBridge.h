@@ -125,8 +125,10 @@ typedef struct
     double engineRateHz;
     /// N: the playing file's channel count (the effects unit's width), 1…8.
     uint32_t sourceChannels;
-    /// M: the spatial unit's output width (the device boundary), 1…8. M < N with N > 2 folds to
-    /// stereo (C1: never a truncation).
+    /// M: the width the listener's output plays the source on, 1…8. For N > 2, the spatial unit's
+    /// output (the device boundary): M < N folds to stereo (C1: never a truncation). For mono and
+    /// stereo, the device's own width: the system lays a mono file on both sides of a stereo
+    /// device, heard as dual mono (+3.01 LU, F8).
     uint32_t outputChannels;
     /// The playing file's channel roles (AsChannelRole, from asResolveChannelRoles); Unknown
     /// beyond N. The fold numbers of a decision are used only if its roles equal these.
