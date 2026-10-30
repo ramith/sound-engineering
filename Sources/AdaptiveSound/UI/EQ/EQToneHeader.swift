@@ -1,5 +1,6 @@
 import DesignTokenKit
 import EQEditKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - Tone header (EQ3t — the Tone card's one fixed line)
@@ -12,6 +13,8 @@ import SwiftUI
 /// Return. VoiceOver: the chip is "Tone", valued "collapsed" / "expanded".
 struct EQToneHeader: View {
     let isFolded: Bool
+    /// Whether the Tone works now: Reset Tone is inert while Pure plays (US-R1F-20).
+    let availability: DSPRowAvailability
     let toggleFold: () -> Void
 
     @Environment(EQViewModel.self) private var eq
@@ -54,6 +57,7 @@ struct EQToneHeader: View {
                 .controlFocusRing(around: RoundedRectangle(cornerRadius: DesignSystem.Radius.control))
                 .disabled(!eq.hasTone)
                 .help("Set every Tone region back to 0 dB")
+                .bitPerfectGate(.tone, availability)
         }
         // The rail's section-header inset (`NavSectionHeader`): the caption lines up with the
         // Equalizer card's "PRESETS" above it.

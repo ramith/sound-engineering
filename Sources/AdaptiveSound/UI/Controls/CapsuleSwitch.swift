@@ -1,10 +1,10 @@
 import SwiftUI
 
-// MARK: - Capsule switch (S10.8 D3 — the app's one 2–3 segment switch)
+// MARK: - Capsule switch (S10.8 D3 — the app's one 2–4 segment switch)
 
-/// A small segmented switch: a carved `tabTrack` capsule holding 2–3 segments, the selected one
+/// A small segmented switch: a carved `tabTrack` capsule holding 2–4 segments, the selected one
 /// raised (`segmentSelected`) — the tab strip's grammar at control scale. The queue's Up Next /
-/// Recent today; the EQ's interpolation switch in Sprint F.
+/// Recent, and Settings' Leveling (Off / Auto / Album / Track, R1.1-B).
 ///
 /// - **Selection is not shown by fill alone.** The raised segment is ≈ 1.3:1 (dark) and ≈ 2:1
 ///   (light) against the track — too faint to carry the selection — so it also gets a 1pt
@@ -30,11 +30,11 @@ struct CapsuleSwitch<Value: Hashable>: View {
 
     /// - Parameters:
     ///   - label: the switch's VoiceOver name ("Queue view") — required, like the chip's.
-    ///   - options: the segments, in order (2–3).
+    ///   - options: the segments, in order (2–4).
     ///   - title: a segment's visible title, which is also its VoiceOver label.
     init(_ label: String, selection: Binding<Value>, options: [Value], title: @escaping (Value) -> String) {
         assert(!label.isEmpty, "a capsule switch needs its accessibility label")
-        assert((2 ... 3).contains(options.count), "a capsule switch has 2–3 segments")
+        assert((2 ... 4).contains(options.count), "a capsule switch has 2–4 segments")
         self.label = label
         _selection = selection
         self.options = options

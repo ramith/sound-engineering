@@ -140,6 +140,10 @@ struct ReimagineSectionView: View {
 /// crossfeed plays (`crossfeedPlays`), and sets the listener's choice, which a non-headphone output
 /// holds off without switching off. The "Connect headphones" hint is instruction text, so it must
 /// stay AA: only the control row dims (`disabledDim`), never the hint or the heading.
+///
+/// R1.1-B: while Pure plays the row wears the shared "Not in bit-perfect mode" state (US-R1F-20); and on a
+/// surround file folded to stereo, where the engine bypasses crossfeed (it is stereo-only until the fold moves
+/// into the engine — KI-SND-06), the row says so: "Not active on surround albums" (US-R1F-08 item 7).
 struct HeadphonesSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -147,6 +151,7 @@ struct HeadphonesSectionView: View {
         @Bindable var bvm = viewModel
 
         let isEnabled = bvm.deviceIsHeadphones
+        let availability = bvm.dspRowAvailability
 
         return VStack(alignment: .leading, spacing: 8) {
             Text("Headphones")
@@ -181,6 +186,16 @@ struct HeadphonesSectionView: View {
                 }
             }
             .disabledDim(!isEnabled) // the control only (dark 50%, guide E1); light: its own look
+            .bitPerfectGate(.crossfeed, availability)
+
+            BitPerfectRowNote(row: .crossfeed, availability: availability, leavePure: bvm.leavePure)
+            if bvm.signalPath.crossfeedHeldBySurround {
+                Text("Not active on surround albums")
+                    .font(DesignSystem.Font.trackSubtitle)
+                    .foregroundStyle(Color.asLabelTertiary)
+                    .help("Crossfeed works on stereo. A surround file is folded to stereo after it, so it "
+                        + "plays without crossfeed.")
+            }
         }
     }
 }

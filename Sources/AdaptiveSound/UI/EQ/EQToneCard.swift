@@ -19,9 +19,12 @@ import SwiftUI
 /// - **Keyboard:** the fold chip, Reset Tone, then the five sliders, in that Tab order; ←/→ or ↑/↓
 ///   step a focused slider by 0.5 dB.
 ///
-/// Its height is exact (`EQScreenLayout.toneCardHeight`), so the rail's budget (LAY-EQ-01) holds.
+/// Its height is exact (`EQScreenLayout.toneCardHeight`), so the rail's budget (LAY-EQ-01) holds — plus, while
+/// Pure plays, the shared "Not in bit-perfect mode" note under the header, measured (R1.1-B, US-R1F-20): the
+/// sliders and Reset Tone are inert then (`bitPerfectGate`), and the EQ's own card scrolls to make room.
 struct EQToneCard: View {
     @Environment(EQViewModel.self) private var eq
+    @Environment(AudioViewModel.self) private var audio
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if DEBUG
@@ -35,10 +38,18 @@ struct EQToneCard: View {
     @State private var hovered: EQToneRegion?
     @State private var dragged: EQToneRegion?
     @FocusState private var focused: EQToneRegion?
+    /// The Pure note's measured height (0 while the Tone works).
+    @State private var noteHeight: CGFloat = 0
 
     var body: some View {
+        let availability = audio.dspRowAvailability
         VStack(alignment: .leading, spacing: CGFloat(EQScreenLayout.toneHeaderGap)) {
-            EQToneHeader(isFolded: isFolded, toggleFold: toggleFold)
+            EQToneHeader(isFolded: isFolded, availability: availability, toggleFold: toggleFold)
+            if !availability.isLive {
+                BitPerfectRowNote(row: .tone, availability: availability, leavePure: audio.leavePure)
+                    .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noteHeight = $0 }
+            }
             if !isFolded {
                 VStack(spacing: 0) {
                     ForEach(EQToneRegion.allCases) { region in
@@ -46,14 +57,16 @@ struct EQToneCard: View {
                             dragChanged(region, dragging: dragging)
                         }
                         .onHover { hovering in hoverChanged(region, hovering: hovering) }
+                        .bitPerfectGate(.tone, availability)
                     }
                 }
             }
         }
         .padding(CGFloat(EQScreenLayout.railCardPadding))
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: height, alignment: .top)
-        .glassPanel(.panel, in: shape)
+        .frame(height: height + (availability.isLive ? 0 : noteHeight + CGFloat(EQScreenLayout.toneHeaderGap)),
+               alignment: .top)
+        .glassPanel(.panel, in: shape(isOneLine: isFolded && availability.isLive))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tone")
         .onChange(of: highlighted, initial: true) { _, region in
@@ -70,11 +83,11 @@ struct EQToneCard: View {
         CGFloat(EQScreenLayout.toneCardHeight(rows: isFolded ? 0 : EQToneRegion.allCases.count))
     }
 
-    /// Open, the rail cards' continuous corner. Folded, the one line is too short for it — a continuous
-    /// corner needs about one and a half radii of straight edge, or the panel's strokes overrun the
+    /// Open, the rail cards' continuous corner. Folded to its one line, the card is too short for it — a
+    /// continuous corner needs about one and a half radii of straight edge, or the panel's strokes overrun the
     /// card's ends as a sliver — so its ends round fully, circular.
-    private var shape: RoundedRectangle {
-        isFolded
+    private func shape(isOneLine: Bool) -> RoundedRectangle {
+        isOneLine
             ? RoundedRectangle(cornerRadius: height / 2, style: .circular)
             : RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous)
     }
