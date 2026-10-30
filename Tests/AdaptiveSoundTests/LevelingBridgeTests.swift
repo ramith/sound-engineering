@@ -210,10 +210,8 @@ struct LevelingBridgeTests {
         #expect(moved.plan.levelGainDb == wired.levelGainDb, "g moved at an output change")
         #expect(moved.plan.workingCeilingDbtp < wired.workingCeilingDbtp, "the ceiling did not follow the output")
         let count = record.count
-        var same = rig.bridge.leveling.outputState
-        rig.bridge.applyOutputState(same) // the same state again: nothing to re-plan
-        same.transportType = kAudioDeviceTransportTypeBluetooth
-        rig.bridge.applyOutputState(same)
+        rig.bridge.levelingTransportChanged(kAudioDeviceTransportTypeBluetooth) // the same transport again
+        rig.bridge.refreshOutputState() // a re-establish on the same device boundary
         #expect(record.count == count, "an unchanged output re-planned")
         await rig.finish()
     }

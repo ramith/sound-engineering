@@ -56,9 +56,10 @@ extension LevelingReadout {
 }
 
 extension EngineLevelingState {
-    /// The audible track's plan, read for the main thread's snapshot (two reads under the leveling lock, each held
-    /// only to copy); nil before any track became audible.
+    /// The audible track's plan, read for the main thread's snapshot with the output it was planned against — one
+    /// read under the leveling lock, held only to copy (N12), so the layout's name is always the plan's own; nil
+    /// before any track became audible.
     var readout: LevelingReadout? {
-        audiblePlan.map { LevelingReadout(plan: $0, output: outputState) }
+        audiblePlanned.map { LevelingReadout(plan: $0.plan, output: $0.output) }
     }
 }
