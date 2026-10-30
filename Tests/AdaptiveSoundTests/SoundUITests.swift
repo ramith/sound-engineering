@@ -17,20 +17,27 @@ import Testing
 struct SoundUITests {
     // MARK: The shared row state
 
-    @Test("SOUND-UI-01: the DSP rows follow the path in use, never the switch; Leave Pure waits for the next start")
+    @Test("SOUND-UI-01: while a song plays the DSP rows follow the path in use, never the switch; Leave Pure waits")
     func rowsFollowThePathInUse() async throws {
+        // Changed in the F4 fix round: the paths are the engine's, reported through the transport tick while a song
+        // plays — with nothing playing the rows keep the path that last played (PausedRowsTests).
         let player = try await FakePlayer.launched(tracks: 1)
         let model = player.vm
         #expect(model.dspRowAvailability == .live)
         model.pureModeEnabled = true
+        try await player.play(at: 0)
+        player.engine.state.withLock { $0.signalPath.path = .enhanced; $0.signalPath.pureReason = .bluetooth }
+        try player.tick()
         #expect(model.dspRowAvailability == .live, "Pure asked for, Enhanced plays: the rows work")
-        model.signalPath.path = .pure
+        player.engine.state.withLock { $0.signalPath.path = .pure; $0.signalPath.pureReason = nil }
+        try player.tick()
         #expect(model.dspRowAvailability == .notInBitPerfectMode(leaving: false))
         model.leavePure()
         #expect(!model.pureModeEnabled)
         #expect(model.dspRowAvailability == .notInBitPerfectMode(leaving: true),
                 "Pure plays until the next start: still inert, and it says when Enhanced comes back")
-        model.signalPath.path = .enhanced
+        player.engine.state.withLock { $0.signalPath.path = .enhanced }
+        try player.tick()
         #expect(model.dspRowAvailability == .live)
     }
 

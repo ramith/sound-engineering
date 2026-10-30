@@ -173,6 +173,7 @@
             audio.sampleRate = 48000
             var path = SignalPathInfo()
             path.path = .enhanced
+            path.playedPath = .enhanced // the path that plays, which the DSP rows follow
             path.achievedSampleRate = 48000
             path.intensityLinear = audio.intensity
             audio.signalPath = path

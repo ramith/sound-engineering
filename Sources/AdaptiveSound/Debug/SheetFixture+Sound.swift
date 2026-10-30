@@ -45,6 +45,7 @@
                 audio.selectedDevice = audio.availableDevices.first { $0.isHeadphones }
                 audio.crossfeedEnabled = true
                 audio.signalPath.path = .pure
+                audio.signalPath.playedPath = .pure // the path that plays, which the DSP rows follow
                 audio.signalPath.decision = .fullBitPerfect
                 audio.signalPath.achievedSampleRate = 96000
                 audio.signalPath.bitDepth = 24
