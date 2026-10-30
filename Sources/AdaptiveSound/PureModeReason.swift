@@ -82,6 +82,12 @@ enum PureModeReason: Equatable, CaseIterable {
         case .masterGainBelowDeviceRange:
             "Master Gain (\(MasterGainLaw.text(masterGain))) turns your device down further than its own volume "
                 + "goes, so Pure Mode would play louder than Master Gain says. It waits, and Enhanced is playing."
+        case .channelCountMismatch:
+            // A surround file on a narrower output is folded to stereo (R1.1-B, US-R1F-08 item 6).
+            info.fold.map {
+                "This track has \($0.sourceChannels) channels and your output has \($0.outputChannels), so Enhanced "
+                    + "plays it, folded to stereo."
+            } ?? declined
         default:
             declined
         }

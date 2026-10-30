@@ -104,6 +104,18 @@ private struct SignalBadgeRow: View {
             } else {
                 pathBadge
                 formatRateBadge
+                // The fold (R1.1-B, US-R1F-08 item 6): "5.1 → stereo", and "· measuring" on the first play of a
+                // surround track nobody has measured yet. When Pure was asked for and declined for the channels, the
+                // badge IS that reason — its sentence on hover, the dot amber — so the row never carries both.
+                if let fold = info.foldBadge {
+                    BadgeCapsule(height: badgeHeight) {
+                        Text(fold)
+                            .badgeText(DesignSystem.Color.label)
+                            .lineLimit(1)
+                    }
+                    .fixedSize()
+                    .help(foldHelp)
+                }
                 // No bits/decoder capsules: relocated to the inspector's signal-detail
                 // line (§5) — the hero-left's 300pt minimum budget (LAY-01) assumes the
                 // SHORT badge set.
@@ -114,7 +126,7 @@ private struct SignalBadgeRow: View {
                     }
                 }
                 // Why Pure isn't playing bit-perfect (C-34): a short note, its sentence on hover.
-                if let reason = info.pureReason {
+                if let reason = info.pureReason, !foldCarries(reason) {
                     BadgeCapsule(height: badgeHeight) {
                         Text(reason.note)
                             .badgeText(DesignSystem.Color.statusWarningText)
@@ -129,6 +141,21 @@ private struct SignalBadgeRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Signal path")
         .accessibilityValue(SignalPathAccessibility.value(for: info))
+    }
+
+    /// Whether the fold badge already says `reason`: Pure declined a file with more channels than the output.
+    private func foldCarries(_ reason: PureModeReason) -> Bool {
+        reason == .channelCountMismatch && info.foldBadge != nil
+    }
+
+    /// The fold badge's tooltip: Pure's reason when Pure was asked for, else what the fold does.
+    private var foldHelp: String {
+        if let reason = info.pureReason, foldCarries(reason) {
+            return reason.detail(in: info, masterGain: masterGain)
+        }
+        let measuring = info.foldBadge?.hasSuffix("measuring") == true
+        return "This track has more channels than your output, so Enhanced folds it to stereo"
+            + (measuring ? ". It plays quieter until it is measured." : ".")
     }
 
     /// PURE (accent dot, monochrome chip — untouched by the realign) vs ENHANCED: the
@@ -244,6 +271,9 @@ enum SignalPathAccessibility {
         }
         if info.path == .pure, let decoder = info.decoder {
             parts.append(decoder == .apple ? "Apple decoder" : "FFmpeg decoder")
+        }
+        if let fold = info.spokenFoldBadge {
+            parts.append(fold)
         }
         if let strength = info.audibleCrossfeed {
             parts.append("crossfeed \(strength.displayName)")
