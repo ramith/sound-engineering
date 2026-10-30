@@ -12,7 +12,8 @@ import GRDB
 ///   overwritten by the next save.
 /// - The scalar record (numbers, histograms, LFE statistics: a few KB) is kept for every analysed track; the
 ///   compact −ΔL profiles (up to ~600 KB per basis) are capped at `defaultProfileBudgetBytes` in all, the least
-///   recently used going first. A track whose profiles went keeps its numbers.
+///   recently used going first. A track whose profiles went keeps its numbers. A profile is kept once per
+///   measurement: the four fold variants of a file with no LFE share one (`TrackAnalysis.profileSource`).
 /// - Everything here can be rebuilt by analysing again, so a file that is not a database or is corrupt is
 ///   recreated (closed, then the file and its `-wal` / `-shm` deleted), and one found so while open is erased on
 ///   its connection — never `eraseDatabaseOnSchemaChange`. A file that merely cannot be used now (another
@@ -72,31 +73,37 @@ public final class TrackAnalysisStore: Sendable {
     }
 
     /// The saved compact profiles of `identity` on `bases` (`TrackAnalysis`'s own indices: 0 as decoded, 1 + v the
-    /// fold at LFE variant v) that are still kept, by basis; reading them marks them used. None when the store has
-    /// no current-version record of `identity`.
+    /// fold at LFE variant v) that are still kept, by basis — a basis whose measurement another carries
+    /// (`profileSource`) answered with that one's; reading them marks them used. None when the store has no
+    /// current-version record of `identity`.
     public func profiles(for identity: TrackIdentity, bases: [Int]) async throws -> [Int: TrackAnalysis.Profile] {
         guard !bases.isEmpty else { return [:] }
         return try await perform { db in
             guard let record = try Row.fetchOne(db, sql: Self.selectRecordSQL, arguments: [identity.path])
-                .map(Record.init), record.identity == identity, record.isCurrent else { return [:] }
+                .map(Record.init), record.identity == identity, let analysis = record.analysis else { return [:] }
             var found: [Int: TrackAnalysis.Profile] = [:]
-            for basis in Set(bases) {
-                guard let row = try Row.fetchOne(db, sql: Self.selectProfileSQL, arguments: [identity.path, basis])
+            var read: [Int] = []
+            for (source, asked) in Dictionary(grouping: Set(bases), by: analysis.profileSource(of:)) {
+                guard let row = try Row.fetchOne(db, sql: Self.selectProfileSQL, arguments: [identity.path, source])
                 else { continue }
-                found[basis] = TrackAnalysis.Profile(row: row)
+                let profile = TrackAnalysis.Profile(row: row)
+                for basis in asked {
+                    found[basis] = profile
+                }
+                read.append(source)
             }
-            if !found.isEmpty {
+            if !read.isEmpty {
                 let used = try Self.nextUse(db)
-                for basis in found.keys {
-                    try db.execute(sql: Self.touchProfileSQL, arguments: [used, identity.path, basis])
+                for source in read {
+                    try db.execute(sql: Self.touchProfileSQL, arguments: [used, identity.path, source])
                 }
             }
             return found
         }
     }
 
-    /// Keep `analysis` (replacing any record at its path, with its profiles), then trim the profiles to the cap,
-    /// least recently used first.
+    /// Keep `analysis` (replacing any record at its path, with its profiles — each measurement's once), then trim the
+    /// profiles to the cap, least recently used first.
     public func save(_ analysis: TrackAnalysis) async throws {
         var scalars = analysis
         scalars.profiles = analysis.profiles.map { _ in nil }
@@ -109,7 +116,7 @@ public final class TrackAnalysisStore: Sendable {
                 identity.path, Int64(bitPattern: identity.size), identity.modified, analysis.version, payload,
             ])
             let used = try Self.nextUse(db)
-            for (basis, profile) in analysis.profiles.enumerated() {
+            for (basis, profile) in analysis.profiles.enumerated() where analysis.profileSource(of: basis) == basis {
                 guard let profile else { continue }
                 let powers = profile.powers.withUnsafeBufferPointer { Data(buffer: $0) }
                 try db.execute(sql: Self.insertProfileSQL, arguments: [

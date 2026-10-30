@@ -72,6 +72,15 @@ public struct TrackAnalysis: Codable, Sendable, Equatable {
     /// Per basis (`AS_PROFILE_BASES`): the histogram's non-empty bins, and the persisted profile.
     public var histograms: [[LoudnessBin]]
     public var profiles: [Profile?]
+
+    /// The basis whose measurement `basis` carries (`AS_PROFILE_BASES` numbering): itself, except that a fold of a
+    /// file with no LFE is one measurement for every LFE variant — the LFE has nothing to add — so each fold basis
+    /// carries the LFE-omitted fold's (basis 1), as the analyzer makes them (`TrackAnalyzer::measuredVariant`). The
+    /// store keeps such a profile once and answers every variant with it (review N11).
+    public func profileSource(of basis: Int) -> Int {
+        guard folds, basis > 1, !roles.contains(UInt8(AsChannelRoleLfe.rawValue)) else { return basis }
+        return 1 + Int(AsLfeVariantOmit.rawValue)
+    }
 }
 
 extension TrackAnalysis {
