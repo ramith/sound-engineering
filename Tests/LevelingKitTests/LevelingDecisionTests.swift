@@ -68,13 +68,33 @@ struct LevelingScopeTests {
         #expect(Set(numbers.map(\.loudness)) == [-14] && Set(numbers.map(\.truePeak)) == [-1])
     }
 
-    @Test("DEC-05: Track mode — a continuous run shares its own loudest member's level (founder, 2026-10-30)")
+    @Test("DEC-05: Track mode, album order: a continuous run shares its loudest member's level (founder, 2026-10-30)")
     func trackModeRuns() {
-        #expect(decide("p1", .track).loudness == -13) // run p1–p2: p2 is the loudest
-        #expect(decide("p1", .track).unfolded.truePeak == 0.1) // and the run's highest peak
-        #expect(decide("p3", .track).loudness == -18) // run p3–p4 (p2 → p3 is silent)
-        #expect(decide("p4", .track).loudness == -18)
+        // The live album in its own order: p1 → p2 runs on, p2 → p3 is silent, p3 → p4 runs on.
+        #expect(decide("p1", .track, next: "p2").loudness == -13) // run p1–p2: p2 is the loudest
+        #expect(decide("p1", .track, next: "p2").unfolded.truePeak == 0.1) // and the run's highest peak
+        #expect(decide("p2", .track, previous: "p1", next: "p3").loudness == -13)
+        #expect(decide("p3", .track, previous: "p2", next: "p4").loudness == -18) // run p3–p4
+        #expect(decide("p4", .track, previous: "p3").loudness == -18)
         #expect(decide("p4", .album).loudness == -13) // the album's anchor is p2
+    }
+
+    @Test("DEC-17: a run's song that does not join it in play order plays at its own level — Track and Off alike")
+    func runOutOfOrder() {
+        // The run exists for songs "that join without a pause" (founder, 2026-10-30); shuffled songs never join, so
+        // each plays at its own level (decision 2, 2026-10-26). p1 between songs of other albums:
+        #expect(decide("p1", .track, previous: "y1", next: "x1").loudness == -20)
+        #expect(decide("p1", .track).loudness == -20) // played alone
+        // Beside its run-mate, but the other way round: p2 → p1, or p4 → p3. Nothing joins without a pause there.
+        #expect(decide("p1", .track, previous: "p2").loudness == -20)
+        #expect(decide("p4", .track, next: "p3").loudness == -25)
+        #expect(decide("p4", .track, previous: "p2", next: "p1").loudness == -25) // its album, not its neighbours
+        // Off keeps the numbers by the same rule: a lone song's own fold peak, not the run's worst.
+        let lib = Fixture.library([5: [
+            ("s1", Fixture.surround(-20, peak: -2, foldLoudness: -19, foldPeak: 1, includes: false)),
+            ("s2", Fixture.surround(-18, peak: -3, foldLoudness: -17, foldPeak: 3, includes: false)),
+        ]], loose: loose)
+        #expect(decide("s1", .off, previous: "a", next: "b", in: lib).folded?.truePeak.first == 1)
     }
 
     @Test("DEC-06: Track mode with silence between songs: each song at its own level")
@@ -152,7 +172,7 @@ struct LevelingNumbersTests {
             ("s1", Fixture.surround(-20, peak: -2, foldLoudness: -19, foldPeak: 1, includes: false)),
             ("s2", Fixture.surround(-18, peak: -3, foldLoudness: -17, foldPeak: 3, includes: false)),
         ]])
-        let off = decide("s1", .off, in: lib)
+        let off = decide("s1", .off, next: "s2", in: lib) // in album order
         #expect(off.mode == .off && off.source == .analysis)
         #expect(off.folded?.truePeak.first == 3) // the run's worst fold peak: one trim for s1 and s2
         #expect(off.folded?.variant == 0)
