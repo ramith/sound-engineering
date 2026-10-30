@@ -262,7 +262,7 @@ extension AudioViewModel {
               onDeckIsLive, signalPath.path == .enhanced, playingRemaining > Self.rearmMargin,
               engine.snapshot().transport.transitionCount == lastTransitionCount else { return }
         let fresh = armedDecision(for: levelingSlot(queue[index].file), at: index)
-        guard fresh.decision != armed.decision else { return }
+        guard !fresh.decision.playsLike(armed.decision) else { return }
         logUX("leveling: the next song's decision changed (its analysis landed) — re-armed: "
             + Self.describe(fresh.decision))
         armOnDeck(index: index)
