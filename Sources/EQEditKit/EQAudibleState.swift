@@ -39,8 +39,9 @@ public enum EQAudibleState: Equatable, Sendable {
 
     /// Whether the graph shows the readouts of an edit in progress — the keyboard cursor's, a Tone
     /// slider's, with its shaded region: while the EQ plays, and where it is on but can't be heard yet
-    /// (Pure Mode, no engine), since editing goes on there. Off and a held Compare say what plays
-    /// instead; any edit ends both.
+    /// (Pure Mode, no engine). In Pure no edit can start — every EQ control is inactive there (founder,
+    /// 2026-10-30) — so there it only covers an edit already in flight as Pure begins, which its control
+    /// then ends. Off and a held Compare say what plays instead; any edit ends both.
     public var showsEditReadouts: Bool {
         self == .playing || self == .pureMode || self == .engineNotReady
     }
