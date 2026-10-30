@@ -87,6 +87,12 @@ public enum LevelingRules {
     /// An edge block quieter than this is silence: BS.1770's absolute gate (−70 LUFS), below which the standard
     /// counts no programme. A seam is continuous unless one of its two edge blocks is silent.
     public static let silenceLufs = -70.0
+    /// How much louder a one-channel file is heard than its measure: it plays on both sides of a stereo output at
+    /// 0 dB, so it is heard as dual mono, 10·log10(2) LU up (the design's F8, the founder's XM4 listen; libebur128's
+    /// `EBUR128_DUAL_MONO`). The planner applies it, once, when the file plays to two outputs or more
+    /// (`asPlanTrack`). The builder reads it only to compare a group's members as they are heard and to state the
+    /// group's level in the playing file's own measure.
+    public static let dualMonoLu = 3.010299956639812
 
     /// The one continuity judge (§4): whether a track whose last 400 ms block reads `tail` runs on into one whose
     /// first block reads `head` (LUFS; nil = unknown, which counts as sounding). Continuous unless an edge is
@@ -216,14 +222,15 @@ extension LevelingLibrary {
 
 extension LevelingLibrary {
     /// A group's numbers (§3, §4): a whole album, a continuous run, or one track. L is its anchor, the loudest
-    /// member of `anchorMinimumSeconds` or more (every member when none is that long); the peaks are its maxima;
-    /// on each basis. One LFE variant: omitted unless every member that folds includes. Roles and profiles are
-    /// `own`'s, the track that plays.
+    /// member of `anchorMinimumSeconds` or more (every member when none is that long) as heard — a mono member is
+    /// heard as dual mono (`LevelingRules.dualMonoLu`) — stated in `own`'s measure, since the planner adds dual mono
+    /// back when `own` is mono (review N1). The peaks are the maxima. On each basis. One LFE variant: omitted unless
+    /// every member that folds includes. Roles and profiles are `own`'s, the track that plays.
     private static func group(_ members: [LevelingTrack.Measurement], own: LevelingTrack.Measurement?,
                               leveled: Bool) -> TrackLevelingDecision {
         let long = members.filter { $0.durationSeconds >= LevelingRules.anchorMinimumSeconds }
         let pool = long.isEmpty ? members : long
-        let loudness = pool.compactMap(\.loudness).max()
+        let loudness = pool.compactMap(\.heardLoudness).max().map { $0 - (own?.heardOffset ?? 0) }
         let rates = Set(members.map(\.peakRate))
         var decision = TrackLevelingDecision(
             mode: !leveled ? .off : (loudness == nil ? .unknownCut : .leveled),
@@ -236,7 +243,7 @@ extension LevelingLibrary {
     }
 
     /// The fold's numbers of a group: per variant, the anchor over `pool` and the peak over `members`. A member
-    /// that does not fold counts as decoded (it plays as decoded beside the others). Nil when none folds.
+    /// that does not fold counts as it is heard decoded (it plays so beside the others). Nil when none folds.
     private static func folded(_ members: [LevelingTrack.Measurement],
                                pool: [LevelingTrack.Measurement]) -> TrackLevelingDecision.FoldedNumbers? {
         let folding = members.compactMap(\.folded)
@@ -272,7 +279,8 @@ extension LevelingLibrary {
     }
 
     /// At a continuous seam: `previous`'s numbers, variant, source and mode (Off when the listener's mode is Off);
-    /// the track's own roles and profiles when it is analysed.
+    /// the track's own roles and profiles when it is analysed, its L carried on as heard — in its own measure when
+    /// one of the two is mono and the other not (the planner adds dual mono to a mono one's).
     private static func inherit(_ previous: TrackLevelingDecision, by track: LevelingTrack,
                                 mode: LevelingMode) -> TrackLevelingDecision {
         var decision = previous
@@ -284,6 +292,7 @@ extension LevelingLibrary {
         }
         if let own = track.measurement {
             decision.roles = own.roles
+            decision.unfolded.loudness = previous.unfolded.loudness.map { $0 + previous.heardOffset - own.heardOffset }
             decision.profiles = keptProfiles(own.profiles, for: decision)
         } else {
             decision.profiles = []
@@ -300,9 +309,20 @@ extension LevelingLibrary {
 }
 
 extension LevelingTrack.Measurement {
-    /// L at fold variant `variant`; as decoded for a file that does not fold.
+    /// How much louder the track is heard on a stereo output than it measures: dual mono's for a one-channel file
+    /// (`LevelingRules.dualMonoLu`), else nothing.
+    var heardOffset: Double {
+        roles.count == 1 ? LevelingRules.dualMonoLu : 0
+    }
+
+    /// L as heard on a stereo output, decoded.
+    var heardLoudness: Double? {
+        loudness.map { $0 + heardOffset }
+    }
+
+    /// L at fold variant `variant`; as heard decoded for a file that does not fold.
     func foldedLoudness(variant: Int) -> Double? {
-        guard let folded else { return loudness }
+        guard let folded else { return heardLoudness }
         return folded.loudness.indices.contains(variant) ? folded.loudness[variant] : nil
     }
 
@@ -310,5 +330,13 @@ extension LevelingTrack.Measurement {
     func foldedTruePeak(variant: Int) -> Double? {
         guard let folded else { return truePeak }
         return folded.truePeak.indices.contains(variant) ? folded.truePeak[variant] : nil
+    }
+}
+
+extension TrackLevelingDecision {
+    /// How much louder the file this decision was measured on is heard than its L states: dual mono's for a
+    /// one-channel file's analysis, else nothing (a tag's or an unknown decision carries no roles).
+    var heardOffset: Double {
+        roles.count == 1 ? LevelingRules.dualMonoLu : 0
     }
 }
