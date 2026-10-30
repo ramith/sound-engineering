@@ -68,6 +68,12 @@ final class LevelingState {
     /// The sources a test reads instead of the app's (`StoreLevelingSources`).
     @ObservationIgnored var testSources: (any LevelingSources)?
 
+    /// The songs (by key) whose analysis is not coming this session: the scheduler could not identify, open or
+    /// analyse them, or keep what it measured. A later analysis of one takes it off.
+    @ObservationIgnored var analysisNotComing: Set<String> = []
+    /// The analysis store would not open: no song's analysis is coming this session.
+    @ObservationIgnored var analysisUnavailable = false
+
     /// The clock the start's wait runs on: `ContinuousClock` in the app, a test clock in a test.
     @ObservationIgnored var clock: any Clock<Duration> = ContinuousClock()
     /// How long a start waits for a song whose record is still being read (§S3 "the prefetch").

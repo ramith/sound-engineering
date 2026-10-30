@@ -39,7 +39,7 @@ extension AudioViewModel {
     /// Open the analysis store in `directory` (the app's data folder) and its scheduler, off the main thread
     /// (composition root, Edge 6), then hand the store to `opened` (the library, which re-keys it). A store that
     /// cannot be opened — even one another process holds locked, which is never erased — leaves every song
-    /// unanalysed this session, logged.
+    /// unanalysed this session, logged, and no song "measuring".
     func openLevelingAnalysis(in directory: URL, opened: @escaping @MainActor (TrackAnalysisStore) -> Void) {
         work.spawnDetached(priority: .utility) { [weak self] in
             let store: TrackAnalysisStore
@@ -47,6 +47,7 @@ extension AudioViewModel {
                 store = try TrackAnalysisStore(directory: directory)
             } catch {
                 logUX("leveling: the analysis store could not be opened (\(error)) — every song plays unanalysed")
+                await self?.levelingAnalysisUnavailable()
                 return
             }
             await self?.attachLevelingAnalysis(store)
@@ -58,7 +59,8 @@ extension AudioViewModel {
     func attachLevelingAnalysis(_ store: TrackAnalysisStore) {
         let scheduler = TrackAnalysisScheduler(
             store: store, log: { logUX("analysis: \($0)") },
-            onAnalysed: { [weak self] _ in Task { @MainActor in self?.scheduleLevelingRefresh() } }
+            onAnalysed: { [weak self] analysis in Task { @MainActor in self?.levelingAnalysisLanded(analysis) } },
+            onFailed: { [weak self] url in Task { @MainActor in self?.levelingAnalysisWillNotCome(url) } }
         )
         levelingState.attach(store: store, scheduler: scheduler)
         logUX("leveling: analysis store open at \(store.url.path)")
@@ -335,10 +337,45 @@ extension AudioViewModel {
 
     /// The song playing's plan as the engine made it, read now (the tick carries it while a song plays).
     func refreshLevelingReadout() {
-        let readout = engine.snapshot().signalPath.leveling
+        let readout = levelingReadout(engine.snapshot().signalPath.leveling)
         if signalPath.leveling != readout {
             signalPath.leveling = readout
         }
+    }
+
+    /// The engine's readout of the song playing's plan, with what the view model knows and the engine does not:
+    /// whether a measurement of the song is still coming (`levelingMeasurementComing`).
+    func levelingReadout(_ engineReadout: LevelingReadout?) -> LevelingReadout? {
+        guard var readout = engineReadout else { return nil }
+        readout.measurementComing = levelingMeasurementComing
+        return readout
+    }
+
+    /// Whether the song playing's analysis can still come: the store is open (or none was tried, in a test or the
+    /// picture sheets) and the scheduler has not reported the song as one it cannot analyse.
+    var levelingMeasurementComing: Bool {
+        guard !levelingState.analysisUnavailable else { return false }
+        guard let playing = levelingState.playing else { return true }
+        return !levelingState.analysisNotComing.contains(playing.key)
+    }
+
+    /// An analysis was kept: the horizon reads it, and its song's measurement has come.
+    private func levelingAnalysisLanded(_ analysis: TrackAnalysis) {
+        levelingState.analysisNotComing.remove(analysis.identity.path)
+        scheduleLevelingRefresh()
+    }
+
+    /// The scheduler cannot analyse `url` this session: its measurement is not coming, so the song playing's
+    /// readout says so at once — paused too, when the tick sleeps.
+    private func levelingAnalysisWillNotCome(_ url: URL) {
+        levelingState.analysisNotComing.insert(LevelingSlot.key(of: url))
+        refreshSignalPathIntents()
+    }
+
+    /// The analysis store would not open: no song's measurement is coming this session.
+    private func levelingAnalysisUnavailable() {
+        levelingState.analysisUnavailable = true
+        refreshSignalPathIntents()
     }
 
     /// A decision in a few words, for the play log.
