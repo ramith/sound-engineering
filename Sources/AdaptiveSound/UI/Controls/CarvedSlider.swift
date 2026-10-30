@@ -39,6 +39,9 @@ struct CarvedSlider: View {
     /// The pointer is down on the track. Unlike `onEnded`, its reset comes for a drag the system
     /// cancels too, so every drag that began ends (`onEditingChanged(false)`).
     @GestureState private var isPressing = false
+    /// Whether the slider takes input. Turned off mid-drag (Pure starting under a Tone drag), the drag ends
+    /// here, through its own bracket, rather than waiting on a gesture the disabled slider no longer gets.
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         GeometryReader { geo in
@@ -64,6 +67,11 @@ struct CarvedSlider: View {
                 )
                 .onChange(of: isPressing) { _, pressing in
                     if !pressing {
+                        endDrag()
+                    }
+                }
+                .onChange(of: isEnabled) { _, enabled in
+                    if !enabled {
                         endDrag()
                     }
                 }

@@ -22,20 +22,19 @@ extension View {
     }
 }
 
+/// One structure in both states: the path flipping changes the modifiers' values, never the control's identity —
+/// a rebuilt control would lose its drag (an open Tone stroke), its keyboard focus and VoiceOver's cursor
+/// (review-ui M1). No tooltip of its own: the note beside the control says the same words, and an outer `help`
+/// would hide the control's own (Reset Tone's).
 private struct BitPerfectGate: ViewModifier {
     let row: DSPRow
     let isLive: Bool
 
     func body(content: Content) -> some View {
-        if isLive {
-            content
-        } else {
-            content
-                .disabled(true)
-                .disabledDim(true)
-                .accessibilityValue(DSPRowAvailability.spokenState)
-                .help(row.bitPerfectText)
-        }
+        content
+            .disabled(!isLive) // an outer `false` never re-enables a control its own `disabled` holds off
+            .disabledDim(!isLive)
+            .accessibilityValue(DSPRowAvailability.spokenState, isEnabled: !isLive)
     }
 }
 
