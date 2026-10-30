@@ -25,6 +25,7 @@
             case .settingsPure: // bit-perfect on the DAC: the file's own rate, integer PCM, FFmpeg decoding
                 audio.selectedDevice = audio.availableDevices.first { $0.type == .usb }
                 audio.signalPath.path = .pure
+                audio.signalPath.playedPath = .pure // the path that plays, which the DSP rows follow
                 audio.signalPath.decision = .fullBitPerfect
                 audio.signalPath.achievedSampleRate = 96000
                 audio.signalPath.bitDepth = 24

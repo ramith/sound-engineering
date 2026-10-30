@@ -148,6 +148,21 @@ struct SignalPathInfo: Equatable {
     var audibleCrossfeed: CrossfeedStrength? {
         path == .enhanced && crossfeedEngaged != false ? crossfeedStrength : nil
     }
+
+    // MARK: - The path that last played (R1.1-B fix round: the DSP rows, paused)
+
+    /// The path the last song played on, which the DSP rows follow (`AudioViewModel.dspRowAvailability`): the path
+    /// in use while a song plays, and — while nothing does (paused, stopped, the output lost, a start on its way) —
+    /// the one that last played, so a pause or a stop never changes the rows (founder's decisions, 2026-10-30). `nil`
+    /// until a song has played since launch. The view model carries it from snapshot to snapshot
+    /// (`carryPlayedPath`); the engine never sets it.
+    var playedPath: OutputPathKind?
+
+    /// Carry `playedPath` on from `previous`, the snapshot this one replaces: the path in use when a song `plays`
+    /// (playing, nothing on its way) and the output isn't lost; else what `previous` last saw play.
+    mutating func carryPlayedPath(from previous: SignalPathInfo, plays: Bool) {
+        playedPath = plays && !interrupted ? path : previous.playedPath
+    }
 }
 
 // MARK: - Display helpers

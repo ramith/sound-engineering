@@ -33,7 +33,9 @@
             case .eqCeiling: stroke(eq, ceilingSample)
             case .eqOff: eq.isOn = false
             case .eqCompare: eq.beginCompare()
-            case .eqPure: audio.signalPath.path = .pure
+            case .eqPure:
+                audio.signalPath.path = .pure
+                audio.signalPath.playedPath = .pure // the path that plays, which the DSP rows follow
             case .eqPinned: eq.togglePin()
             default: break
             }
