@@ -86,7 +86,7 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
     ended, Previous restarting the song, or Repeat One is a new listen, and takes the measured level.
   - **In shuffle every song plays at its own level, in Auto and in Track mode.** A run shares its loudest member's
     level only between songs that join without a pause in play order; shuffled songs never join.
-- **Settled in the sound fix round (2026-10-30):**
+- **Coordinator, in the sound fix round (2026-10-30):**
   - **Off follows the same play-order run rule**: a song played alone or shuffled keeps its own fold trim, not its
     run's worst; songs that join in play order share the run's, so the fold never steps at a continuous seam.
   - **`LevelingSetting` stays, for now, as an alias of LevelingKit's `LevelingMode`** (one enum; the stored words
