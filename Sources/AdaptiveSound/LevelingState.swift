@@ -52,8 +52,6 @@ final class LevelingState {
     /// The horizon's refresh: its number (only the newest lands), and whether one is waiting to run.
     @ObservationIgnored private var refreshGeneration: UInt64 = 0
     @ObservationIgnored var refreshScheduled = false
-    /// The queue is followed (`followQueueForLeveling`).
-    @ObservationIgnored var followsQueue = false
 
     /// A start sent `decision` for `key`, or the armed pick became audible at a seam, or a mode change replaced it.
     func play(_ sent: Sent) {
