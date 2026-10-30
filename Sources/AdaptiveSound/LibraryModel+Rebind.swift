@@ -59,16 +59,29 @@ extension LibraryModel {
                 }
                 await refreshWatchedRoots()
                 libraryRevision &+= 1 // songs left, urls moved: the browse lists and playlists reload
-                // The songs' analyses follow them: re-keyed to where each folder is now, never measured again
-                // (R1.1-B, US-R1F-10 item 16; level-and-fold "The store and the scheduler").
-                await TrackAnalysisStore.rekeyOpenStores(Self.folderMoves(along: along, rebound: result.movedAlong,
-                                                                          to: newRoot))
+                await rekeyAnalyses(Self.folderMoves(along: along, rebound: result.movedAlong, to: newRoot))
             }
             return DriveRebind(outcome: result.outcome, movedAlong: result.movedAlong.map(\.said))
         } catch {
             logUX("useDrive: folder \(folderID) failed — \(error)")
             onError?("Couldn’t use that drive: \(error.localizedDescription)")
             return nil
+        }
+    }
+
+    /// The songs' analyses follow them (R1.1-B, US-R1F-10 item 16; level-and-fold "The store and the scheduler"):
+    /// the analysis store the library was handed is re-keyed for each folder move, `(from, to)`, so the drive's songs
+    /// are not measured again. A move that fails leaves its records where they were (its songs are measured again,
+    /// as new files), logged.
+    private func rekeyAnalyses(_ moves: [(from: String, to: String)]) async {
+        guard let analysisStore else { return }
+        for move in moves {
+            do {
+                let moved = try await analysisStore.rekey(root: move.from, to: move.to)
+                logUX("useDrive: \(moved) song analyses moved to '\(move.to)'")
+            } catch {
+                logUX("useDrive: the song analyses under '\(move.from)' could not be moved — \(error)")
+            }
         }
     }
 

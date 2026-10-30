@@ -42,8 +42,10 @@ extension AudioViewModel {
     }
 
     /// Open the analysis store in `directory` (the app's data folder) and its scheduler, off the main thread
-    /// (composition root, Edge 6). A store that cannot be opened leaves every song unanalysed, logged.
-    func openLevelingAnalysis(in directory: URL) {
+    /// (composition root, Edge 6), then hand the store to `opened` (the library, which re-keys it). A store that
+    /// cannot be opened — even one another process holds locked, which is never erased — leaves every song
+    /// unanalysed this session, logged.
+    func openLevelingAnalysis(in directory: URL, opened: @escaping @MainActor (TrackAnalysisStore) -> Void) {
         work.spawnDetached(priority: .utility) { [weak self] in
             let store: TrackAnalysisStore
             do {
@@ -53,6 +55,7 @@ extension AudioViewModel {
                 return
             }
             await self?.attachLevelingAnalysis(store)
+            await opened(store)
         }
     }
 
