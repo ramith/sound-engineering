@@ -15,7 +15,10 @@ extension AudioViewModel {
     /// Start playback of the selected track. When `resumeFrom` is non-nil (a position-preserving
     /// Pause resume, D2; a move to another device) the engine STARTS at that offset — never from 0
     /// then a seek, which on Pure was audible. All other callers pass nil (start from 0).
-    func startPlayback(resumeFrom: Double? = nil) {
+    ///
+    /// `passing` holds the songs (queue slots) found unplayable on the way to this start since a song last
+    /// played (`moveOn`); empty for every start the listener or the queue asks for.
+    func startPlayback(resumeFrom: Double? = nil, passing unplayable: Set<UUID> = []) {
         guard isEngineReady else {
             errorMessage = "Engine not ready"
             return
@@ -73,13 +76,12 @@ extension AudioViewModel {
                 await primeGaplessPipeline(startSlot: startSlot, pureMode: pureModeSnapshot)
                 guard finish(.prime(epoch)) else { return }
                 isPlaying = true
-                errorMessage = nil
+                // A song moved on to keeps the banner of the songs it passed (`moveOn`).
+                errorMessage = unplayable.isEmpty ? nil : errorMessage
             } catch {
                 // A newer start or stop owns the transport: what plays now is its outcome, not this one.
                 if finish(.start(epoch)) {
-                    errorMessage = "Playback failed: \(error.localizedDescription)"
-                    isPlaying = false
-                    pendingNextIndex = nil
+                    startFailed(error, slot: startSlot, named: startFile.name, passing: unplayable)
                 }
                 // Self-heal (break-it): engine-not-ready is recoverable — rebuild the graph
                 // so the NEXT play press succeeds. `retryInitialization` is internally
@@ -90,6 +92,43 @@ extension AudioViewModel {
                 }
             }
         }
+    }
+
+    /// The start of the song in `slot` (`name`) failed, and it still owns the transport. A song that can't play
+    /// moves the queue on (`moveOn`); anything else stops, with why.
+    private func startFailed(_ error: any Error, slot: UUID?, named name: String, passing unplayable: Set<UUID>) {
+        if let refused = error as? AudioBridgeError, refused.isUnplayableFile, let slot {
+            moveOn(past: slot, named: name, refused: refused, passing: unplayable)
+            return
+        }
+        errorMessage = "Playback failed: \(error.localizedDescription)"
+        isPlaying = false
+        pendingNextIndex = nil
+    }
+
+    /// The song in `slot` can't play (break-it LOW-4; founder, 2026-10-30, "Move on"): the banner says why and
+    /// playback goes on to the next song — the one a Next would pick, so under Repeat One too — whether the
+    /// listener pressed Play on it or the queue reached it (a gapless seam into it ends the song before at its
+    /// end, and the queue then starts it here). The song stays in the queue, unmarked. When no song is left to go
+    /// on to — the end of the queue, or every song in it found unplayable since one last played (one full pass,
+    /// under Repeat All and in shuffle too) — playback stops with the message, never looping.
+    private func moveOn(past slot: UUID, named name: String, refused: AudioBridgeError, passing unplayable: Set<UUID>) {
+        let passed = unplayable.union([slot])
+        let everySongPassed = queue.allSatisfy { passed.contains($0.id) }
+        guard !everySongPassed, let row = queueRow(of: slot),
+              let next = computeNextIndex(current: row, playlistCount: queue.count, manualSkip: true) else {
+            logUX("play: '\(name)' can't play (\(refused)) — no song left to play, stopping")
+            stopAtEndOfQueue()
+            errorMessage = passed.count == 1
+                ? "Playback failed: \(refused.localizedDescription)"
+                : "Playback stopped — no song left in the queue can be played. \(refused.localizedDescription)"
+            return
+        }
+        logUX("play: '\(name)' can't play (\(refused)) — moving on to track[\(next)]")
+        errorMessage = "Skipped “\(name)”. \(refused.localizedDescription)"
+        resumePoint = nil
+        selectedTrackIndex = next
+        startPlayback(passing: passed)
     }
 
     /// Compute the current file's duration off-main from `AVAudioFile` (more reliable than the

@@ -74,7 +74,7 @@ struct OnDeckContractTests {
         #expect(outcome.ok, "\(outcome)")
     }
 
-    @Test("REARM-OPEN-FAILS: a pick that won't open — never the old pick; the app tries it and reports")
+    @Test("REARM-OPEN-FAILS: a pick that won't open — never the old pick; the app tries it, reports, and goes on")
     func rearmOpenFails() async throws {
         let outcome = try await OnDeckScenarios.rearmOpenFails(semantics: .design)
         #expect(outcome.ok, "\(outcome)")
