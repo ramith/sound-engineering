@@ -101,17 +101,29 @@ struct LevelingKnowledge: Sendable {
     /// song's fresh start never glides).
     var profiled: Set<String> = []
 
-    /// Whether a start of `key` has everything it needs: its record looked up, and its profiles if it has one.
-    func isReadyToStart(_ key: String) -> Bool {
-        resolved.contains(key) && (library.tracks[key]?.measurement == nil || profiled.contains(key))
+    /// Whether a start of `key`, with `next` after it, has everything the decision reads: the song's record, its
+    /// album's members (Auto's "same album", Album's completeness, a continuous run), its profiles if it has a
+    /// record, and the next song's record (Auto's neighbour, the run's other side).
+    func isReadyToStart(_ key: String, next: String?) -> Bool {
+        guard resolved.contains(key), let track = library.tracks[key],
+              next.map(resolved.contains) ?? true else { return false }
+        let albumKnown = track.album.map { library.albums[$0] != nil } ?? true
+        return albumKnown && (track.measurement == nil || profiled.contains(key))
     }
 
     /// The analysis jobs the horizon needs, most urgent first.
     var jobs: [TrackAnalysisScheduler.Job] = []
 
-    /// `other`'s songs added to these (a start's own lookup joining the horizon's): its values win.
+    /// `other`'s songs added to these (a start's own lookup joining the horizon's): its values win, except that a
+    /// song whose saved profiles these hold and `other` did not look up keeps them.
     mutating func merge(_ other: LevelingKnowledge) {
-        library.tracks.merge(other.library.tracks) { _, new in new }
+        for (key, track) in other.library.tracks {
+            let keepsProfiles = profiled.contains(key) && !other.profiled.contains(key)
+                && library.tracks[key]?.measurement != nil && track.measurement != nil
+            if !keepsProfiles {
+                library.tracks[key] = track
+            }
+        }
         library.albums.merge(other.library.albums) { _, new in new }
         files.merge(other.files) { _, new in new }
         tags.merge(other.tags) { _, new in new }
@@ -167,16 +179,26 @@ struct LevelingLoad: Sendable {
     }
 
     /// One song's lookup, for a start that cannot wait for the horizon's (`AudioViewModel+Leveling`, the 50 ms
-    /// wait): its record or tags, and its saved profiles.
+    /// wait): its album's members and the song after it, each one's record or tags, and the song's saved profiles.
     @concurrent
-    func single(_ slot: LevelingSlot) async -> LevelingKnowledge {
-        var album: Int64?
-        if let trackID = slot.trackID {
-            album = await sources.albums(of: [trackID])[trackID]
-        }
+    func single(_ slot: LevelingSlot, next: LevelingSlot?) async -> LevelingKnowledge {
         var knowledge = LevelingKnowledge()
-        await lookUp([slot], albumOfKey: album.map { [slot.key: $0] } ?? [:], profilesFor: [slot.key],
-                     into: &knowledge)
+        let neighbours = [slot] + (next.map { [$0] } ?? [])
+        let albumOf = await sources.albums(of: neighbours.compactMap(\.trackID))
+        var slots = neighbours
+        var albumOfKey: [String: Int64] = [:]
+        for neighbour in neighbours {
+            albumOfKey[neighbour.key] = neighbour.trackID.flatMap { albumOf[$0] }
+        }
+        if let album = albumOfKey[slot.key] {
+            let members = await sources.members(ofAlbum: album)
+            knowledge.library.albums[album] = members.map(\.key)
+            for member in members {
+                albumOfKey[member.key] = album
+            }
+            slots += members.filter { member in !neighbours.contains { $0.key == member.key } }
+        }
+        await lookUp(slots, albumOfKey: albumOfKey, profilesFor: [slot.key], into: &knowledge)
         return knowledge
     }
 
@@ -247,13 +269,18 @@ struct LevelingLoad: Sendable {
         return await sources.tags(of: url)
     }
 
-    /// The scheduler's jobs for the horizon's needs: an album's files in album order, a loose song's file.
+    /// The scheduler's jobs for the horizon's needs: a loose song's file; an album's files from its first song
+    /// to play on, in album order, then the ones before it — the scheduler measures in the order given, so the song
+    /// about to play is measured first (its next play is exact, §12 F-5).
     private static func jobs(for needs: [LevelingHorizon.Need], knowledge: LevelingKnowledge,
                              upcoming: [LevelingSlot]) -> [TrackAnalysisScheduler.Job] {
-        needs.compactMap { need -> TrackAnalysisScheduler.Job? in
+        let upcomingKeys = Set(upcoming.map(\.key))
+        return needs.compactMap { need -> TrackAnalysisScheduler.Job? in
             switch need.target {
             case let .album(id):
-                let files = (knowledge.library.albums[id] ?? []).compactMap { knowledge.files[$0] }
+                let members = knowledge.library.albums[id] ?? []
+                let first = members.firstIndex { upcomingKeys.contains($0) } ?? 0
+                let files = (members[first...] + members[..<first]).compactMap { knowledge.files[$0] }
                 return files.isEmpty ? nil
                     : TrackAnalysisScheduler.Job(id: "album \(id)", files: files, startsIn: need.startsIn)
             case let .track(key):
