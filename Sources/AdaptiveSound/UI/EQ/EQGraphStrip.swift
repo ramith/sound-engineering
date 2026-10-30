@@ -1,4 +1,5 @@
 import EQEditKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - EQ graph strip (Sprint EQ, EQ3 — ui-plan §4)
@@ -6,7 +7,8 @@ import SwiftUI
 /// The line across the top of the EQ graph's lens: what the graph is showing, in words. While the EQ
 /// plays, the legend ("— plays · ● your setting") and the drag hint — or, with the graph under the
 /// keyboard, the cursor's readout and its keys. Otherwise the state's own copy: Off, a held Compare,
-/// Pure Mode (with Open Settings) or no engine yet. A stroke past +12 dB adds the ceiling's note.
+/// Pure Mode (with Leave Pure — the rows' own action, the same view: founder, 2026-10-30) or no engine
+/// yet. A stroke past +12 dB adds the ceiling's note.
 /// No Headroom figure (decision 26).
 ///
 /// While a Tone slider is hovered, dragged or keyboard-focused (EQ3t), its readout ("Tone · Presence
@@ -21,7 +23,10 @@ struct EQGraphStrip: View {
     let isDragging: Bool
     /// A stroke is asking past +12 dB, and the ceiling holds the point.
     let isHeldAtCeiling: Bool
-    let openSettings: () -> Void
+    /// The DSP rows' state while Pure plays: Leave Pure, or — once pressed — when Enhanced comes back.
+    let availability: DSPRowAvailability
+    /// Leave Pure (`AudioViewModel.leavePure`).
+    let leavePure: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -71,15 +76,15 @@ struct EQGraphStrip: View {
             stateCopy("Without the EQ · matched loudness · release to return",
                       short: "Without the EQ · release to return")
         case .pureMode:
-            stateCopy("Pure Mode is on — the EQ doesn't play. Switch to Enhanced to hear it.",
-                      short: "Pure Mode is on — the EQ doesn't play.")
-            Button("Open Settings", action: openSettings)
-                .buttonStyle(.plain)
-                .foregroundStyle(DesignSystem.Color.accentForeground)
-                .pointerStyle(.link)
-                .fixedSize()
+            stateCopy(Self.pureSentence, short: "Pure Mode is on")
+            if case let .notInBitPerfectMode(leaving) = availability {
+                LeavePureAction(leaving: leaving, leavePure: leavePure)
+            }
         }
     }
+
+    /// Pure Mode's line: what the graph shows, ahead of Leave Pure.
+    static let pureSentence = "Pure Mode is on — the EQ doesn't play."
 
     /// A state's line, giving way to its short form where the lens is too narrow.
     private func stateCopy(_ full: String, short: String) -> some View {

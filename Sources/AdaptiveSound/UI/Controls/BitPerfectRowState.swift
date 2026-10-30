@@ -79,30 +79,8 @@ struct BitPerfectRowNote: View {
             .accessibilityHidden(true)
     }
 
-    /// Leave Pure; once pressed, when Enhanced comes back (the Pure switch's own timing).
-    @ViewBuilder
+    /// Leave Pure; once pressed, when Enhanced comes back — the one action, shared with the EQ graph's strip.
     private func action(leaving: Bool) -> some View {
-        if leaving {
-            Text(DSPRowAvailability.leavingText)
-                .foregroundStyle(DesignSystem.Color.labelTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
-            Button(DSPRowAvailability.leaveAction, action: leave)
-                .buttonStyle(.plain)
-                .foregroundStyle(DesignSystem.Color.accentForeground)
-                // A Tab stop under Full Keyboard Access: the app's teal ring, never the system's (blue) one.
-                .controlFocusRing(around: RoundedRectangle(cornerRadius: DesignSystem.Radius.control))
-                .pointerStyle(.link)
-                .fixedSize()
-                .accessibilityHint("Plays through Enhanced from the next song you start")
-        }
-    }
-
-    /// Leave Pure, and say what happens: the button gives way to the leaving words, so the element under
-    /// VoiceOver's cursor (and the keyboard focus) goes — the announcement is the confirmation, as a toast's is
-    /// (`ShellToastHost.announce()`; review-ui S1).
-    private func leave() {
-        leavePure()
-        AccessibilityNotification.Announcement(DSPRowAvailability.leavingText).post()
+        LeavePureAction(leaving: leaving, leavePure: leavePure)
     }
 }
