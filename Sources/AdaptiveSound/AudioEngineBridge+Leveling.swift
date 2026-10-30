@@ -238,21 +238,15 @@ final class EngineLevelingState: Sendable {
 
     // MARK: Private (inside the lock)
 
-    /// The request `url` plays, taken from where it waits. A seam plays the armed pick. A fresh start plays its own
-    /// request — or, when that is not this URL, the armed pick started fresh (a gapless roll that could not join
-    /// restarts it through playFile).
+    /// The request `url` plays, taken from where it waits: a seam plays the armed pick, a fresh start its own request
+    /// (every start holds one, and clears the armed pick first).
     private static func takeRequest(for url: URL, gaplessSeam: Bool, held: inout Held) -> Pending? {
         if gaplessSeam {
             defer { held.armed = nil }
             return (held.armed?.url == url) ? held.armed : nil
         }
         defer { held.start = nil }
-        if held.start?.url == url {
-            return held.start
-        }
-        guard held.armed?.url == url else { return nil }
-        defer { held.armed = nil }
-        return held.armed
+        return (held.start?.url == url) ? held.start : nil
     }
 
     /// A start resumed the audible track `url` (B2): the same listen goes on at the level it plays at, so its plan
