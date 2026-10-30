@@ -32,6 +32,30 @@ namespace AdaptiveSound
     // C_work (dBTP) for a ceiling of `ceilingLinear`: 20·log10(ceiling × kIspSafetyMargin) − 0.01.
     [[nodiscard]] double workingCeilingDbtp(float ceilingLinear) noexcept;
 
+    // How both units move to a plan delivered for `event` (§1.3; NI-4: both units alike): the time
+    // constant τ (s) of the one-pole each glides on — the effects unit's gain in dB (EQModule), the
+    // fold's trim in dB and rows in amplitude (SpatialRenderKernel) — so a plan that moves one by
+    // what it takes from the other keeps the level still. A fresh start snaps (0: the stream starts
+    // there; the effects unit takes its module's shortest glide, TrackLoudnessGain).
+    inline constexpr float kSeamGlideSeconds = 0.010F;      // a gapless seam
+    inline constexpr float kModeChangeGlideSeconds = 0.15F; // the listener's Leveling mode change
+    inline constexpr float kOutputChangeGlideSeconds = 0.010F; // the protective re-plan (F5)
+
+    [[nodiscard]] constexpr float planGlideSeconds(AsPlanEvent event) noexcept
+    {
+        switch (event)
+        {
+            case AsPlanEventGaplessSeam:
+                return kSeamGlideSeconds;
+            case AsPlanEventModeChange:
+                return kModeChangeGlideSeconds;
+            case AsPlanEventOutputChange:
+                return kOutputChangeGlideSeconds;
+            default:
+                return 0.0F; // a fresh start
+        }
+    }
+
     // The plan (TrackPlanBridge.h, asPlanTrack): pure, any thread.
     [[nodiscard]] AsTrackPlan planTrack(const AsTrackLeveling* decision,
                                         const AsOutputState* output,

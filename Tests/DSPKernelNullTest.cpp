@@ -922,7 +922,7 @@ namespace
         {"Fold_Matrix_CentreAndInPhase", testFoldMatrixCentreAndInPhase, Tier::Correctness},
         {"Fold_StereoIn51_Null", testFoldStereoIn51Null, Tier::Correctness},
         {"Fold_Trim_Scales", testFoldTrimScales, Tier::Correctness},
-        {"Fold_Glide_LinearThenExact", testFoldGlideLinearThenExact, Tier::Correctness},
+        {"Fold_Glide_OnePoleThenExact", testFoldGlideOnePoleThenExact, Tier::Correctness},
         {"Fold_KeepAcrossAllocate", testFoldKeepAcrossAllocate, Tier::Correctness},
         {"Fold_Backstop_HoldsAndMeters", testFoldBackstopHoldsAndMeters, Tier::Correctness},
         {"Fold_RejectsNonFinite", testFoldRejectsNonFinite, Tier::Correctness},

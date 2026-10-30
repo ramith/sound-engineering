@@ -233,54 +233,74 @@ static auto testFoldTrimScales() -> void
 }
 
 // ---------------------------------------------------------------------------
-// Fold_Glide_LinearThenExact — a change glides per sample over its `glideSeconds` and lands exactly on the
-// new fold; a set with no glide snaps. (Constant input: the output IS the coefficient.)
+// Fold_Glide_OnePoleThenExact — a change glides as the effects unit's gain does (NI-4; review N16): per
+// sample, one one-pole step at τ = `glideSeconds` — the trim in dB, as EQModule moves its output gain —
+// before the sample plays; settled, it lands exactly on the new fold; a set with no glide snaps. (Constant
+// input: the output IS the coefficient.)
 // ---------------------------------------------------------------------------
-static auto testFoldGlideLinearThenExact() -> void
+static auto testFoldGlideOnePoleThenExact() -> void
 {
-    static const char* const kName = "Fold_Glide_LinearThenExact";
+    static const char* const kName = "Fold_Glide_OnePoleThenExact";
     constexpr float kLevel = 0.1F;
-    constexpr float kGlideSeconds = 0.01F; // 480 frames
-    constexpr uint32_t kGlideFrames = 480U;
+    constexpr float kGlideSeconds = 0.01F; // τ = 480 frames
+    constexpr double kTrimDb = -6.0;
+    constexpr double kDbToNeper = 0.11512925464970228; // ln(10) / 20
+    constexpr uint32_t kBlocks = 30U;                  // past the settle (~21 τ to 1e-9)
     SpatialRenderKernel kernel;
     makeFoldKernel(kernel, kFold51);
     (void)kernel.publishFold(foldRows51(0.0F));
     const auto centre = [&](uint32_t ch, uint32_t) { return ch == 2U ? kLevel : 0.0F; };
     (void)runFold(kernel, kFold51, 2U, centre);
-    FoldParams lower = foldRows51(-6.0F);
+    FoldParams lower = foldRows51(static_cast<float>(kTrimDb));
     lower.glideSeconds = kGlideSeconds;
     (void)kernel.publishFold(lower);
-    const FoldOut out = runFold(kernel, kFold51, 3U, centre, 2U * kFoldBlock);
+    const FoldOut out = runFold(kernel, kFold51, kBlocks, centre, 2U * kFoldBlock);
 
-    // The kernel's coefficient is row × trim, and a sample plays as input × coefficient.
-    const float before = kLevel * kFoldSide;
-    const float after = kLevel * (kFoldSide * std::pow(10.0F, -6.0F / 20.0F));
+    // The coefficient is row × the trim's amplitude, and a sample plays as input × coefficient.
+    const auto played = [&](double trimDb)
+    {
+        return kLevel * static_cast<float>(static_cast<double>(kFoldSide) * std::exp(trimDb * kDbToNeper));
+    };
+    const double alpha =
+        1.0 - std::exp(-1.0 / (static_cast<double>(kGlideSeconds) * static_cast<double>(kFoldSR)));
     std::string fail;
     // The glide reaches the output kFoldLatency frames late (the backstop's look-ahead).
-    for (uint32_t i = 0U; i <= kGlideFrames; ++i)
+    double trimDb = 0.0;
+    size_t landed = out.left.size();
+    for (size_t i = kFoldLatency; i < out.left.size(); ++i)
     {
-        const float expected = before + ((after - before) * static_cast<float>(i) / static_cast<float>(kGlideFrames));
-        const float got = out.left[kFoldLatency + i];
-        if (std::fabs(got - expected) > 1.0e-5F)
+        trimDb += alpha * (kTrimDb - trimDb);
+        const float expected = played(trimDb);
+        if (std::fabs(out.left[i] - expected) > 1.0e-6F)
         {
-            fail += std::format("\n  glide frame {}: {} expected {}", i, got, expected);
+            fail += std::format("\n  glide frame {}: {} expected {}", i - kFoldLatency, out.left[i], expected);
             break;
         }
+        if (landed == out.left.size() && out.left[i] == played(kTrimDb))
+        {
+            landed = i;
+        }
     }
-    for (size_t i = kFoldLatency + kGlideFrames; i < out.left.size(); ++i)
+    const float after = played(kTrimDb);
+    if (landed - kFoldLatency < static_cast<size_t>(3.0 * static_cast<double>(kGlideSeconds) * kFoldSR))
+    {
+        fail += std::format("\n  landed after {} frames: not a one-pole at τ {} s", landed - kFoldLatency,
+                            kGlideSeconds);
+    }
+    for (size_t i = out.left.size() - kFoldBlock; i < out.left.size(); ++i)
     {
         if (out.left[i] != after)
         {
-            fail += std::format("\n  after the glide, frame {}: {} != {} exactly", i, out.left[i], after);
+            fail += std::format("\n  settled, frame {}: {} != {} exactly", i, out.left[i], after);
             break;
         }
     }
     // A set with no glide snaps: the very first delayed frame plays it.
     (void)kernel.publishFold(foldRows51(0.0F));
-    const FoldOut snapped = runFold(kernel, kFold51, 1U, centre, 5U * kFoldBlock);
-    if (snapped.left[kFoldLatency] != before)
+    const FoldOut snapped = runFold(kernel, kFold51, 1U, centre, (2U + kBlocks) * kFoldBlock);
+    if (snapped.left[kFoldLatency] != played(0.0))
     {
-        fail += std::format("\n  a snap played {} first, not {}", snapped.left[kFoldLatency], before);
+        fail += std::format("\n  a snap played {} first, not {}", snapped.left[kFoldLatency], played(0.0));
     }
     if (!fail.empty())
     {

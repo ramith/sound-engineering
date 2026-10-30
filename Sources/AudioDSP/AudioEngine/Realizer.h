@@ -71,8 +71,8 @@ namespace AdaptiveSound
     //
     // Loudness-neutral gain (EQ1c, decision 26): the EQ module plays the curve and then −ΔL, how
     // much louder the curve makes the current track. The track analyzer and the playback bridge
-    // post the track's profile, a failed analysis and the audible track change
-    // (publishTrackLoudnessProfile / reportTrackLoudnessFailure / setCurrentTrack — never the EQ
+    // post the track's profile, a failed analysis and the planner's plan for the audible track
+    // (publishTrackLoudnessProfile / reportTrackLoudnessFailure / applyTrackPlan — never the EQ
     // view model); TrackLoudnessGain decides the gain and its glide, and the Realizer publishes it
     // in canonical_.eq.outputGainDb, so it rides the EQ module's smoother. An EQ edit carries a
     // decimated estimate with its coefficients, refreshed in full after 150 ms idle (A6). A track
@@ -143,7 +143,9 @@ namespace AdaptiveSound
         // The planner's plan for `token` (R1.1-B, B1): it became audible (a fresh start, or a
         // gapless seam — `continuousWithPrevious` is the continuity judge's verdict), or the
         // listener changed the mode, or the output changed. The playback bridge sends the same plan
-        // to the spatial unit in the same turn.
+        // to the spatial unit in the same turn. A fresh start's and a mode change's apply on the
+        // queue before this returns (N4, N16: in place before the start's first audio, gliding from
+        // the fold's render block); a seam's and an output change's are posted.
         void applyTrackPlan(uint64_t token,
                             AsPlanEvent event,
                             const AsTrackPlan& plan,

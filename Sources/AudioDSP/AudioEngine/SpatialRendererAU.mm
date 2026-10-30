@@ -299,21 +299,13 @@ namespace
 
 namespace
 {
-    constexpr float kSeamGlideSeconds = 0.01F;       // a gapless seam (design §1.3: 10 ms)
-    constexpr float kModeChangeGlideSeconds = 0.15F; // the listener's Leveling mode change (§1.3: τ = 0.15 s)
-
-    // How the fold moves to a plan delivered for `event` (AsPlanEvent).
+    // How the fold moves to a plan delivered for `event` (AsPlanEvent): as the effects unit does
+    // (planGlideSeconds; NI-4) — a fresh start snaps, every other event glides on the same one-pole.
     [[nodiscard]] float glideSeconds(uint8_t event) noexcept
     {
-        switch (event)
-        {
-            case AsPlanEventGaplessSeam:
-                return kSeamGlideSeconds;
-            case AsPlanEventModeChange:
-                return kModeChangeGlideSeconds;
-            default: // a fresh start, an output change (the stream restarts): snap
-                return 0.0F;
-        }
+        return (event <= static_cast<uint8_t>(AsPlanEventOutputChange))
+                   ? planGlideSeconds(static_cast<AsPlanEvent>(event))
+                   : 0.0F;
     }
 
     // The fold `output` plays at LFE variant `lfeVariant` and `trimDb` (NaN: the matrix's worst case for the
