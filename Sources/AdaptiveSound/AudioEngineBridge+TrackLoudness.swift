@@ -16,17 +16,18 @@ private enum CTrackLoudnessABI {
 /// The loudness-neutral EQ gain follows the AUDIBLE track (amendments item 3), and so does the
 /// loudness readout's "Integrated" (council C-46). The bridge is the only place that knows when a
 /// track becomes audible — a fresh start in `playFile`, or a gapless seam at `bumpTransitionCount`
-/// — and the only caller of `setCurrentTrack` and `loudnessMeterBeginTrack`; the analyzer is the
-/// only caller of `publishTrackLoudnessProfile` / `reportTrackLoudnessFailure` (through this sink).
-/// The EQ view model never touches either. Enhanced path only: Pure Mode bypasses the EQ, so it
-/// analyses nothing, and installs no meter.
+/// — and the only caller of `applyTrackPlan` (through the planner, `planAudible`) and
+/// `loudnessMeterBeginTrack`; the analyzer is the only caller of `publishTrackLoudnessProfile` /
+/// `reportTrackLoudnessFailure` (through this sink). The EQ view model never touches either. Enhanced
+/// path only: Pure Mode bypasses the EQ, so it analyses nothing, and installs no meter.
 extension AudioEngineBridge: TrackLoudnessSink {
     /// `url` became the audible track: by a fresh start, or at a gapless seam (`gaplessSeam`) —
-    /// never when it is merely scheduled. The planner plans it once and both units get the plan
-    /// (`planAudible`, AudioEngineBridge+Leveling); the engine switches the gain to it, the readout's
-    /// "Integrated" measures it — from its start when it is a new track, carrying on when the same
-    /// one is announced again (a resume, a seek, a move to another device) — and the analyzer
-    /// profiles it (promoting the next-track prefetch, or re-publishing a cached profile).
+    /// never when it is merely scheduled. The planner plans it once and both units get the plan — a
+    /// resume of it keeps the plan it has, a new play is planned afresh (`planAudible`,
+    /// AudioEngineBridge+Leveling); the engine switches the gain to it, the readout's "Integrated"
+    /// measures it — from its start when it is a new track, carrying on when the same one is announced
+    /// again — and the analyzer profiles it (promoting the next-track prefetch, or re-publishing a
+    /// cached profile).
     func trackBecameAudible(_ url: URL, gaplessSeam: Bool) {
         let identity = TrackIdentity(url: url)
         let token = identity?.token ?? 0
@@ -35,7 +36,10 @@ extension AudioEngineBridge: TrackLoudnessSink {
         if let meter = tapAnalysis.meter {
             withExtendedLifetime(meter) { loudnessMeterBeginTrack(meter.handle, token) }
         }
-        // A saved profile is final (C2): nothing for the analyzer to do. Otherwise it profiles the track as today.
+        // A saved profile is final (C2): nothing for the analyzer to do. Otherwise it profiles the track as today —
+        // on the file's own layout, so a folded first play's −ΔL is the decoded basis's, not §7's fold with the LFE
+        // omitted (review N15, a recorded deviation: the profiler is TrackLoudnessKit's; with the EQ on, about 1 dB
+        // of ΔL on that first play only — the next one has the saved fold profile).
         if let identity, !savedProfile {
             loudnessAnalyzer.analyze(url, identity: identity, as: .current, sink: self)
         }
