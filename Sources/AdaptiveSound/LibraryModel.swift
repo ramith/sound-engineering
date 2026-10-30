@@ -1,6 +1,7 @@
 import Foundation
 import LibraryScan
 import LibraryStore
+import TrackLoudnessKit
 
 // MARK: - LibraryModel (S3 F5 — extracted from AudioViewModel)
 
@@ -101,6 +102,12 @@ final class LibraryModel {
     /// The latest folder add's registration. Adds register one at a time, in order, so each is
     /// validated against the folders registered before it (`scanFolderIntoLibrary`).
     var folderAddTask: Task<Void, Never>?
+
+    /// The track-analysis store beside the library (`track-analysis.sqlite3`; R1.1-B), handed in by the composition
+    /// root once it has opened (Edge 6) — nil until then, if it could not be opened, and in tests that need none.
+    /// The library never reads it: "Use this drive" re-keys it, so the drive's songs keep their analyses
+    /// (`useDrive`).
+    @ObservationIgnored var analysisStore: TrackAnalysisStore?
 
     /// The artwork cache (S8.3), built alongside `store` in `makeLibraryStore` at
     /// `AppDataLocation.artworkCacheURL`. `nil` if the store failed to construct.
