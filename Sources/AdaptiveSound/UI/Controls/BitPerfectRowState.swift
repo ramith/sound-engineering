@@ -81,6 +81,8 @@ struct BitPerfectRowNote: View {
             Button(DSPRowAvailability.leaveAction, action: leavePure)
                 .buttonStyle(.plain)
                 .foregroundStyle(DesignSystem.Color.accentForeground)
+                // A Tab stop under Full Keyboard Access: the app's teal ring, never the system's (blue) one.
+                .controlFocusRing(around: RoundedRectangle(cornerRadius: DesignSystem.Radius.control))
                 .pointerStyle(.link)
                 .fixedSize()
                 .accessibilityHint("Plays through Enhanced from the next song you start")
