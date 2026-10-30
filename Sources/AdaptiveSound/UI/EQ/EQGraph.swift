@@ -13,7 +13,7 @@ import SwiftUI
 /// (`EQGraphPainter`), the active point's handle, and the strip across the top.
 struct EQGraph: View {
     @Environment(EQViewModel.self) var eq
-    @Environment(AudioViewModel.self) private var audio
+    @Environment(AudioViewModel.self) var audio
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     #if DEBUG
         @Environment(\.sheetEQGraph) private var sheetSeed
@@ -63,7 +63,7 @@ struct EQGraph: View {
         let tag = dragged.map { reading.tag(band: $0.band) }
         let points = reading.points
         let played = reading.played
-        return ZStack(alignment: .topLeading) {
+        let plot = ZStack(alignment: .topLeading) {
             EQGraphSilhouette()
             Canvas { context, canvasSize in
                 EQGraphPainter(map: .eqGraph(in: canvasSize), points: points, played: played, audible: audible,
@@ -79,19 +79,7 @@ struct EQGraph: View {
             }
         }
         .contentShape(Rectangle())
-        .gesture(strokeGesture)
-        .onChange(of: isDragging) { _, dragging in
-            if !dragging {
-                endStroke()
-            }
-        }
-        .focusable()
-        .focused($focused)
-        .focusEffectDisabled()
-        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end], action: handleKey)
-        .onKeyPress(.escape, action: cancelStroke)
-        .onDeleteCommand { eq.resetBand(keyboardBand) }
-        .graphAccessibility(eq: eq, reading: reading, map: plotMap)
+        return editable(plot, reading: reading)
     }
 
     // MARK: Derived

@@ -21,7 +21,7 @@ import SwiftUI
 ///
 /// Its height is exact (`EQScreenLayout.toneCardHeight`), so the rail's budget (LAY-EQ-01) holds — plus, while
 /// Pure plays, the shared "Off in bit-perfect mode" note under the header, measured (R1.1-B, US-R1F-20): the
-/// sliders and Reset Tone are inert then (`bitPerfectGate`), and the EQ's own card scrolls to make room.
+/// sliders and Reset Tone are inert then (each wears `bitPerfectGate`), and the EQ's own card scrolls to make room.
 struct EQToneCard: View {
     @Environment(EQViewModel.self) private var eq
     @Environment(AudioViewModel.self) private var audio
@@ -53,12 +53,12 @@ struct EQToneCard: View {
             if !isFolded {
                 VStack(spacing: 0) {
                     ForEach(EQToneRegion.allCases) { region in
-                        EQToneRow(region: region, isHighlighted: region == highlighted, focus: $focused) { dragging in
+                        EQToneRow(region: region, availability: availability, isHighlighted: region == highlighted,
+                                  focus: $focused) { dragging in
                             dragChanged(region, dragging: dragging)
                         }
                         // An inert row never lights up teal under the pointer.
                         .onHover { hovering in hoverChanged(region, hovering: hovering && availability.isLive) }
-                        .bitPerfectGate(.tone, availability)
                     }
                 }
             }

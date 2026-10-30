@@ -11,8 +11,10 @@ import SwiftUI
 /// deletes it, after a confirmation (EQ4; its menu offers both too). Its keyboard cursor is
 /// `ListKeyboardCursor`'s, its ring drawn only in keyboard mode. Longer than the card allows, it scrolls
 /// inside the card with a fade at the bottom while more lies below, keeping the playing preset in view.
+/// Inert while Pure plays, with the rest of the EQ's editing (`bitPerfectGate`).
 struct EQPresetList: View {
     @Environment(EQViewModel.self) private var eq
+    @Environment(AudioViewModel.self) private var audio
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     let save: () -> Void
     /// Opens the Rename sheet for one of My Presets.
@@ -49,6 +51,9 @@ struct EQPresetList: View {
                 moreBelow = more
             }
             .mask { fade }
+            // While Pure plays no preset can be chosen, saved or brought back — the EQ's one rule (founder,
+            // 2026-10-30); the switch's note above says so.
+            .bitPerfectGate(.equalizer, audio.dspRowAvailability)
             .focusable()
             .focused($focused)
             .defaultFocus($focused, true)
@@ -105,7 +110,8 @@ struct EQPresetList: View {
     private func menu(for preset: EQPresetRef, isCurrent: Bool) -> EQPresetRowMenu {
         let mine = preset.myPresetName
         return EQPresetRowMenu(
-            bringBack: eq.bringBack.map { ($0.edits.preset.displayName, eq.bringBackEdits) },
+            bringBack: audio.dspRowAvailability.isLive
+                ? eq.bringBack.map { ($0.edits.preset.displayName, eq.bringBackEdits) } : nil,
             pin: isCurrent ? eq.outputPin : nil,
             togglePin: eq.togglePin,
             rename: mine.map { name in { rename(name) } },

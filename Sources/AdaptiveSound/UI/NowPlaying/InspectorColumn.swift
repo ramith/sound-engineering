@@ -80,14 +80,15 @@ struct InspectorColumn: View {
 // MARK: - Reimagine Intensity Section (QW-A)
 
 /// Horizontal carved slider for the global Reimagine intensity knob. Not shown until Intensity's
-/// effects are real (FD-2: `AudioViewModel.offersIntensity`); kept whole for S17.
+/// effects are real (FD-2: `AudioViewModel.offersIntensity`); kept whole for S17. A control that
+/// changes the sound, so it wears the shared Pure row state as every other does (R1.1-B, `DSPRow.intensity`).
 struct ReimagineSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
     var body: some View {
         @Bindable var bvm = viewModel
 
-        let isPureBypassed = bvm.pureModeEngaged
+        let availability = bvm.dspRowAvailability
         let percent = Int((bvm.intensity * 100).rounded())
 
         return VStack(alignment: .leading, spacing: 8) {
@@ -100,23 +101,17 @@ struct ReimagineSectionView: View {
 
                 Spacer()
 
-                if isPureBypassed {
-                    Text("Pure (bypassed)")
-                        .font(DesignSystem.Font.monoSmall)
-                        .foregroundStyle(Color.asLabelTertiary)
-                } else {
-                    Text("\(percent) %")
-                        .font(DesignSystem.Font.monoSmall.weight(.semibold))
-                        .foregroundStyle(Color.asLabelSecond)
-                }
+                Text("\(percent) %")
+                    .font(DesignSystem.Font.monoSmall.weight(.semibold))
+                    .foregroundStyle(Color.asLabelSecond)
             }
 
             CarvedSlider(value: $bvm.intensity,
                          accessibilityLabel: "Reimagine Intensity",
                          accessibilityValueText: "\(percent) percent")
-                .disabled(isPureBypassed)
                 // Sprint EQ decision 25: the EQ plays ahead of the blend, so 0 % is not a bypass.
                 .help(bvm.intensity == 0 ? "0 % — Reimagine off (your EQ still plays)" : "")
+                .bitPerfectGate(.intensity, availability)
 
             // 8a caption row: micro mono under the slider (nearest audited token to the
             // spec's 32%-white is labelTertiary — a bespoke 32% token isn't worth the pair).
@@ -129,8 +124,9 @@ struct ReimagineSectionView: View {
                     .font(DesignSystem.Font.monoMicro)
                     .foregroundStyle(Color.asLabelTertiary)
             }
+
+            BitPerfectRowNote(row: .intensity, availability: availability, leavePure: bvm.leavePure)
         }
-        .opacity(isPureBypassed ? 0.5 : 1)
     }
 }
 

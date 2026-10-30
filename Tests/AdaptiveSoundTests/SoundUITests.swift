@@ -34,26 +34,32 @@ struct SoundUITests {
         #expect(model.dspRowAvailability == .live)
     }
 
-    @Test("SOUND-UI-02: every registered DSP row wears the shared state in the UI — its gate and its note")
+    @Test("SOUND-UI-02 (a source tripwire): every registered DSP row is worn on a code line of the UI — gate and note")
     func registryIsWornByTheUI() throws {
-        let ui = try Self.uiSource()
+        // The converse — a control that changes the sound in a file that never gates its row, or a control never
+        // registered at all — is Semgrep's `ui-dsp-control-gated` (with its rule test). Comment lines don't count, and
+        // a call may wrap after its parenthesis.
+        let code = try Self.uiCode()
         for row in DSPRow.allCases {
-            #expect(ui.contains("bitPerfectGate(.\(row.rawValue),"), "\(row) has no bitPerfectGate in the UI")
-            #expect(ui.contains("BitPerfectRowNote(row: .\(row.rawValue),"), "\(row) has no BitPerfectRowNote")
+            let gate = try Regex(#"\.bitPerfectGate\(\s*\."# + row.rawValue + #"\b"#)
+            let note = try Regex(#"BitPerfectRowNote\(\s*row:\s*\."# + row.rawValue + #"\b"#)
+            #expect(code.contains(gate), "\(row) has no bitPerfectGate in the UI's code")
+            #expect(code.contains(note), "\(row) has no BitPerfectRowNote in the UI's code")
         }
     }
 
-    /// Every Swift file of the app's UI, as one text.
-    private static func uiSource() throws -> String {
+    /// Every Swift file of the app's UI, its comment lines left out, as one text.
+    private static func uiCode() throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appending(path: "Sources/AdaptiveSound/UI")
         let files = try #require(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
-        var text = ""
+        var code: [Substring] = []
         for case let url as URL in files where url.pathExtension == "swift" {
-            text += try String(contentsOf: url, encoding: .utf8)
+            code += try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+                .filter { !$0.trimmingPrefix(while: \.isWhitespace).hasPrefix("//") }
         }
-        #expect(!text.isEmpty, "the UI sources at \(root.path)")
-        return text
+        #expect(!code.isEmpty, "the UI sources at \(root.path)")
+        return code.joined(separator: "\n")
     }
 
     @Test("SOUND-UI-03: the Pure card's sentence on the two untouched states, as the story words it")
