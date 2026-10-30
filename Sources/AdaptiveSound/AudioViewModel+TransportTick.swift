@@ -162,6 +162,7 @@ extension AudioViewModel {
         var path = path
         path.intensityLinear = intensity
         path.crossfeedStrength = crossfeedPlays ? crossfeedStrength : nil
+        path.carryPlayedPath(from: signalPath, plays: isPlaying && transportCommand == nil) // the DSP rows' path
         return path
     }
 

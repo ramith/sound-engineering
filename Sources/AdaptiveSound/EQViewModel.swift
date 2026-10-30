@@ -68,7 +68,8 @@ final class EQViewModel {
     /// What the listener hears from the EQ now: the graph's look, its strip and Compare follow it.
     var audible: EQAudibleState {
         EQAudibleState(isOn: current.isOn, isComparing: session.isComparing,
-                       pureModeEngaged: audioViewModel.pureModeEngaged, engineReady: audioViewModel.isEngineReady)
+                       pureModeEngaged: !audioViewModel.dspRowAvailability.isLive, // the DSP rows' rule: paused too
+                       engineReady: audioViewModel.isEngineReady)
     }
 
     /// The curve the EQ plays for the points at the engine's design rate, from EQ1a's designer: designed
