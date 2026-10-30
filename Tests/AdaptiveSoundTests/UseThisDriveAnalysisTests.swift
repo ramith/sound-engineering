@@ -11,10 +11,11 @@ import Testing
 // MARK: - "Use this drive" keeps the songs' analyses (R1.1-B W5, lane 3-A; US-R1F-10 item 16)
 
 //
-// The real `LibraryModel` over a real store and real folders, and a real analysis store open beside them, as the app
-// opens one at launch. A paused music folder is pointed at its copy on another drive: after the rebind, the analysis
-// of each song found is under the song's new path — the same size and modification time — so it is not measured
-// again; a song whose copy differs (the rebind removes it) keeps its old record, and its copy has none.
+// The real `LibraryModel` over a real store and real folders, and a real analysis store open beside them, handed to
+// the library as the app hands it at launch. A paused music folder is pointed at its copy on another drive: after
+// the rebind, the analysis of each song found is under the song's new path — the same size and modification time —
+// so it is not measured again; a song whose copy differs (the rebind removes it) keeps its old record, and its copy
+// has none. Only the store the library was handed moves.
 
 @MainActor
 @Suite("“Use this drive” — the songs' analyses follow them", .serialized, .timeLimit(.minutes(3)), .attachingLogTail)
@@ -27,6 +28,7 @@ struct UseThisDriveAnalysisTests {
         let library = LibraryModel(storeless: ())
         library.store = fixture.store
         let analyses = try TrackAnalysisStore(directory: fixture.base.appendingPathComponent("app-data"))
+        library.analysisStore = analyses // as the composition root hands it over (Edge 6)
         for file in fixture.files {
             try await analyses.save(Self.analysis(of: #require(TrackIdentity(url: file))))
         }
@@ -50,6 +52,29 @@ struct UseThisDriveAnalysisTests {
         #expect(try await analyses.analyses(for: moved).count == 2)
         let changedNow = try #require(TrackIdentity(url: changed))
         #expect(try await analyses.analyses(for: [changedNow]).isEmpty) // another file now: measured again
+        try await until("the reconcile walk after the rebind to end") { library.walkTasks.isEmpty }
+    }
+
+    @Test("REKEY-02: the re-key reaches the store the library was handed, and no other open in the process")
+    func onlyItsOwnStore() async throws {
+        QuietLog.install()
+        let fixture = try await LibraryFolderFixture.make(titled: [("One", "A")])
+        defer { fixture.discard() }
+        let library = LibraryModel(storeless: ())
+        library.store = fixture.store
+        // Another store open in this process (another data folder: a test library, a test), never handed to this
+        // library, holding a record of the same song.
+        let other = try TrackAnalysisStore(directory: fixture.base.appendingPathComponent("other-app-data"))
+        let song = try #require(TrackIdentity(url: fixture.files[0]))
+        try await other.save(Self.analysis(of: song))
+        let newRoot = fixture.base.appendingPathComponent("Music on T7 2", isDirectory: true)
+        try FileManager.default.copyItem(at: fixture.music, to: newRoot)
+        try FileManager.default.removeItem(at: fixture.music)
+        library.reconcileState[fixture.folderID] = .paused(.rootVanished)
+
+        let result = await library.useDrive(newRoot, forFolder: fixture.folderID)
+        #expect(result?.outcome == .rebound(kept: 1, removed: 0))
+        #expect(try await other.analyses(for: [song]).count == 1, "a store the library was never given was re-keyed")
         try await until("the reconcile walk after the rebind to end") { library.walkTasks.isEmpty }
     }
 

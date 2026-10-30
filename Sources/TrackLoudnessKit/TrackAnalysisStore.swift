@@ -1,7 +1,6 @@
 import AudioDSP
 import Foundation
 import GRDB
-import Synchronization
 
 /// The analysis store (R1.1-B W5, lane 3-A; level-and-fold "The store and the scheduler", M5, M6, architect N7;
 /// US-R1F-10 item 16): every track's `TrackAnalysis`, kept in a rebuildable derived-data file beside the library —
@@ -47,26 +46,6 @@ public final class TrackAnalysisStore: Sendable {
             Self.remove(url)
             queue = try Self.open(url)
         }
-        Self.opened.withLock { stores in
-            stores.removeAll { $0.store == nil }
-            stores.append(WeakStore(store: self))
-        }
-    }
-
-    /// After "Use this drive" moved music folders (each `(from, to)`, directory paths in the library's spelling):
-    /// every analysis store open in this process re-keys the records of each (`rekey(root:to:)`), so the drive's
-    /// songs are not measured again. The app opens one store per data folder; the library, which holds no handle
-    /// to it, reaches it here. Returns how many records moved.
-    @discardableResult
-    public static func rekeyOpenStores(_ moves: [(from: String, to: String)]) async -> Int {
-        let stores = opened.withLock { $0.compactMap(\.store) }
-        var moved = 0
-        for store in stores {
-            for move in moves {
-                moved += (try? await store.rekey(root: move.from, to: move.to)) ?? 0
-            }
-        }
-        return moved
     }
 
     /// The current-version records of `identities` that the store holds, by identity — numbers, histograms and LFE
@@ -176,14 +155,6 @@ public final class TrackAnalysisStore: Sendable {
 // MARK: - The file
 
 extension TrackAnalysisStore {
-    /// A store, held weakly.
-    private struct WeakStore {
-        weak var store: TrackAnalysisStore?
-    }
-
-    /// Every store open in this process (`rekeyOpenStores`).
-    private static let opened = Mutex<[WeakStore]>([])
-
     /// Paths per `IN (…)` query.
     private static let chunk = 500
 
