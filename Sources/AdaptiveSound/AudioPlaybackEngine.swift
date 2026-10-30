@@ -36,7 +36,7 @@ extension AudioPlaybackEngine {
     func setNextTrack(_: URL?, ticket _: OnDeckTicket, leveling _: TrackLevelingDecision?) async {}
 
     /// Default: no-op — a conformer that does not level has nothing to re-plan.
-    func applyLevelingChange(current _: TrackLevelingDecision, next _: TrackLevelingDecision?) {}
+    func applyLevelingChange(current _: SongLeveling?, next _: SongLeveling?) async {}
 
     /// Default: no device targeted (0). The live engine overrides with its `currentDeviceID`.
     func currentOutputDeviceID() -> UInt32 {
@@ -93,6 +93,13 @@ struct LevelingStart: Sendable, Equatable {
 
     var decision: TrackLevelingDecision
     var listen: Listen
+}
+
+/// A song's leveling decision as a mode change sends it, named by the song's file (R1.1-B, review S2): the engine
+/// applies it to that song only, wherever it is by then.
+struct SongLeveling: Sendable, Equatable {
+    var url: URL
+    var decision: TrackLevelingDecision
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -195,11 +202,16 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// on `resampleQueue`; Pure: `pureModeEngineClearNextTrack`, which joins the dropped source off-RT.)
     func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?) async
 
-    /// The listener changed the Leveling mode (R1.1-B, §1.3 "when the planner runs", item 2): the audible
-    /// track re-plans from `current` and both units glide there (0.15 s); `next` replaces the armed pick's
-    /// decision (N11). Automatic changes never move a playing track; this is the listener's own act.
-    /// Synchronous, non-blocking (the main-thread rule). Default impl: no-op.
-    func applyLevelingChange(current: TrackLevelingDecision, next: TrackLevelingDecision?)
+    /// The listener changed the Leveling mode (R1.1-B, §1.3 "when the planner runs", item 2): the song playing
+    /// re-plans from `current` and both units glide there (0.15 s); `next` replaces the armed pick's decision
+    /// (N11). Each decision names its song, and the engine applies it to that song only, wherever it is when the
+    /// change arrives — the audible track, a start not yet audible, the armed pick, or the armed pick a seam has
+    /// already made audible — after every start and on-deck request that reached it first. One that names a song
+    /// it no longer has is dropped: a seam the caller had not seen yet moved it on, and the caller re-sends once
+    /// its own requests have landed. Automatic changes never move a playing track; this is the listener's own
+    /// act. Returns once applied or dropped. Calls apply in the order they reach the engine, so a caller orders
+    /// them by awaiting each. Default impl: no-op.
+    func applyLevelingChange(current: SongLeveling?, next: SongLeveling?) async
 
     /// The engine's state as the main thread may read it — the ONE read the view model makes of it:
     /// the transport as the engine last sampled it off the main thread (the playhead within the

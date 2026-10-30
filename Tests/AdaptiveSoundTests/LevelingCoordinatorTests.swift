@@ -75,7 +75,7 @@ struct LevelingCoordinatorTests {
         #expect(sent == Self.expected(player, LevelingRequest(key: Self.key(0), mode: .track, previous: nil,
                                                               next: Self.key(1), atSeam: false)))
         #expect(player.vm.levelingState.playing
-            == .init(key: Self.key(0), decision: sent, atSeam: false, previous: nil))
+            == .init(url: track(0), decision: sent, atSeam: false, previous: nil))
         #expect(player.vm.levelingState.knowledge.library.tracks[Self.key(0)]?.measurement != nil,
                 "the song was looked up before it started")
 
@@ -145,7 +145,7 @@ struct LevelingCoordinatorTests {
             previousDecision: playing.decision
         )))
         #expect(player.vm.levelingState.armed
-            == .init(key: Self.key(1), decision: armed, atSeam: true, previous: Self.key(0)))
+            == .init(url: track(1), decision: armed, atSeam: true, previous: Self.key(0)))
 
         // The seam: song 1 plays, armed with that decision; song 2 is armed after it.
         player.engineReports(position: 0.2, transitionCount: 1)
@@ -153,7 +153,7 @@ struct LevelingCoordinatorTests {
         try await player.vm.settled()
         #expect(player.vm.selectedTrackIndex == 1)
         #expect(player.vm.levelingState.playing
-            == .init(key: Self.key(1), decision: armed, atSeam: true, previous: Self.key(0)))
+            == .init(url: track(1), decision: armed, atSeam: true, previous: Self.key(0)))
         let next = try #require(player.engine.state.withLock(\.nextLevelings).last ?? nil)
         #expect(next == Self.expected(player, LevelingRequest(
             key: Self.key(2), mode: .track, previous: Self.key(1), next: Self.key(3), atSeam: true,
@@ -162,22 +162,25 @@ struct LevelingCoordinatorTests {
         #expect(player.vm.levelingState.armed?.previous == Self.key(1))
     }
 
-    @Test("LEVEL-VM-05: the listener's mode change re-plans the song playing and the armed pick, at once")
+    @Test("LEVEL-VM-05: the listener's mode change re-plans the song playing and the armed pick, each by its song")
     func modeChange() async throws {
         let player = try await Self.player(sources: Self.sources())
         try await player.play(at: 0)
         try await player.vm.settled()
         player.vm.leveling = .album
+        try await player.vm.settled()
         let current = Self.expected(player, LevelingRequest(key: Self.key(0), mode: .album, next: Self.key(1)))
         let next = Self.expected(player, LevelingRequest(key: Self.key(1), mode: .album, previous: Self.key(0),
                                                          next: Self.key(2), atSeam: true, previousDecision: current))
-        #expect(player.calls.last == .levelingChange(current: current, next: next))
+        #expect(player.calls.last == .levelingChange(current: SongLeveling(url: track(0), decision: current),
+                                                     next: SongLeveling(url: track(1), decision: next)))
         #expect(player.vm.levelingState.playing?.decision == current)
         #expect(player.vm.levelingState.armed?.decision == next)
 
         // The same mode again changes nothing.
         let before = player.calls.count
         player.vm.leveling = .album
+        try await player.vm.settled()
         #expect(player.calls.count == before)
     }
 
@@ -296,9 +299,29 @@ struct LevelingCoordinatorTests {
     }
 }
 
-// MARK: - The listen a start plays (review B2, MEDIUM-1)
+// MARK: - The listen a start plays (review B2, MEDIUM-1); a mode change that outran a request (review S2)
 
 extension LevelingCoordinatorTests {
+    @Test("LEVEL-VM-15: a mode change made while an on-deck request is on its way is sent again once it lands")
+    func modeChangeThatOutranAnArmIsSentAgain() async throws {
+        let player = try await Self.player(sources: Self.sources())
+        try await player.play(at: 0)
+        try await player.vm.settled()
+        // Play Next arms song 2 — its request on its way, carrying a Track-mode decision — and the listener changes
+        // the mode in the same turn: the engine may see the change before the arm, and drop its half for song 2.
+        player.vm.playNext([audioFile(2)])
+        player.vm.leveling = .off
+        try await player.vm.settled()
+        let arm = try #require(player.engine.state.withLock(\.nextLevelings).last ?? nil)
+        let changes = player.engine.state.withLock(\.levelingChanges)
+        let armed = try #require(player.vm.levelingState.armed)
+        #expect(armed.url == track(2) && arm != armed.decision, "the precondition: the arm carried the old mode's")
+        #expect(changes.count == 2, "sent \(changes.count) time(s): once at the change, once after the arm landed")
+        #expect(changes.last?.next == SongLeveling(url: track(2), decision: armed.decision),
+                "the re-send names the armed pick with its decision in the new mode")
+        #expect(changes.last?.current == player.vm.levelingState.playing?.song)
+    }
+
     @Test("LEVEL-VM-14: Pause → Play after the analysis landed keeps the song's level; Play after Stop decides afresh")
     func resumeAfterTheAnalysisLandedKeepsTheFirstDecision() async throws {
         let sources = try Self.sources(analysed: [])

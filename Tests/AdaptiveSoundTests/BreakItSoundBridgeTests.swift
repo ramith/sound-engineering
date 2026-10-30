@@ -140,7 +140,8 @@ struct BreakItSoundBridgeTests {
         let atSeam = try #require(rig.bridge.leveling.audiblePlan)
         #expect(abs(atSeam.levelGainDb - 2) < 1e-9, "the precondition: B plays its own g")
 
-        rig.bridge.applyLevelingChange(current: Self.measured(-24, peak: -10), next: songB) // A's, then B's
+        let songA = SongLeveling(url: rig.url, decision: Self.measured(-24, peak: -10))
+        await rig.bridge.applyLevelingChange(current: songA, next: SongLeveling(url: next, decision: songB)) // A's, B's
         let after = try #require(rig.bridge.leveling.audiblePlan)
         #expect(abs(after.levelGainDb - 2) < 1e-9,
                 "song B now plays song A's decision: g \(after.levelGainDb) dB instead of +2 dB, to its end")
