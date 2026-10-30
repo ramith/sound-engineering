@@ -26,12 +26,13 @@ import TrackLoudnessKit
 /// set of fields the main thread's `snapshot()` and borrows read while a queue writes. The main
 /// thread never waits on a queue or on AVFAudio: docs/architecture/architecture.md, "Threading
 /// rules (app ↔ engine)". That is the model, held by convention, not by a type: the council found
-/// it broken in three places (BR-1) that the one transport owner (W2) is to close — the
+/// it broken in three places (BR-1). Two remain for the one transport owner (W2) to close — the
 /// configuration-change re-establish drives the engine and player from `configChangeQueue` while
 /// `engineQueue` runs the transport (a play-intent re-check narrows that race, it does not close
-/// it); a failed gapless roll restarts through `playFile` on a global queue
-/// (`openNextFileOrRestart`); and the two AU instantiate completions finish the graph build on
-/// whatever queue AVFAudio calls them on (`instantiateAndBuildGraph`). The lock is a leaf (no
+/// it); and the two AU instantiate completions finish the graph build on whatever queue AVFAudio
+/// calls them on (`instantiateAndBuildGraph`). The third, a failed gapless roll restarting through
+/// `playFile` on a global queue, is gone since the R1.1-B fix round: a seam refuses a file that
+/// can't play. The lock is a leaf (no
 /// other lock/queue taken while held) so no deadlock
 /// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
 /// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /
@@ -239,9 +240,10 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
 
     // MARK: - Enhanced streaming-resampler state (methods in AudioEngineBridge+EnhancedResampler.swift)
 
-    /// Live streaming-resampler session, non-nil only while an Enhanced rate-mismatched file is
-    /// being played through `AVAudioConverter` (file rate != 48 kHz graph rate). The 48 kHz
-    /// passthrough path (`scheduleFile`) leaves this `nil` and is byte-identical to before.
+    /// Live session of the bridge's own reader, non-nil while an Enhanced file streams through
+    /// it: a file off the graph's rate (converted by the Mastering `StreamingResampler`), or a
+    /// 48 kHz file whose decoder may read short (a lossy codec, passed on unconverted —
+    /// `playsStraightThrough`). A file the player reads itself leaves it `nil`.
     /// All access is serialized on `resampleQueue`; published/read off the audio thread only.
     var resampleSession: EnhancedResampleSession?
 
