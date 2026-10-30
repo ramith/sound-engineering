@@ -305,14 +305,27 @@ Founder      ☑ checklist passed (by ear / eye / hand) ☐ the two LFE albums, 
                  passed. The LFE include level is not yet heard: no test music carries an LFE of its own (the
                  rule omits every corpus surround track), so KI-MC-01 stays open on that one listen and the
                  −6 dB default ships (founder, 2026-10-30)
-Merge        ☑ PR 1 (player) merged by the founder (#101) ☐ PR 2 (sound) merged by the founder
+Merge        ☑ PR 1 (player) merged by the founder (#101) ☑ PR 2 (sound) merged by the founder (#103; #102,
+               the same tree, was replaced: GitHub's "Rebase and merge" takes at most 100 commits, and it had 108)
              ☐ main CI green on the merge commit — the founder watches CI
-Close        ☐ this record + five-line retro ☐ known issues ☐ sprint-plan §Status line
-             ☐ documents reconciled (plan + reasons only) ☐ memory updated
-             ☐ worktrees removed (no running app inside) ☐ points and duration recorded
-               — the close items: drafted with PR 2, ticked at the close; the retro after the merge
+Close        ☑ this record + five-line retro ☑ known issues (KI-PB-18 and KI-SND-02, fixed in R1.1-A, moved to
+               Closed) ☑ sprint-plan §Status line
+             ☑ documents reconciled (plan + reasons only) ☑ memory updated
+             ☐ worktrees removed (no running app inside) — once the founder's check app, which runs from one, quits
+             ☑ points and duration recorded — ≈38 SP (sound 22, player ≈16) in 6 days, 2026-10-25 (the plan check
+               answered) → 2026-10-30 (both PRs merged), against a 2-week cap and ≈3 weeks as sized
 ```
 
 ## Retro
 
-*(at close-out)*
+1. **Worked — the full loop paid for itself.** Two reviews and the whole-app break-it found what the lanes' tests had
+   passed: mono 3 dB loud, a FLAC that killed the app, AC-3 / E-AC-3 ending 1 s early, a replay stuck 10 dB quiet. All
+   were fixed red-test-first before the founder heard a note, and both founder checks passed first time.
+2. **Worked — combine, then gate, then prove identity.** Four fix lanes in two waves met with one conflict. Tree-identity
+   checks made the rebase onto main and the 108 → 98 trim provable no-ops, so T3 and T4 held across them.
+3. **Missed — the test data for the one by-ear decision.** No corpus music carries an LFE of its own, so the LFE include
+   level shipped unheard (KI-MC-01). The data gap was known on 2026-10-28; nobody linked it to that decision.
+4. **Friction — tooling, not code.** A VS Code restart left an orphaned session running two agents (one write was
+   auto-refused). GitHub's "Rebase and merge" stops at 100 commits. A worktree without its submodules fails every gate.
+5. **Change next sprint.** The plan check names the test material for every by-ear decision. Lanes are sized ≤ 8 days up
+   front (lanes 1 and 3 split mid-sprint). Each PR stays ≤ 100 commits. Every new worktree initialises its submodules.
