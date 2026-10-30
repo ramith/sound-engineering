@@ -15,6 +15,9 @@ import SwiftUI
 /// VoiceOver hears one adjustable element per row, "Presence tone, 2 to 6 kilohertz", whose value
 /// adds "limited" when the ceiling holds points the region reaches; the name, range and value
 /// texts are hidden from it, since the slider says all three.
+///
+/// Inert (Pure plays — the card's `bitPerfectGate`), light draws the row's own disabled look: the name
+/// and level tertiary, the slider grey and flat (`controlLabelStyle`, `CarvedTrack`); dark dims it.
 struct EQToneRow: View {
     let region: EQToneRegion
     /// The row the user is on (hovered, dragged or keyboard-focused): tinted, its name and level teal.
@@ -39,7 +42,7 @@ struct EQToneRow: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(region.name)
                     .font(DesignSystem.Font.caption.weight(isHighlighted ? .semibold : .regular))
-                    .foregroundStyle(isHighlighted ? DesignSystem.Color.accentText : DesignSystem.Color.label)
+                    .controlLabelStyle(isHighlighted ? DesignSystem.Color.accentText : DesignSystem.Color.label)
                 Text(region.span)
                     .font(DesignSystem.Font.monoMicro)
                     .foregroundStyle(DesignSystem.Color.labelTertiary(onSelectedRow: isHighlighted))
@@ -63,7 +66,7 @@ struct EQToneRow: View {
 
             Text(EQLevelText.number(level))
                 .font(DesignSystem.Font.monoMicro)
-                .foregroundStyle(isHighlighted ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary)
+                .controlLabelStyle(isHighlighted ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary)
                 .lineLimit(1)
                 .frame(width: CGFloat(EQScreenLayout.toneValueWidth), alignment: .trailing)
                 .accessibilityHidden(true)
