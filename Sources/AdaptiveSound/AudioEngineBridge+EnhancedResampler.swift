@@ -4,19 +4,22 @@ import Foundation
 
 // MARK: - AudioEngineBridge Enhanced streaming-resampler path
 
-/// The Enhanced path for a file whose rate is not the graph's 48 kHz: the file is read in chunks,
-/// converted by `StreamingResampler` (Apple's Mastering-quality converter, configured once in
-/// AudioFormatKit — the code `make gate`'s SRC check measures), and scheduled on the player. A file
-/// at the graph's rate never comes here: it plays through (`schedulePassthrough`). Starts, seeks and
-/// re-establishes reach it through the one Enhanced restart (`commitEnhanced`,
+/// The bridge's own reader: the Enhanced path for a file whose rate is not the graph's 48 kHz, and for a 48 kHz
+/// file whose decoder may deliver fewer frames than its length states (`playsStraightThrough`: a lossy codec).
+/// The file is read in chunks by Apple's decoder (`TrackFileReader`, its place counted), converted — by
+/// `StreamingResampler` (Apple's Mastering-quality converter, configured once in AudioFormatKit — the code
+/// `make gate`'s SRC check measures) when the rate differs, by nothing when the file is already in the player's
+/// format (`StraightThrough`: a 48 kHz file is never resampled) — and scheduled on the player. The stream ends on
+/// the frames the decoder delivered. A file that plays straight through never comes here (the player reads it).
+/// Starts, seeks and re-establishes reach it through the one Enhanced restart (`commitEnhanced`,
 /// AudioEngineBridge+EnhancedRestart); the gapless seams through `primeEnhancedResamplerLocked`.
 ///
 /// Design:
 /// - One `EnhancedResampleSession` per stream: each start, seek, re-establish and format-changing
-///   seam makes a new one — the open file and its converter, file format →
+///   seam makes a new one — the file's reader and its conversion, file format →
 ///   `player.outputFormat(forBus: 0)` (48 kHz float in the file's own layout, F1: the rate changes, never
 ///   a channel's slot), so `scheduleBuffer` needs no further conversion. A SAME-format seam keeps it: the next
-///   file's frames continue the stream through the same converter (`continueStreamIntoNextTrack`,
+///   file's frames continue the stream through the same conversion (`continueStreamIntoNextTrack`,
 ///   AudioEngineBridge+GaplessRoll), and the seam is counted when the player reaches it.
 /// - The chain runs on the serial `resampleQueue`: read a chunk → convert → `scheduleBuffer(…,
 ///   .dataConsumed)`; each completion only re-dispatches the next iteration onto the queue.
@@ -36,12 +39,13 @@ extension AudioEngineBridge {
     // MARK: - Prime
 
     /// Prime-loop body for the resampler. MUST be called on `resampleQueue`; enforced by
-    /// `dispatchPrecondition`. Positions the file read-head, bumps the generation, installs the
-    /// session, and schedules up to `resamplePrimeCount` initial buffers. Does not play: the caller
-    /// starts the player (a restart), or it is already running (a gapless seam).
+    /// `dispatchPrecondition`. Bumps the generation, installs the session, places its reader (a fresh
+    /// session reads from the top; a restart from its place), and schedules up to `resamplePrimeCount`
+    /// initial buffers. Does not play: the caller starts the player (a restart), or it is already running
+    /// (a gapless seam).
     ///
     /// Returns the number of buffers scheduled (0: nothing could be read or converted from
-    /// `startFrame` — the caller ends the track or falls back).
+    /// `startFrame`, or the decoder could not seek there — the caller ends the track or falls back).
     ///
     /// Called from `commitEnhanced` (off-queue, via `resampleQueue.sync`) and the gapless seam
     /// handlers (already on `resampleQueue`, so they call it directly — never through a sync, C-1).
@@ -53,15 +57,21 @@ extension AudioEngineBridge {
     ) -> Int {
         dispatchPrecondition(condition: .onQueue(resampleQueue))
 
-        // Position the file read head (0 for a fresh play; the place for a restart).
-        let totalFrames = session.audioFile.length
-        session.audioFile.framePosition = max(0, min(startFrame, totalFrames))
-
         // Bump the generation so any prior session's in-flight iterations abandon themselves,
         // then capture THIS session's generation for the loop to compare against.
         resampleGeneration &+= 1
         let generation = resampleGeneration
         resampleSession = session
+
+        // Place the reader through its own count — never the file's place (KI-PB-22).
+        if startFrame != session.reader.position {
+            do {
+                try session.reader.seek(to: startFrame)
+            } catch {
+                logUX("resampler: the decoder could not seek to frame \(startFrame) — \(error)")
+                return 0
+            }
+        }
 
         var primed = 0
         for _ in 0 ..< Self.resamplePrimeCount {
@@ -127,10 +137,9 @@ extension AudioEngineBridge {
 
 // MARK: - EnhancedResampleSession
 
-/// One stream through the Enhanced streaming resampler: the open file and its converter — and, past
-/// a same-format seam, the next file through the same converter. A class (reference type) so the
-/// completion-chained iterations share one instance; held by the bridge as `resampleSession` and
-/// only ever mutated on `resampleQueue`.
+/// One stream through the bridge's own reader: the file's reader and its conversion — and, past a same-format seam,
+/// the next file through the same conversion. A class (reference type) so the completion-chained iterations share
+/// one instance; held by the bridge as `resampleSession` and only ever mutated on `resampleQueue`.
 ///
 /// `@unchecked Sendable` invariant: this session is created on a bridge queue and *only ever used
 /// and mutated on* `resampleQueue` once installed. The completion closures that capture it do
@@ -142,22 +151,22 @@ final class EnhancedResampleSession: @unchecked Sendable {
     struct Join {
         /// The track that starts there.
         let url: URL
-        /// Its first frame in the session's output (`StreamingResampler.outputFrame(atInputFrame:)`).
+        /// Its first frame in the session's output (`StreamConversion.outputFrame(atInputFrame:)`).
         let outputFrame: Int64
         /// The length of the track that ends there, in seconds (its frames over its rate, as the view
         /// model reads a duration): the playhead's base moves back by exactly this.
         let endingTrackSeconds: Double
     }
 
-    /// The converter: file format → the player's format (the Mastering `StreamingResampler`). For the track
-    /// a start or restart opens, the player's format is that file's own layout at the graph's rate
-    /// (`engineFormat`, F1), so it converts the rate only; a seam to a track in another layout (KI-GAP-05)
+    /// The conversion: file format → the player's format. For the track a start or restart opens, the player's
+    /// format is that file's own layout at the graph's rate (`engineFormat`, F1), so it converts the rate only —
+    /// or, for a file already in it, nothing (`StraightThrough`); a seam to a track in another layout (KI-GAP-05)
     /// is re-laid into the playing one by label.
-    let resampler: StreamingResampler
+    let resampler: any StreamConversion
 
-    /// The open source file, read sequentially chunk-by-chunk: the session's track, then each next
-    /// track the stream continues into (`continueStream`).
-    private(set) var audioFile: AVAudioFile
+    /// The source's reader, read sequentially chunk-by-chunk, its place counted: the session's track, then each
+    /// next track the stream continues into (`continueStream`).
+    private(set) var reader: TrackFileReader
 
     /// Set once the file is exhausted / the converter signals end — stops further chaining.
     var reachedEnd: Bool = false
@@ -168,30 +177,98 @@ final class EnhancedResampleSession: @unchecked Sendable {
     /// A next track found to need its own converter (another format): not opened again for a join.
     var refusedJoin: URL?
 
-    /// `nil` when Apple has no converter from `file`'s processing format to `outputFormat`.
+    /// `nil` when Apple's decoder can't read `file` or Apple has no converter from its processing format to
+    /// `outputFormat`.
     init?(file: AVAudioFile, outputFormat: AVAudioFormat) {
-        guard let resampler = StreamingResampler(from: file.processingFormat, to: outputFormat) else {
+        do {
+            reader = try TrackFileReader(reading: file)
+        } catch {
+            NSLog("[AudioEngineBridge] no reader for \(file.url.lastPathComponent): \(error)")
+            return nil
+        }
+        if file.processingFormat == outputFormat {
+            resampler = StraightThrough(format: outputFormat)
+        } else if let converter = StreamingResampler(from: file.processingFormat, to: outputFormat) {
+            resampler = converter
+        } else {
             NSLog("[AudioEngineBridge] no converter \(file.processingFormat) -> \(outputFormat)")
             return nil
         }
-        self.resampler = resampler
-        audioFile = file
     }
 
     /// Go on reading `next` (`url`) once the current track has run out: its first frame follows the
-    /// last the converter has taken. The join is pending until the player reaches it.
-    func continueStream(into next: AVAudioFile, url: URL) {
+    /// last the conversion has taken. The join is pending until the player reaches it.
+    func continueStream(into next: TrackFileReader, url: URL) {
         pendingJoin = Join(
             url: url,
             outputFrame: resampler.outputFrame(atInputFrame: resampler.inputFrames),
-            endingTrackSeconds: Double(audioFile.length) / audioFile.processingFormat.sampleRate
+            endingTrackSeconds: Double(reader.length) / reader.processingFormat.sampleRate
         )
-        audioFile = next
+        reader = next
     }
 
     /// The pending join, now reached: hand it over, once.
     func takePendingJoin() -> Join? {
         defer { pendingJoin = nil }
         return pendingJoin
+    }
+}
+
+// MARK: - The stream's conversion
+
+/// How a session's stream reaches the player's format, one chunk at a time, with its frames counted so a join can
+/// be placed in the output: Apple's Mastering converter (`StreamingResampler`) when the rate or the layout differs,
+/// or nothing at all when the file is already in the player's format (`StraightThrough`).
+protocol StreamConversion: AnyObject {
+    /// What `convertChunk` takes: the source's format.
+    var inputFormat: AVAudioFormat { get }
+    /// What it returns: the player's format.
+    var outputFormat: AVAudioFormat { get }
+    /// Input frames taken since the stream began (every track it carried).
+    var inputFrames: Int64 { get }
+    /// Output frames returned since the stream began.
+    var outputFrames: Int64 { get }
+    /// Whether input of `format` can go on through this stream (a same-format join).
+    func canContinue(with format: AVAudioFormat) -> Bool
+    /// Where input frame `inputFrame` (counted from the stream's start) begins in the output.
+    func outputFrame(atInputFrame inputFrame: Int64) -> Int64
+    /// Convert one chunk; `inputEnded`: none follows it. `ended`: the stream's last output has been returned.
+    func convertChunk(_ input: AVAudioPCMBuffer, inputEnded: Bool) throws -> (buffer: AVAudioPCMBuffer, ended: Bool)
+}
+
+extension StreamingResampler: StreamConversion {
+    func convertChunk(_ input: AVAudioPCMBuffer, inputEnded: Bool) throws -> (buffer: AVAudioPCMBuffer, ended: Bool) {
+        let chunk = try convert(input, inputEnded: inputEnded)
+        return (chunk.buffer, chunk.endOfStream)
+    }
+}
+
+/// The conversion of a stream already in the player's format: none. Each chunk goes to the player as the decoder
+/// delivered it, so the output is the decoded file, sample for sample, and its frames are the input's.
+final class StraightThrough: StreamConversion {
+    let inputFormat: AVAudioFormat
+    let outputFormat: AVAudioFormat
+    private(set) var inputFrames: Int64 = 0
+
+    var outputFrames: Int64 {
+        inputFrames
+    }
+
+    init(format: AVAudioFormat) {
+        inputFormat = format
+        outputFormat = format
+    }
+
+    func canContinue(with format: AVAudioFormat) -> Bool {
+        format == inputFormat
+    }
+
+    func outputFrame(atInputFrame inputFrame: Int64) -> Int64 {
+        inputFrame
+    }
+
+    func convertChunk(_ input: AVAudioPCMBuffer, inputEnded: Bool) -> (buffer: AVAudioPCMBuffer, ended: Bool) {
+        inputFrames += Int64(input.frameLength)
+        return (input, inputEnded)
     }
 }

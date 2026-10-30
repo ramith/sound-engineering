@@ -185,17 +185,14 @@ extension AudioEngineBridge {
             }
         }
 
-        let audioFile: AVAudioFile
-        do {
-            audioFile = try AVAudioFile(forReading: fileURL)
-        } catch {
-            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
-        }
+        // Refused before anything changes — the song playing carries on — when it won't open or Apple's decoder
+        // can't read it (KI-PB-22), with why (LOW-3).
+        let audioFile = try Self.openForPlayback(fileURL)
         let processingFormat = audioFile.processingFormat
         guard let target = SeekTarget(seconds: startAt, length: audioFile.length,
                                       sampleRate: processingFormat.sampleRate)
         else {
-            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
+            throw AudioBridgeError.refusing(fileURL, status: nil) // no usable rate
         }
 
         // 1. Reconfigure the graph to the source width N, THEN publish the layout to the kernel.

@@ -94,12 +94,12 @@ extension AudioEngineBridge {
         player: AVAudioPlayerNode,
         generation: UInt64
     ) {
-        let (lastType, last): (AVAudioPlayerNodeCompletionCallbackType, Completion) = session.reachedEnd
-            ? (player.playedBackCallbackType, streamEnd(session: session, player: player, generation: generation))
-            : (.dataConsumed, chain(session: session, player: player, generation: generation))
-        // This chunk's place in the session's output: it ends where the converter's output stands.
+        // This chunk's place in the session's output: it ends where the conversion's output stands.
         let chunkEnd = session.resampler.outputFrames
         let chunkStart = chunkEnd - Int64(buffer.frameLength)
+        let (lastType, last): (AVAudioPlayerNodeCompletionCallbackType, Completion) = session.reachedEnd
+            ? (player.playedBackCallbackType, streamEnd(session: session, player: player, generation: generation))
+            : (.dataConsumed, chain(session: session, player: player, generation: generation, through: chunkEnd))
         guard let join = session.pendingJoin, join.outputFrame <= chunkEnd || session.reachedEnd else {
             player.scheduleBuffer(buffer, completionCallbackType: lastType,
                                   completionHandler: observed(frames: Int64(buffer.frameLength), last))
@@ -111,8 +111,10 @@ extension AudioEngineBridge {
                 self.commitJoin(session: session, player: player, generation: generation)
             }
         }
-        // The ending track's frames in this chunk: never none, as the converter's output trails its
-        // input — a join read in one chunk lands in that chunk's output or a later one's.
+        // The ending track's frames in this chunk. A converter's output trails its input, so a join read in one
+        // chunk lands in that chunk's output or a later one's. With no conversion (`StraightThrough`) the join is
+        // this chunk's first frame: the chunk before it — the ending track's last — counts it when consumed
+        // (`chain`), and this chunk's completion only if that one was consumed before the join was taken.
         let endingFrames = join.outputFrame - chunkStart
         if endingFrames > 0, endingFrames < Int64(buffer.frameLength),
            let ending = buffer.copy(frames: 0 ..< AVAudioFrameCount(endingFrames)),
@@ -131,12 +133,15 @@ extension AudioEngineBridge {
         })
     }
 
-    /// The completion that chains the next read → convert → schedule iteration.
-    private func chain(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64)
-        -> Completion {
+    /// The completion that chains the next read → convert → schedule iteration, for a buffer that ends at output
+    /// frame `chunkEnd`: once the player has consumed it, a pending join at or before its end has been reached
+    /// (`commitJoin(reachedBy:…)`), then the next chunk is read.
+    private func chain(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64,
+                       through chunkEnd: Int64) -> Completion {
         { [weak self, weak player] _ in
             guard let self, let player else { return }
             self.resampleQueue.async {
+                self.commitJoin(reachedBy: chunkEnd, session: session, player: player, generation: generation)
                 _ = self.readConvertSchedule(session: session, player: player, generation: generation)
             }
         }
@@ -153,11 +158,11 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Allocate + fill one input chunk from the file. Once the track has run out (its read head at
-    /// its length), a next track of the same format fills the chunk instead
-    /// (`continueStreamIntoNextTrack`). A read error or an empty chunk marks the session done (so the
-    /// next convert flushes the resampler tail). Returns `nil` only if the input buffer could not be
-    /// allocated. Runs on `resampleQueue`.
+    /// Allocate + fill one input chunk from the reader. Once the track has run out — its reader has
+    /// delivered its last frame, which a decoder that reads short delivers before `length` (LOW-6) — a
+    /// next track of the same format fills the chunk instead (`continueStreamIntoNextTrack`). A read
+    /// error or an empty chunk marks the session done (so the next convert flushes the converter's
+    /// tail). Returns `nil` only if the input buffer could not be allocated. Runs on `resampleQueue`.
     private func readChunk(session: EnhancedResampleSession) -> AVAudioPCMBuffer? {
         let frames = StreamingResampler.inputChunkFrames
         guard let inputBuffer = AVAudioPCMBuffer(
@@ -165,14 +170,15 @@ extension AudioEngineBridge {
         ) else {
             return nil
         }
-        do {
-            if session.audioFile.framePosition >= session.audioFile.length {
-                continueStreamIntoNextTrack(session: session, filling: inputBuffer)
-            } else {
-                try session.audioFile.read(into: inputBuffer, frameCount: frames)
+        if session.reader.ended {
+            continueStreamIntoNextTrack(session: session, filling: inputBuffer)
+        } else {
+            do {
+                try session.reader.read(into: inputBuffer, frameCount: frames)
+            } catch {
+                logUX("resampler: the read at frame \(session.reader.position) failed (\(error)); ending the stream")
+                session.reachedEnd = true
             }
-        } catch {
-            session.reachedEnd = true
         }
         if inputBuffer.frameLength == 0 {
             session.reachedEnd = true
@@ -188,8 +194,8 @@ extension AudioEngineBridge {
         inputBuffer: AVAudioPCMBuffer
     ) -> AVAudioPCMBuffer? {
         do {
-            let chunk = try session.resampler.convert(inputBuffer, inputEnded: session.reachedEnd)
-            if chunk.endOfStream {
+            let chunk = try session.resampler.convertChunk(inputBuffer, inputEnded: session.reachedEnd)
+            if chunk.ended {
                 session.reachedEnd = true
             }
             return chunk.buffer
