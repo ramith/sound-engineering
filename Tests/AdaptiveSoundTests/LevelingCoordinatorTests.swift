@@ -241,10 +241,10 @@ struct LevelingCoordinatorTests {
         }
     }
 
-    @Test("LEVEL-VM-08: the prefetch follows the queue — its songs, their albums' members, the playing pair's profiles")
+    @Test("LEVEL-VM-08: the prefetch follows the queue — its songs, their albums' members, three songs' profiles")
     func prefetchFollowsTheQueue() async throws {
-        let sources = try Self.sources()
-        let player = try await Self.player(sources: sources)
+        let sources = try Self.sources(analysed: [0, 1, 2, 3])
+        let player = try await Self.player(tracks: 5, sources: sources)
         try await player.play(at: 0)
         try await player.vm.settled()
         let knowledge = player.vm.levelingState.knowledge
@@ -258,7 +258,9 @@ struct LevelingCoordinatorTests {
         #expect(reads.contains { $0.0 == Self.key(0) && $0.1 == [0] }, "a stereo song: as decoded")
         #expect(reads.contains { $0.0 == Self.key(1) && $0.1 == [0, 1, 2] },
                 "a fold: as decoded, LFE omitted, LFE at the include level")
-        #expect(!reads.contains { $0.0 == Self.key(2) }, "only the songs about to start or arm")
+        #expect(reads.contains { $0.0 == Self.key(2) }, "the pick armed at the next seam: ready before it")
+        #expect(player.vm.levelingState.knowledge.library.tracks[Self.key(3)]?.measurement != nil)
+        #expect(!reads.contains { $0.0 == Self.key(3) }, "a fourth song: its record, not its profiles")
 
         // An edit of the queue refreshes what is known: a song appended joins as the next once the last plays.
         player.vm.appendToQueue([AudioFile(name: "t9", relativePath: "", absoluteURL: track(9), format: "FLAC",
