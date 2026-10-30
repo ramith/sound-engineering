@@ -79,6 +79,13 @@ final class EngineLevelingState: Sendable {
         }
     }
 
+    /// What a track's audibility did (`becameAudible`): whether a start resumed the listen that was playing — its
+    /// plan kept, and its loudness readout carried on — and whether the track's saved profile is in force (C2).
+    struct Audibility: Equatable {
+        let resumed: Bool
+        let savedProfile: Bool
+    }
+
     /// The audible track: its file, its decision, its plan and the output it was planned against, the effects unit
     /// that has it, and its saved profile in force.
     private struct Audible: Sendable {
@@ -133,14 +140,16 @@ final class EngineLevelingState: Sendable {
 
     /// `url` (token `token`) became audible: plan once and hand the plan to both units (B1). A start that resumes
     /// the audible track goes on with its plan (`resume`); any other start, and every seam, is a new play, planned
-    /// afresh — the same file too. Returns whether the track's saved profile is in force (C2).
+    /// afresh — the same file too. Returns which it was, and whether the track's saved profile is in force (C2).
     func becameAudible(_ url: URL, token: UInt64, gaplessSeam: Bool, unit: UInt?,
-                       effects: EffectsDelivery) -> Bool {
-        held.withLock { held -> Bool in
+                       effects: EffectsDelivery) -> Audibility {
+        held.withLock { held -> Audibility in
             let matched = Self.takeRequest(for: url, gaplessSeam: gaplessSeam, held: &held)
             // Token 0 (the file's attributes unreadable) names no track: never "the same one" (N2).
             if let matched, matched.resumes, let audible = held.audible, audible.token == token, token != 0 {
-                return Self.resume(audible, url: url, unit: unit, held: &held, effects: effects)
+                return Audibility(resumed: true,
+                                  savedProfile: Self.resume(audible, url: url, unit: unit, held: &held,
+                                                            effects: effects))
             }
             if matched == nil {
                 logUX("leveling: no decision as '\(url.lastPathComponent)' became audible — Off, the fold's "
@@ -157,7 +166,7 @@ final class EngineLevelingState: Sendable {
                                    plannedFor: held.output, deliveredTo: delivered, savedProfile: profile)
             logUX("leveling: '\(url.lastPathComponent)' audible (\(gaplessSeam ? "gapless seam" : "fresh start")) — "
                 + Self.describe(plan) + (profile != nil ? ", saved profile" : ""))
-            return profile != nil
+            return Audibility(resumed: false, savedProfile: profile != nil)
         }
     }
 
@@ -421,9 +430,10 @@ extension AudioEngineBridge {
         leveling.arm(pending)
     }
 
-    /// `url` (token `token`) became audible: plan once, both units in one turn (B1). Returns whether the track's
-    /// saved profile went with it (then the analyzer has nothing to do: the saved profile is final, C2).
-    func planAudible(_ url: URL, token: UInt64, gaplessSeam: Bool) -> Bool {
+    /// `url` (token `token`) became audible: plan once, both units in one turn (B1). Returns whether a start resumed
+    /// the listen playing, and whether the track's saved profile went with it (then the analyzer has nothing to do:
+    /// the saved profile is final, C2).
+    func planAudible(_ url: URL, token: UInt64, gaplessSeam: Bool) -> EngineLevelingState.Audibility {
         let unit = withEffectsAU { UInt(bitPattern: $0) }
         return leveling.becameAudible(url, token: token, gaplessSeam: gaplessSeam, unit: unit,
                                       effects: deliverToEffects)

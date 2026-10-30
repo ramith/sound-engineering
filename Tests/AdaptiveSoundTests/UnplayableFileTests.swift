@@ -11,7 +11,7 @@ import Testing
 // stereo Opus; and a 48 kHz FLAC Apple's decoder refuses (blocks under 192 samples) started, played silence and
 // skipped with no word. Through the REAL bridge's start (`playFile`) on an offline device, each kind of file is
 // refused before anything plays, with what is wrong: a type the app doesn't play, a file it can't read (damaged or
-// not audio), or a variant macOS can't decode. The banner reads "Playback failed: " + this. Nothing is heard.
+// not audio), or a variant macOS can't decode. The banner names the song and gives this (VM-UQ). Nothing is heard.
 
 @Suite("A file that can't play is refused with why (LOW-3)", .serialized, .timeLimit(.minutes(5)), .attachingLogTail)
 struct UnplayableFileTests {

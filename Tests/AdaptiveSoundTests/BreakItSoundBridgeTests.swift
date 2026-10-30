@@ -121,7 +121,7 @@ struct BreakItSoundBridgeTests {
         }
         await rig.finish()
         let message = try #require(said, "a zero-byte file started")
-        // The banner reads "Playback failed: " + this. FLAC is a type the app plays (LibraryScanner's list).
+        // The banner names the song and gives this (VM-UQ). FLAC is a type the app plays (LibraryScanner's list).
         #expect(!message.contains("isn't supported"), "the listener is told FLAC isn't supported: \"\(message)\"")
     }
 

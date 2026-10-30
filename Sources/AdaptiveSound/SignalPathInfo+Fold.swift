@@ -2,8 +2,9 @@
 
 extension SignalPathInfo {
     /// The badge while the fold plays (US-R1F-08 item 6): "5.1 → stereo" ("7.1 → stereo"), and "… · measuring" on
-    /// the first play of a surround track nobody has measured yet — its trim the matrix's worst case, quieter and
-    /// clean, until the analysis lands (founder, 2026-10-26). Nil when nothing folds (and always on Pure).
+    /// the first play of a surround track nobody has measured yet, while its measurement is coming — its trim the
+    /// matrix's worst case, quieter and clean, until the analysis lands (founder, 2026-10-26). Nil when nothing
+    /// folds (and always on Pure).
     var foldBadge: String? {
         guard path == .enhanced, let fold else { return nil }
         let badge = "\(Self.layoutName(fold: fold, readout: leveling)) → stereo"
@@ -17,10 +18,11 @@ extension SignalPathInfo {
         return foldIsMeasuring ? spoken + ", measuring" : spoken
     }
 
-    /// The fold plays its track's plan, and that plan's trim is the worst case: the track was not measured. (The
+    /// The fold plays its track's plan, that plan's trim is the worst case — the track was not measured — and a
+    /// measurement of it is on its way (not when its analysis failed or cannot happen: `measurementComing`). (The
     /// badge's "· measuring", and its tooltip's sentence.)
     var foldIsMeasuring: Bool {
-        fold?.fromPlan == true && leveling?.foldMeasured == false
+        fold?.fromPlan == true && leveling?.foldMeasured == false && leveling?.measurementComing == true
     }
 
     /// The source's layout name: from its channels' roles when the plan knows them ("5.0", "5.1"), else by its

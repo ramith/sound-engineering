@@ -171,6 +171,8 @@ typedef struct
     double peakRateHz;
     /// L: integrated loudness, BS.1770 Table 3 weights (LFE 0), as decoded (LUFS). A mono file's is
     /// as measured on its one channel: the planner adds +3.01 LU when it plays to ≥ 2 outputs.
+    /// A group's anchor is stated in the playing file's own measure (LevelingKit compares the members as heard,
+    /// review N1).
     double loudnessLufs;
     /// TP_N: the true peak over all N channels, the LFE included (dBTP).
     double truePeakDbtp;
