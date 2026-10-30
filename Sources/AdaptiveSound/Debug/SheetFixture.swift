@@ -82,6 +82,7 @@
             seedDevices()
             seedPlayback(songs)
             Self.seedSettings(audio, for: variant)
+            Self.seedSound(audio, for: variant) // Leveling, the fold, Pure on Now Playing, the toast (R1.1-B)
             Self.seedEQ(eq, audio: audio, defaults: defaults, for: variant) // "Warm · Edited", then the world's
             nowPlaying.audio = audio
             nowPlaying.seedRenderFixture(ResolvedTrackMeta(artist: "A. R. Rahman", album: "Roja", artworkKey: nil))
@@ -114,6 +115,7 @@
                 .environment(\.sheetEQGraph, Self.eqGraphSeed(for: variant))
                 .environment(\.sheetDetailPage, detailPage)
                 .defaultAppStorage(defaults)
+                .task { self.raiseSheetToast() }
         }
 
         /// The dialog world's sheet, drawn in the window (`SheetDialogStandIn`): the EQ's Save, Rename or
