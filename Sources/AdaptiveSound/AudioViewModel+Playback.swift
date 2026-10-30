@@ -61,10 +61,11 @@ extension AudioViewModel {
 
         work.spawn { [self] in
             do {
-                // The leveling decision travels with the start (R1.1-B, §S3). Off until lane 3's decisions
-                // land (W5): no leveling gain; the fold's trim and the peak cap still apply.
+                // The leveling decision travels with the start (R1.1-B, §S3): LevelingKit's, from what the
+                // prefetch knows — a song it has not looked up yet waits at most 50 ms for it (+Leveling).
+                let leveling = await levelingDecisionForStart(of: startFile, epoch: epoch)
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
-                                            startAt: resumeFrom ?? 0, epoch: epoch, leveling: .off)
+                                            startAt: resumeFrom ?? 0, epoch: epoch, leveling: leveling)
                 // A stop, a pause or a newer start asked while this one ran owns the transport now
                 // (the engine dropped this start if it had begun that one first): neither prime the
                 // queue with a pick for a replaced playback nor mark playing over what was asked since.
