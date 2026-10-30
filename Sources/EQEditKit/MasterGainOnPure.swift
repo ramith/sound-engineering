@@ -20,7 +20,10 @@
 //   (founder decision 2026-10-16; `PureVolumeEvent`): a pause keeps the level Pure set (the session is
 //   torn down, but playback resumes there), as does a device that went away; Pure is left by a stop
 //   that ends playback (Stop, the end of the queue, the queue cleared, quit), Enhanced starting, or the
-//   output moving to another device.
+//   output moving to another device. When leaving gives the device a different level back (Master Gain had
+//   lowered it, or Pure muted it), the rule says so (`onRestore`): the "Volume restored" toast (R1.1-B,
+//   US-R1F-20 item 4). It says nothing when Pure touched nothing, the listener's own level stands, or the device
+//   is gone.
 // - A DEVICE WITH NO VOLUME THE APP CAN SET (many DACs, HDMI): turned down, Pure waits — Enhanced keeps
 //   playing at the listener's level until Master Gain is back at 0 dB (`waitsForMasterGain`).
 // - NEVER LOUDER THAN MASTER GAIN SAYS (R1.1-A close-out break-it, H-1): a cut deeper than the device's own
@@ -195,6 +198,12 @@ public struct MasterGainOnPure: Sendable {
     /// `allLoans` before each change Pure makes to a device and after every change to the record (H-2).
     public var writeAhead: @Sendable ([PureVolumeLoan]) -> Void
 
+    /// Told each time leaving Pure (`leave`) gives the device a different level back than it was at — Master Gain
+    /// had lowered it, or Pure had muted it — so the listener hears their own level return: what the "Volume
+    /// restored" toast says (R1.1-B, US-R1F-20 item 4). Never for a loan an earlier run left (`returnUnreturned`),
+    /// which is not Pure being left. Synchronously, on the rule's queue.
+    public var onRestore: @Sendable () -> Void = {}
+
     /// Start with the loans a previous run left (`allLoans`, as kept): all unreturned until put back.
     public init(unreturned: [PureVolumeLoan] = [],
                 writeAhead: @escaping @Sendable ([PureVolumeLoan]) -> Void = { _ in }) {
@@ -350,13 +359,16 @@ public struct MasterGainOnPure: Sendable {
         return true
     }
 
-    /// Pure stops on its device: put the anchor back.
+    /// Pure stops on its device: put the anchor back — and tell `onRestore` when that is a level the device was not
+    /// at.
     public mutating func leave(device: some DeviceVolumeControl) {
         defer { keep() }
         guard let held = loan else { return }
         loan = nil
-        if !settle(held, device: device) {
-            remember(held)
+        switch settle(held, device: device) {
+        case .kept: remember(held)
+        case .restored: onRestore()
+        case .unchanged: break
         }
     }
 
@@ -365,7 +377,7 @@ public struct MasterGainOnPure: Sendable {
         defer { keep() }
         unreturned = unreturned.filter { loan in
             guard let control = device(loan.deviceUID) else { return true }
-            return !settle(loan, device: control)
+            return settle(loan, device: control) == .kept
         }
     }
 
@@ -389,30 +401,40 @@ public struct MasterGainOnPure: Sendable {
         gain > -.infinity
     }
 
-    /// Put `held` back on `device`: true when it is settled — put back, the listener's level stands (the
-    /// device reads something other than Pure's last set), or the record is damaged and nothing is touched.
-    /// False when the device can't be read or set (it is gone): the loan stays out. What is put back is the
-    /// anchor, never above the ceiling — the level Pure found — within the device's range; never a level
-    /// that is not a number (SET-4).
-    private func settle(_ held: PureVolumeLoan, device: some DeviceVolumeControl) -> Bool {
-        guard held.isSound else { return true }
-        guard let reading = device.read() else { return false }
-        if held.mutedByPure, device.isMuted() == true { // the mute Pure made goes back with the volume
-            _ = device.setMuted(false)
-        }
+    /// What putting a loan back did.
+    private enum Settled {
+        /// A different level went back (or the mute Pure made came off): the listener hears their own level return.
+        case restored
+        /// Settled with the device left where it was: already at the level, the listener's own level stands (the
+        /// device reads something other than Pure's last set), or the record is damaged and nothing is touched.
+        case unchanged
+        /// Not settled: the device can't be read or set (it is gone), so the loan stays out.
+        case kept
+    }
+
+    /// Put `held` back on `device`. What is put back is the anchor, never above the ceiling — the level Pure found
+    /// — within the device's range; never a level that is not a number (SET-4).
+    private func settle(_ held: PureVolumeLoan, device: some DeviceVolumeControl) -> Settled {
+        guard held.isSound else { return .unchanged }
+        guard let reading = device.read() else { return .kept }
+        // The mute Pure made goes back with the volume.
+        let unmuted = held.mutedByPure && device.isMuted() == true && device.setMuted(false)
         // Pure's own level: what it last set, or what it was setting when the app died (H-2).
         let pureSet = [held.lastSet] + (held.pending.map { [$0] } ?? [])
         guard reading.level.isFinite, pureSet.contains(where: { abs(reading.level - $0) <= Self.sameLevel }) else {
-            return true
+            return unmuted ? .restored : .unchanged
         }
         let target = min(max(min(held.anchor, held.ceiling), reading.range.lowerBound), reading.range.upperBound)
-        guard target.isFinite else { return true }
-        return abs(target - reading.level) <= Self.sameLevel || device.restore(target)
+        guard target.isFinite else { return unmuted ? .restored : .unchanged }
+        if abs(target - reading.level) <= Self.sameLevel {
+            return unmuted ? .restored : .unchanged
+        }
+        return device.restore(target) ? .restored : .kept
     }
 
     /// Put back an unreturned loan of `deviceUID`, if there is one, before a new one is taken.
     private mutating func returnLoan(of deviceUID: String, device: some DeviceVolumeControl) {
-        unreturned = unreturned.filter { $0.deviceUID != deviceUID || !settle($0, device: device) }
+        unreturned = unreturned.filter { $0.deviceUID != deviceUID || settle($0, device: device) == .kept }
     }
 
     /// Keep `held` until its device can take it back — one per device, the newest.

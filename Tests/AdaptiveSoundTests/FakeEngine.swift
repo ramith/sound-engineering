@@ -112,6 +112,17 @@ final class FakeEngine: AudioPlaybackEngine {
         record(.keepPureVolumeLoans(journal.loans()))
     }
 
+    func reportPureVolumeRestores(to restored: @escaping @MainActor @Sendable () -> Void) {
+        state.withLock { $0.pureVolumeRestored = restored }
+    }
+
+    /// Pure gave the device's volume back at another level (`MasterGainOnPure.onRestore`): tell the receiver the
+    /// view model gave, on the main actor, as the bridge does.
+    @MainActor
+    func restorePureVolume() {
+        state.withLock(\.pureVolumeRestored)?()
+    }
+
     func publishEQ(points: [Float], isOn: Bool, comparing: Bool) {
         record(.eq(points: points, isOn: isOn, comparing: comparing))
     }
@@ -226,6 +237,8 @@ extension FakeEngine {
         /// What `selectDevice` answers: `false` is a pick the system refused (nothing changes).
         var selectResult = true
         var onOutputDevicesChanged: (@MainActor () -> Void)?
+        /// Who hears that Pure gave a device's volume back at another level (`reportPureVolumeRestores`).
+        var pureVolumeRestored: (@MainActor @Sendable () -> Void)?
         /// The device the app plays on and the device the user chose, by the product's rule.
         var selection = OutputDeviceSelection()
 

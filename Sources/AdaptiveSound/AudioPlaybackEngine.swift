@@ -69,6 +69,9 @@ extension AudioPlaybackEngine {
     /// Default: no-op — no device volume is ever lowered.
     func keepPureVolumeLoans(in _: PureVolumeLoanJournal) {}
 
+    /// Default: never tells — no device volume is ever lowered, so none is ever given back.
+    func reportPureVolumeRestores(to _: @escaping @MainActor @Sendable () -> Void) {}
+
     /// Default: no-op — a conformer without per-channel analysers has nothing to run or rest.
     func setMonitorAnalysis(_: Bool) {}
 }
@@ -209,6 +212,13 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// down — and from then on writes the journal ahead of every change it makes to a device (H-2).
     /// Returns at once (the HAL work runs on an engine queue). Call at engine-ready. Default impl: no-op.
     func keepPureVolumeLoans(in journal: PureVolumeLoanJournal)
+
+    /// Tell `restored`, on the main actor, each time Pure gives its device's volume back at a level the device was
+    /// not at — Master Gain had turned it down (or Pure had muted it) — so the listener hears their own level return
+    /// (R1.1-B, US-R1F-20 item 4: the "Volume restored" toast). Only when Pure is left: a stop that ends playback,
+    /// Enhanced starting, the output moving (`MasterGainOnPure.leave`); never a pause, a lost device, or a loan an
+    /// earlier run left. Replaces the last receiver. Returns at once. Default impl: never tells.
+    func reportPureVolumeRestores(to restored: @escaping @MainActor @Sendable () -> Void)
 
     // MARK: DSP Parameters
 
