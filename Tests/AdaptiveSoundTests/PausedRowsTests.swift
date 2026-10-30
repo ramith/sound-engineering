@@ -18,8 +18,8 @@ import Testing
 // view model over FakeEngine, the engine's reports going through the transport tick.
 
 @MainActor
-@Suite("The DSP rows keep the path that last played — paused, stopped, before the first song", .serialized,
-       .timeLimit(.minutes(3)), .attachingLogTail)
+@Suite("The DSP rows keep the path that last played (paused, stopped, before a song)", .timeLimit(.minutes(3)),
+       .serialized, .attachingLogTail)
 struct PausedRowsTests {
     private static let speakers = AudioDeviceModel(
         id: 1, name: "MacBook Pro Speakers", sampleRate: 48000, bufferFrameSize: 512, uid: "BuiltInSpeakerDevice",
