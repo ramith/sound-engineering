@@ -91,9 +91,10 @@
         case monitor51 = "6ch"
         case monitor71 = "8ch"
         /// The sound worlds (R1.1-B W5): a 5.1 file folded to stereo on its first, unmeasured play, Pure asked for
-        /// (the hero's "5.1 → stereo · measuring" beside "Pure off: channels", crossfeed "not active on surround
-        /// albums", Settings' fold reason and Leveling's line) — at both sizes, for the hero's width; Now Playing
-        /// while Pure plays (crossfeed's row inert, "Off in bit-perfect mode"); and "Volume restored" raised.
+        /// and declined for the channels (the hero's "5.1 → stereo · measuring" carrying that reason, its dot amber;
+        /// crossfeed "not active on surround albums", Settings' fold reason and Leveling's line) — at both sizes, for
+        /// the hero's width, and tall for the whole Settings column; Now Playing while Pure plays (crossfeed's row
+        /// inert, "Off in bit-perfect mode"); and "Volume restored" raised.
         case soundFold = "fold"
         case soundPure = "np-pure"
         case volumeRestored = "volume-restored"

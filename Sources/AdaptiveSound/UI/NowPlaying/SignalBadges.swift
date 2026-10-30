@@ -96,9 +96,8 @@ struct SignalBadges: View {
         if let reason = info.pureReason, foldCarries(reason) {
             return reason.detail(in: info, masterGain: masterGain)
         }
-        let measuring = info.foldBadge?.hasSuffix("measuring") == true
         return "This track has more channels than your output, so Enhanced folds it to stereo"
-            + (measuring ? ". It plays quieter until it is measured." : ".")
+            + (info.foldIsMeasuring ? ". It plays quieter until it is measured." : ".")
     }
 
     /// PURE (accent dot, monochrome chip — untouched by the realign) vs ENHANCED: the
