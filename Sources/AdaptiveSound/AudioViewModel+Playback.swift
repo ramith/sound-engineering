@@ -62,7 +62,7 @@ extension AudioViewModel {
             do {
                 // The leveling decision travels with the start (R1.1-B, §S3): LevelingKit's, from what the
                 // prefetch knows — a song it has not looked up yet waits at most 50 ms for it (+Leveling).
-                let leveling = await levelingDecisionForStart(of: startFile, epoch: epoch)
+                let leveling = await levelingDecisionForStart(of: startFile, epoch: epoch, resuming: resumeFrom != nil)
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
                                             startAt: resumeFrom ?? 0, epoch: epoch, leveling: leveling)
                 // A stop, a pause or a newer start asked while this one ran owns the transport now

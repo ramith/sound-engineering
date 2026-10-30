@@ -291,7 +291,49 @@ struct LevelingCoordinatorTests {
         try await player.vm.settled()
         try await until("the resume to land") { player.engine.state.withLock(\.startLevelings).count == 2 }
         #expect(player.engine.state.withLock(\.startLevelings).last == playing.decision)
+        #expect(player.engine.state.withLock(\.startListens) == [.newPlay, .resume], "a resume says so")
         #expect(player.vm.levelingState.playing == playing)
+    }
+}
+
+// MARK: - The listen a start plays (review B2, MEDIUM-1)
+
+extension LevelingCoordinatorTests {
+    @Test("LEVEL-VM-14: Pause → Play after the analysis landed keeps the song's level; Play after Stop decides afresh")
+    func resumeAfterTheAnalysisLandedKeepsTheFirstDecision() async throws {
+        let sources = try Self.sources(analysed: [])
+        let player = try await Self.player(sources: sources)
+        try await player.play(at: 0)
+        try await player.vm.settled()
+        let first = try #require(player.vm.levelingState.playing)
+        #expect(first.decision.source == .unknownCut, "the precondition: an unmeasured first play")
+
+        // The analysis lands mid-song, then the listener pauses and plays on.
+        let record = try LevelingFixture.analysis(Self.key(0), loudness: -12, truePeak: -1)
+        sources.state.withLock { $0.analyses[Self.key(0)] = record }
+        player.vm.scheduleLevelingRefresh()
+        try await player.vm.settled()
+        player.vm.duration = 200
+        player.engineReports(position: 30)
+        try player.tick()
+        player.vm.pause()
+        try await player.vm.settled()
+        player.vm.play()
+        try await player.vm.settled()
+        try await until("the resume to land") { player.engine.state.withLock(\.startLevelings).count == 2 }
+        #expect(player.engine.state.withLock(\.startLevelings).last == first.decision,
+                "the resume moved the level inside the song")
+        #expect(player.engine.state.withLock(\.startListens).last == .resume)
+        #expect(player.vm.levelingState.playing == first)
+
+        // Stop, then Play: a new listen, decided afresh from the analysis.
+        player.vm.stopPlayback()
+        try await player.vm.settled()
+        try await player.play(at: 0)
+        try await player.vm.settled()
+        let replay = try #require(player.engine.state.withLock(\.startLevelings).last)
+        #expect(player.engine.state.withLock(\.startListens).last == .newPlay)
+        #expect(replay.source == .analysis && replay.mode == .leveled, "\(replay.mode) from \(replay.source)")
     }
 }
 

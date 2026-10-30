@@ -16,7 +16,10 @@ import Synchronization
 // lane 2's — `setFoldPlanSink`). When the decision carries the track's saved −ΔL profile (C2), it reaches the
 // effects unit first, so a fresh start of an analysed track never glides. A listener's mode change re-plans the
 // audible track and replaces the armed decision (N11); an output change re-plans protectively with the gain
-// frozen (F5). A resume, a seek or a device move of the same track to the same unit sends nothing (B1).
+// frozen (F5). A start says whether it resumes the listen that was playing (Pause → Play) or begins a new one
+// (`LevelingStart`): a resume of the audible track keeps its plan — the level never steps inside a song — and a new
+// play is planned afresh, the same file too. A seek or a device move re-schedules the track without a start and
+// sends nothing (B1).
 //
 // THE OUTPUT STATE (M2) is assembled by lane 2 on `engineQueue` — at `configureGraphForSource` and at every
 // re-establish — and handed here (`applyOutputState`); its `transportType` is the view model's hand-over
@@ -51,16 +54,19 @@ final class EngineLevelingState: Sendable {
     typealias EffectsDelivery = (Delivery) -> UInt?
 
     /// A request's decision, waiting for its track to become audible, with its saved profiles rebuilt (off any
-    /// seam).
+    /// seam), and whether the request resumes the listen that was playing (a start's `LevelingStart.Listen`; an
+    /// arm never does).
     struct Pending: Sendable {
         let url: URL
         let decision: TrackLevelingDecision
         let saved: [SavedLoudnessProfile]
+        let resumes: Bool
 
-        init(url: URL, decision: TrackLevelingDecision) {
+        init(url: URL, decision: TrackLevelingDecision, resumes: Bool = false) {
             self.url = url
             self.decision = decision
             saved = Self.savedProfiles(of: decision)
+            self.resumes = resumes
         }
 
         /// `decision`'s saved profiles, rebuilt for the engine (the ones that can be).
@@ -72,15 +78,18 @@ final class EngineLevelingState: Sendable {
             self.url = url
             self.decision = decision
             self.saved = saved
+            resumes = false
         }
     }
 
-    /// The audible track: its decision, its plan, the effects unit that has it and its saved profile.
+    /// The audible track: its decision, its plan and the output it was planned against, the effects unit that has
+    /// it, and its saved profile.
     private struct Audible: Sendable {
         let token: UInt64
         var decision: TrackLevelingDecision?
         var plan: AsTrackPlan
-        var deliveredTo: UInt? // the effects AU's address the plan reached (B1 holds per unit)
+        var plannedFor: AsOutputState
+        var deliveredTo: UInt? // the effects AU's address its play reached (B1 holds per unit)
         let savedProfile: SavedLoudnessProfile?
     }
 
@@ -123,37 +132,16 @@ final class EngineLevelingState: Sendable {
         held.withLock { $0.armed = pending }
     }
 
-    /// `url` (token `token`) became audible: plan once and hand the plan to both units (B1). A fresh start of the
-    /// track the effects unit `unit` already has — a resume, a seek, a device move — sends nothing; the same track on
-    /// a new unit (an engine rebuilt) gets its own plan again. Returns whether the track's saved profile went with it.
+    /// `url` (token `token`) became audible: plan once and hand the plan to both units (B1). A start that resumes
+    /// the audible track goes on with its plan (`resume`); any other start, and every seam, is a new play, planned
+    /// afresh — the same file too. Returns whether the track's saved profile is in force (C2).
     func becameAudible(_ url: URL, token: UInt64, gaplessSeam: Bool, unit: UInt?,
                        effects: EffectsDelivery) -> Bool {
         held.withLock { held -> Bool in
-            // A seam plays the armed pick. A fresh start plays its own request — or, when that is not this URL,
-            // the armed pick started fresh (a gapless roll that could not join restarts it through playFile).
-            let matched: Pending?
-            if gaplessSeam {
-                matched = (held.armed?.url == url) ? held.armed : nil
-                held.armed = nil
-            } else if held.start?.url == url {
-                matched = held.start
-                held.start = nil
-            } else {
-                matched = (held.armed?.url == url) ? held.armed : nil
-                if matched != nil {
-                    held.armed = nil
-                }
-                held.start = nil
-            }
-            if !gaplessSeam, var audible = held.audible, audible.token == token {
-                if let unit, audible.deliveredTo == unit {
-                    return audible.savedProfile != nil // B1: the same track on the same unit — nothing to send
-                }
-                audible.deliveredTo = Self.deliver(.init(token: token, event: AsPlanEventFreshStart, plan: audible.plan,
-                                                         continuous: false, saved: audible.savedProfile),
-                                                   held: held, effects: effects)
-                held.audible = audible
-                return audible.savedProfile != nil
+            let matched = Self.takeRequest(for: url, gaplessSeam: gaplessSeam, held: &held)
+            // Token 0 (the file's attributes unreadable) names no track: never "the same one" (N2).
+            if let matched, matched.resumes, let audible = held.audible, audible.token == token, token != 0 {
+                return Self.resume(audible, url: url, unit: unit, held: &held, effects: effects)
             }
             if matched == nil {
                 logUX("leveling: no decision as '\(url.lastPathComponent)' became audible — Off, the fold's "
@@ -168,8 +156,8 @@ final class EngineLevelingState: Sendable {
                                                continuous: matched?.decision.continuousWithPrevious ?? false,
                                                saved: profile),
                                          held: held, effects: effects)
-            held.audible = Audible(token: token, decision: matched?.decision, plan: plan, deliveredTo: delivered,
-                                   savedProfile: profile)
+            held.audible = Audible(token: token, decision: matched?.decision, plan: plan, plannedFor: held.output,
+                                   deliveredTo: delivered, savedProfile: profile)
             logUX("leveling: '\(url.lastPathComponent)' audible (\(gaplessSeam ? "gapless seam" : "fresh start")) — "
                 + Self.describe(plan) + (profile != nil ? ", saved profile" : ""))
             return profile != nil
@@ -184,9 +172,10 @@ final class EngineLevelingState: Sendable {
             if var audible = held.audible {
                 audible.decision = current
                 audible.plan = Self.plan(current, output: held.output, frozen: nil)
-                audible.deliveredTo = Self.deliver(.init(token: audible.token, event: AsPlanEventModeChange,
-                                                         plan: audible.plan, continuous: false, saved: nil),
-                                                   held: held, effects: effects)
+                audible.plannedFor = held.output
+                _ = Self.deliver(.init(token: audible.token, event: AsPlanEventModeChange, plan: audible.plan,
+                                       continuous: false, saved: nil),
+                                 held: held, effects: effects)
                 held.audible = audible
             }
             if let armed = held.armed, let next {
@@ -215,13 +204,61 @@ final class EngineLevelingState: Sendable {
 
     // MARK: Private (inside the lock)
 
+    /// The request `url` plays, taken from where it waits. A seam plays the armed pick. A fresh start plays its own
+    /// request — or, when that is not this URL, the armed pick started fresh (a gapless roll that could not join
+    /// restarts it through playFile).
+    private static func takeRequest(for url: URL, gaplessSeam: Bool, held: inout Held) -> Pending? {
+        if gaplessSeam {
+            defer { held.armed = nil }
+            return (held.armed?.url == url) ? held.armed : nil
+        }
+        defer { held.start = nil }
+        if held.start?.url == url {
+            return held.start
+        }
+        guard held.armed?.url == url else { return nil }
+        defer { held.armed = nil }
+        return held.armed
+    }
+
+    /// A start resumed the audible track `url` (B2): the same listen goes on at the level it plays at, so its plan
+    /// stays, whatever decision the resume carries. The graph's configure has just set the fold back to the
+    /// layout's (its worst-case trim), so the fold gets the plan's half again — snapped, as the stream starts
+    /// again. An output that changed meanwhile re-plans protectively first (F5); another effects unit (an engine
+    /// rebuilt) gets the whole plan. Returns whether the track's saved profile is in force.
+    private static func resume(_ audible: Audible, url: URL, unit: UInt?, held: inout Held,
+                               effects: EffectsDelivery) -> Bool {
+        var audible = audible
+        let outputChanged = !audible.plannedFor.isSame(as: held.output)
+        if outputChanged {
+            audible.plan = plan(audible.decision, output: held.output, frozen: audible.plan)
+            audible.plannedFor = held.output
+        }
+        if let unit, audible.deliveredTo == unit {
+            if outputChanged {
+                _ = effects(.init(token: audible.token, event: AsPlanEventOutputChange, plan: audible.plan,
+                                  continuous: false, saved: nil))
+            }
+            held.foldPlanSink?(audible.plan, held.output, AsPlanEventFreshStart)
+        } else {
+            audible.deliveredTo = deliver(.init(token: audible.token, event: AsPlanEventFreshStart, plan: audible.plan,
+                                                continuous: false, saved: audible.savedProfile),
+                                          held: held, effects: effects)
+        }
+        held.audible = audible
+        logUX("leveling: '\(url.lastPathComponent)' resumed — its plan stays: " + describe(audible.plan))
+        return audible.savedProfile != nil
+    }
+
     /// The protective re-plan of the audible track against the output now held (F5): g and the LFE variant frozen.
+    /// The unit that has the track's play keeps it (N3: an output change is not a play).
     private static func replanForOutput(_ held: inout Held, effects: EffectsDelivery) {
         guard var audible = held.audible else { return }
         audible.plan = plan(audible.decision, output: held.output, frozen: audible.plan)
-        audible.deliveredTo = deliver(.init(token: audible.token, event: AsPlanEventOutputChange, plan: audible.plan,
-                                            continuous: false, saved: nil),
-                                      held: held, effects: effects)
+        audible.plannedFor = held.output
+        _ = deliver(.init(token: audible.token, event: AsPlanEventOutputChange, plan: audible.plan, continuous: false,
+                          saved: nil),
+                    held: held, effects: effects)
         held.audible = audible
         logUX("leveling: the output changed — re-planned protectively: " + describe(audible.plan))
     }
@@ -404,10 +441,12 @@ extension AudioEngineBridge {
 
     // MARK: The requests and audibility (+Playback, +Gapless, +TrackLoudness)
 
-    /// A start's decision, kept for its track's audibility (`engineQueue`, before `playFile`). A Pure start keeps
-    /// none: leveling in Pure is deferred (record decision 1).
-    func holdStartDecision(_ decision: TrackLevelingDecision?, for url: URL) {
-        leveling.holdStart(decision.map { EngineLevelingState.Pending(url: url, decision: $0) })
+    /// A start's decision and listen, kept for its track's audibility (`engineQueue`, before `playFile`). A Pure
+    /// start keeps none: leveling in Pure is deferred (record decision 1).
+    func holdStartDecision(_ start: LevelingStart?, for url: URL) {
+        leveling.holdStart(start.map {
+            EngineLevelingState.Pending(url: url, decision: $0.decision, resumes: $0.listen == .resume)
+        })
     }
 
     /// The pick armed for the gapless seam, with its decision (`resampleQueue`, beside `onDeckURL`, so the seam reads
