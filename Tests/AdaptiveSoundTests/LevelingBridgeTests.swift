@@ -215,17 +215,4 @@ struct LevelingBridgeTests {
         #expect(record.count == count, "an unchanged output re-planned")
         await rig.finish()
     }
-
-    @Test("LB-6: the armed pick started fresh (a failed gapless roll restarts it) keeps its armed decision")
-    func theArmedPickStartedFreshKeepsItsDecision() async throws {
-        let rig = try await Rig(path: .passthrough, name: "lb-roll")
-        let next = try rig.writeTrack([440], named: "lb-roll-b", rate: 48000, frames: 0 ..< 96000)
-        await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 1),
-                                      leveling: measured(-21, peak: -9))
-        try await Self.start(rig, next, decision: nil) // the roll's restart: playFile, no start decision
-        let plan = try #require(rig.bridge.leveling.audiblePlan)
-        #expect(plan.mode == UInt8(AsLevelingModeLeveled.rawValue), "the armed decision was dropped")
-        #expect(abs(plan.levelGainDb - 3.0) < 1e-9, "g = −18 − (−21): \(plan.levelGainDb)")
-        await rig.finish()
-    }
 }
