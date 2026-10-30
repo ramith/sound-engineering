@@ -49,6 +49,7 @@
 
 #include "../EQ/GraphicEQDesigner.h"
 #include "../include/TrackPlanBridge.h"
+#include "../Planning/TrackPlan.h"
 #include "TrackLoudnessProfile.h"
 #include <array>
 #include <cstddef>
@@ -69,9 +70,10 @@ namespace AdaptiveSound
         };
 
         static constexpr float kFreshStartRampSeconds = 0.001F;
-        static constexpr float kTrackChangeRampSeconds = 0.010F;
-        static constexpr float kModeChangeRampSeconds = 0.15F;
-        static constexpr float kOutputChangeRampSeconds = 0.010F;
+        // The plan events' glides: the spatial unit's own (planGlideSeconds), so both units move alike.
+        static constexpr float kTrackChangeRampSeconds = planGlideSeconds(AsPlanEventGaplessSeam);
+        static constexpr float kModeChangeRampSeconds = planGlideSeconds(AsPlanEventModeChange);
+        static constexpr float kOutputChangeRampSeconds = planGlideSeconds(AsPlanEventOutputChange);
         static constexpr float kArrivalRampSeconds = 0.5F;
         static constexpr float kRefineRampSeconds = 2.0F;
         static constexpr float kRefreshRampSeconds = 0.15F;
