@@ -125,6 +125,7 @@ extension AudioViewModel {
         // SQLite write lands.
         persistQueueCursor()
         settingsStore.flush() // a change made in the quit's own turn is written too
+        levelingState.scheduler?.stop() // no album analysis starts while the store and the engine tear down
         await mirrorQueueNow()
         // Stop the transport tick FIRST so no further tick is scheduled (it polls the engine and could
         // otherwise touch handles we're about to tear down); disarmed, the stop below starts none.

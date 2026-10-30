@@ -116,7 +116,7 @@ enum LevelingFixture {
             "headBlockLufs": head ?? none, "tailBlockLufs": tail ?? none, "folds": surround,
             "foldedLufs": folded, "foldedTruePeakDbtp": foldedPeaks, "lfe": lfe,
             "histograms": [[Any]](repeating: [], count: Int(AS_PROFILE_BASES)),
-            "profiles": [Any](repeating: none, count: Int(AS_PROFILE_BASES)), "analysedAt": 0.0,
+            "profiles": [Any](repeating: none, count: Int(AS_PROFILE_BASES)),
         ]
         return try JSONDecoder().decode(TrackAnalysis.self, from: JSONSerialization.data(withJSONObject: object))
     }

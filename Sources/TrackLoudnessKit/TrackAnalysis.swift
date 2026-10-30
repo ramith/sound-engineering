@@ -45,13 +45,6 @@ public struct TrackAnalysis: Codable, Sendable, Equatable {
         public var blockCount: Int
         public var blockStrideHops: Int
         public var powers: [UInt16]
-
-        /// The C form `asLoudnessProfileFromCompact` reads.
-        public var info: AsCompactProfileInfo {
-            AsCompactProfileInfo(sampleRate: sampleRate, bandsPerOctave: UInt32(clamping: bandsPerOctave),
-                                 bandCount: UInt32(clamping: bandCount), blockCount: UInt32(clamping: blockCount),
-                                 blockStrideHops: UInt32(clamping: blockStrideHops))
-        }
     }
 
     /// `AS_TRACK_ANALYSIS_VERSION` when measured.
@@ -79,13 +72,11 @@ public struct TrackAnalysis: Codable, Sendable, Equatable {
     /// Per basis (`AS_PROFILE_BASES`): the histogram's non-empty bins, and the persisted profile.
     public var histograms: [[LoudnessBin]]
     public var profiles: [Profile?]
-    public var analysedAt: Date
 }
 
 extension TrackAnalysis {
     /// The mirror of a finished analysis (`analysis`), with what the analyzer holds beside it.
-    init(_ analysis: AsTrackAnalysis, analyzer: OpaquePointer, identity: TrackIdentity, sourceRateHz: Double,
-         analysedAt: Date) {
+    init(_ analysis: AsTrackAnalysis, analyzer: OpaquePointer, identity: TrackIdentity, sourceRateHz: Double) {
         let channels = Int(analysis.channelCount)
         let bases = Int(AS_PROFILE_BASES)
         self.init(version: Int(analysis.version), identity: identity, channelCount: channels,
@@ -102,8 +93,7 @@ extension TrackAnalysis {
                       .map(Self.measured),
                   lfe: LfeStatistics(analysis.lfe),
                   histograms: (0 ..< bases).map { Self.histogram(analyzer, basis: UInt8($0)) },
-                  profiles: (0 ..< bases).map { Self.profile(analyzer, basis: UInt8($0)) },
-                  analysedAt: analysedAt)
+                  profiles: (0 ..< bases).map { Self.profile(analyzer, basis: UInt8($0)) })
     }
 
     private static func measured(_ value: Double) -> Double? {
