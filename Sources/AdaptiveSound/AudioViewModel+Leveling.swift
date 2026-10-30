@@ -113,12 +113,16 @@ extension AudioViewModel {
         let upcoming = upcomingLevelingSlots()
         let generation = levelingState.beginRefresh()
         let knowledge = await LevelingLoad(sources: sources, previous: levelingState.knowledge)
-            .horizon(upcoming, profilesFor: Set(upcoming.prefix(2).map(\.key)))
+            .horizon(upcoming, profilesFor: Set(upcoming.prefix(Self.profiledAhead).map(\.key)))
         guard levelingState.isNewest(generation) else { return }
         levelingState.knowledge = knowledge
         levelingState.scheduler?.setHorizon(knowledge.jobs)
         rearmIfTheArmedDecisionChanged()
     }
+
+    /// How many songs from the selected one have their saved profiles in memory: the song playing, the pick armed
+    /// after it, and the pick armed at the seam after that — so a seam's arm never goes without them.
+    static let profiledAhead = 3
 
     /// The play order from the selected song, each slot once, as far as it goes (`limit`): the queue's order, or
     /// shuffle's pass; Repeat All's wrap until a slot comes round again; Repeat One the song alone.
@@ -157,15 +161,16 @@ extension AudioViewModel {
 
     /// The decision the start numbered `epoch` carries for `file`. A resume, a device move or a restart of the song
     /// playing carries the decision it plays with (the engine keeps that plan: B1). Another song: looked up first if
-    /// the prefetch has not yet (`waitForStartLookup`, at most 50 ms), then decided between the song heard before it
-    /// and the next. Kept as the song playing's only while the start is still the newest.
+    /// the prefetch has not — its record, and its saved profiles if it has one (`waitForStartLookup`, at most 50 ms)
+    /// — then decided between the song heard before it and the next. Kept as the song playing's only while the
+    /// start is still the newest.
     func levelingDecisionForStart(of file: AudioFile, epoch: UInt64) async -> TrackLevelingDecision {
         let slot = levelingSlot(file)
         levelingState.armed = nil // a start begins a new playback: the engine drops the armed pick
         if let playing = levelingState.playing, playing.key == slot.key {
             return playing.decision
         }
-        if !levelingState.knowledge.resolved.contains(slot.key), let sources = levelingSources {
+        if !levelingState.knowledge.isReadyToStart(slot.key), let sources = levelingSources {
             await waitForStartLookup(slot, sources: sources)
         }
         let previous = levelingState.playing?.key
