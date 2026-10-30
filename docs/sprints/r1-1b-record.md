@@ -43,6 +43,19 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
 - **In Track mode, a run of songs that join without a pause shares the level of the run's own loudest member**, not
   the whole album's (asked when lane 3 sized and found backlog item 7 and plan check §6 disagreeing). When the run
   is the whole album the two are the same; the level never steps mid-music either way.
+- **Only silence is a gap (2026-10-30):** two songs are continuous unless the edge between them is near-silent (below
+  −70 LUFS, BS.1770's silence gate), replacing the design's −50 LUFS. On the founder's live show, applause and room
+  sound ran through 3 of 4 pauses, and at −50 the level stepped 6.9 dB inside the applause at 34:15 (lane 3-A, corpus
+  9i). Two separate recordings with room sound at their edges now join one run (0 dB change on the corpus album 9g).
+- **The first play of an unmeasured surround track may be ~10.5 dB under its measured level on Bluetooth
+  (2026-10-30)**, not the "~9 dB" first stated: the safe trim also covers Bluetooth's headroom, and the limiter never
+  acts. Exact from the second play.
+- **Next on a shuffle pass's last song with Repeat off** stays enabled but does nothing (the design's rule). Logged as
+  polish (KI), no change to PR 1.
+- **Coordinator, on lane 3-A's report:** the scheduler's QoS rule is kept (due within 10 min → `.utility`; further
+  ahead → `.background` if it still finishes in time, else `.utility`; one job below 2× real time). Measured: no
+  playback, UI or resampler deadline misses with two DXD analyses at `.utility`; a 4-album horizon, hi-res included,
+  done in 314 s. A gain tag implying a loudness outside −70…0 LUFS is ignored, and tags never raise a track.
 
 **Test data — the founder, 2026-10-28:** the sprint proceeds on the test corpus as it stands; the gaps are recorded
 below ([Test material](#test-material)), and the founder supplies the missing data later. No lane waits for data.
