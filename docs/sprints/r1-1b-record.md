@@ -52,6 +52,16 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
   acts. Exact from the second play.
 - **Next on a shuffle pass's last song with Repeat off** stays enabled but does nothing (the design's rule). Logged as
   polish (KI), no change to PR 1.
+- **The sound UI (2026-10-30, after the SwiftUI review):**
+  - Leveling stays second in Settings, after Output Device.
+  - On a folded file with Pure asked for, Now Playing shows the "5.1 → stereo" badge, not a second "Pure off:
+    channels" chip (once the badge row's overflow is fixed).
+  - **All EQ editing is inactive in Pure**: the graph, presets, Reset and Save as well as the switch and Tone.
+    Nothing you can't hear can be changed, and the switch never flips by itself.
+  - The shared note reads **"Off in bit-perfect mode"** (was "Not in bit-perfect mode", which read as "Pure is off").
+  - **VoiceOver keeps an inactive control's value and gives the state as a hint** ("Leveling, Auto, dimmed" + "Off
+    in bit-perfect mode"); US-R1F-20's VoiceOver line changes with it.
+  - Coordinator: the EQ strip's "Open Settings" is aligned on "Leave Pure" (one name for one action).
 - **Coordinator, on lane 3-A's report:** the scheduler's QoS rule is kept (due within 10 min → `.utility`; further
   ahead → `.background` if it still finishes in time, else `.utility`; one job below 2× real time). Measured: no
   playback, UI or resampler deadline misses with two DXD analyses at `.utility`; a 4-album horizon, hi-res included,
