@@ -239,6 +239,20 @@ final class AudioViewModel {
         crossfeedEnabled && deviceIsHeadphones
     }
 
+    /// Leveling (R1.1-B, US-R1F-10): Off / Auto / Album / Track, Off on a new install (FD-2), kept across launches.
+    /// A change applies to the song playing at once, gliding — the listener's own act (`+Leveling`).
+    var leveling: LevelingSetting = .off {
+        didSet {
+            levelingChanged(from: oldValue)
+            rememberListeningSettings()
+        }
+    }
+
+    /// The leveling coordinator's state (`+Leveling`); observable on its own.
+    @ObservationIgnored let levelingState = LevelingState()
+    /// "Volume restored" (US-R1F-20 item 4): leaving Pure gave the device back another level (`+BitPerfectRows`).
+    @ObservationIgnored let volumeRestoredToast = ShellToastSlot(lifetime: .seconds(3))
+
     /// `true` when the selected output device is a headphone-class device (`isHeadphones`).
     var deviceIsHeadphones: Bool {
         Self.isHeadphones(selectedDevice)
@@ -441,6 +455,7 @@ final class AudioViewModel {
         queueStateWriter = CoalescingWriter { _, _ in await model?.writeQueueState() }
         model = self
         restoreListeningSettings()
+        startLevelingCoordination() // follows the queue; hears Pure give a device's volume back (+Leveling)
     }
 
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in

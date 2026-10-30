@@ -64,6 +64,9 @@ struct AdaptiveSound: App {
         // Edge 3 (S10.2 2c): when the store finishes building, restore the persistent queue
         // (RESTORE-PAUSED). Same one-directional hook pattern as `onError` — no back-reference.
         lib.onStoreReady = { [weak audio] in audio?.hydrateQueueOnLaunch() }
+        // Edge 6 (R1.1-B): the track-analysis store beside the library (`track-analysis.sqlite3`), opened once and
+        // off main — leveling reads it, its scheduler fills it for the queue's horizon (+Leveling).
+        audio.openLevelingAnalysis(in: location.directory)
         _audioViewModel = State(initialValue: audio)
         _library = State(initialValue: lib)
         let eq = EQViewModel(audioViewModel: audio, defaults: location.defaults)

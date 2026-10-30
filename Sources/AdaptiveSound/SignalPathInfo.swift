@@ -120,6 +120,11 @@ struct SignalPathInfo: Equatable {
     /// it from the unit's atomics; it is never stored.
     var fold: FoldState?
 
+    /// The song playing's leveling plan as the engine made it (R1.1-B, lane 3-B): the Settings row's "This song"
+    /// line and the fold badge's "· measuring". `nil` on Pure and before any plan. `snapshot()` reads it; it is
+    /// never stored.
+    var leveling: LevelingReadout?
+
     // MARK: - Enhancement overlay (F4 — copied from the VM: `refreshSignalPathIntents`, the tick)
 
     /// Current Reimagine intensity in [0, 1], copied from `AudioViewModel.intensity` each tick.
