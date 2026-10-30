@@ -1,22 +1,11 @@
-// LevelingSetting — Leveling as the listener chooses it (R1.1-B, US-R1F-10 item 1): the value
-// `ListeningSettings` keeps and reads back. The app maps it to the leveling rules' scope (LevelingKit) when it
-// builds each track's decision (`AudioViewModel+Leveling`); a value this build can't read is Off.
+// LevelingSetting — Leveling as the listener chooses it (R1.1-B, US-R1F-10 item 1): the value `ListeningSettings`
+// keeps and reads back. It is the leveling rules' own mode (LevelingKit's `LevelingMode`, which the decision builder
+// reads), not a second enum mapped onto it (review N6): one set of cases, stored by its raw value — a word, so
+// reordering the cases can never change what a stored setting reads as; a value this build can't read is Off
+// (`ListeningSettings.init(from:)`).
 
-/// Leveling: whether the app evens out track levels, and over what. Off is the faithful default (FD-2): the
-/// music plays as recorded. The raw value is what is stored — a word, so reordering the cases can never change
-/// what a stored setting reads as.
-public enum LevelingSetting: String, CaseIterable, Identifiable, Sendable {
-    /// No leveling gain: the music as recorded.
-    case off
-    /// The album's level when the song beside it — the one just played, or the next — is from the same album;
-    /// else the song's own.
-    case auto
-    /// Every song at its album's level.
-    case album
-    /// Every song at its own level (a run of songs that join without a pause shares one).
-    case track
+import LevelingKit
 
-    public var id: String {
-        rawValue
-    }
-}
+/// Leveling: whether the app evens out track levels, and over what — Off (the faithful default, FD-2), Auto, Album,
+/// Track. The settings' name for LevelingKit's `LevelingMode`.
+public typealias LevelingSetting = LevelingMode

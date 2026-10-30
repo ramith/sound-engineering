@@ -1,6 +1,5 @@
 import AudioDSP
 import LevelingKit
-import SettingsKit
 import TrackLoudnessKit
 
 // MARK: - The leveling boundary (R1.1-B W5, lane 3-B; level-and-fold §S3)
@@ -75,17 +74,5 @@ extension GainTags {
         self.init(replayGainTrack: tags.replayGainTrack, replayGainTrackPeak: tags.replayGainTrackPeak,
                   replayGainAlbum: tags.replayGainAlbum, replayGainAlbumPeak: tags.replayGainAlbumPeak,
                   r128Track: tags.r128Track, r128Album: tags.r128Album)
-    }
-}
-
-extension LevelingMode {
-    /// The Kit's mode for the listener's setting (`ListeningSettings.leveling`): the same four, by name.
-    init(_ setting: LevelingSetting) {
-        self = switch setting {
-        case .off: .off
-        case .auto: .auto
-        case .album: .album
-        case .track: .track
-        }
     }
 }

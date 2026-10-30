@@ -28,11 +28,6 @@ import TrackLoudnessKit
 
 @MainActor
 extension AudioViewModel {
-    /// The Kit's mode for the listener's setting.
-    var levelingMode: LevelingMode {
-        LevelingMode(leveling)
-    }
-
     // MARK: - Setting up
 
     /// At init: follow the queue for the horizon, and hear Pure give a device's volume back ("Volume restored").
@@ -187,7 +182,7 @@ extension AudioViewModel {
             levelingState.playing?.key
         }
         let decision = levelingState.knowledge.library.decision(for: LevelingRequest(
-            key: slot.key, mode: levelingMode, previous: previous, next: next?.key, atSeam: false
+            key: slot.key, mode: leveling, previous: previous, next: next?.key, atSeam: false
         ))
         if transportCommand == .start(epoch) {
             levelingState.play(.init(url: slot.url, decision: decision, atSeam: false, previous: previous))
@@ -240,7 +235,7 @@ extension AudioViewModel {
     private func armedDecision(for slot: LevelingSlot, at index: Int) -> LevelingState.Sent {
         let playing = levelingState.playing
         let decision = levelingState.knowledge.library.decision(for: LevelingRequest(
-            key: slot.key, mode: levelingMode, previous: playing?.key, next: levelingSlot(after: index)?.key,
+            key: slot.key, mode: leveling, previous: playing?.key, next: levelingSlot(after: index)?.key,
             atSeam: true, previousDecision: playing?.decision
         ))
         return .init(url: slot.url, decision: decision, atSeam: true, previous: playing?.key)
@@ -295,10 +290,10 @@ extension AudioViewModel {
         guard let playing = levelingState.playing, signalPath.path != .pure else { return }
         let library = levelingState.knowledge.library
         let previousDecision = playing.previous.map { previous in
-            library.decision(for: LevelingRequest(key: previous, mode: levelingMode, next: playing.key))
+            library.decision(for: LevelingRequest(key: previous, mode: leveling, next: playing.key))
         }
         let current = library.decision(for: LevelingRequest(
-            key: playing.key, mode: levelingMode, previous: playing.previous,
+            key: playing.key, mode: leveling, previous: playing.previous,
             next: selectedTrackIndex.flatMap { levelingSlot(after: $0) }?.key,
             atSeam: playing.atSeam, previousDecision: playing.atSeam ? previousDecision : nil
         ))

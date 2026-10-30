@@ -8,8 +8,9 @@
 
 import Foundation
 
-/// The listener's Leveling setting (US-R1F-10 item 1). Off is the faithful default (FD-2). The raw values are the
-/// setting's stored form.
+/// The listener's Leveling setting (US-R1F-10 item 1), as the rules read it and the settings keep it (SettingsKit's
+/// `LevelingSetting` is this enum: one rule, one enum — review N6). Off is the faithful default (FD-2): the music
+/// plays as recorded. The raw values are the setting's stored form.
 public enum LevelingMode: String, Sendable, CaseIterable {
     /// No leveling gain. The fold's trim still applies (a surround file on a stereo output), so an Off decision
     /// still carries the track's measured peaks.
