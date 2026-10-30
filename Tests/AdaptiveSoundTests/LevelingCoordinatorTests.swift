@@ -271,6 +271,16 @@ struct LevelingCoordinatorTests {
         #expect(player.vm.levelingState.knowledge.library.tracks[Self.key(9)]?.album == nil, "a loose file: no album")
     }
 
+    @Test("LEVEL-VM-12: an album's job measures from the song about to play, then on, then the songs before it")
+    func albumJobStartsAtTheSongPlaying() async throws {
+        let player = try await Self.player(sources: Self.sources(analysed: []))
+        try await player.play(at: 1)
+        try await player.vm.settled()
+        let job = try #require(player.vm.levelingState.knowledge.jobs.first { $0.id == "album 7" })
+        #expect(job.files == [track(1), track(2), track(0)], "\(job.files.map(\.lastPathComponent))")
+        #expect(job.startsIn == 0, "it plays now")
+    }
+
     @Test("LEVEL-VM-09: a resume of the song playing carries the decision it plays with — no lookup, no new decision")
     func resumeKeepsTheDecision() async throws {
         let player = try await Self.player(sources: Self.sources())
@@ -297,6 +307,32 @@ struct LevelingBoundaryTests {
         first.settingsStore.flush()
         let second = AudioViewModel(defaults: world.defaults, engine: FakeEngine())
         #expect(second.leveling == .auto)
+    }
+
+    @Test("LEVEL-VM-13: a start is ready with its record, album, profiles and next song; a merge keeps profiles")
+    func readinessAndMerge() throws {
+        let measured = try LevelingFixture.analysis("/m/a.flac", loudness: -12, truePeak: -1).levelingMeasurement()
+        var knowledge = LevelingKnowledge()
+        #expect(!knowledge.isReadyToStart("/m/a.flac", next: nil), "not looked up")
+        knowledge.library.tracks["/m/a.flac"] = LevelingTrack(album: 7, measurement: measured)
+        knowledge.resolved = ["/m/a.flac"]
+        #expect(!knowledge.isReadyToStart("/m/a.flac", next: nil), "its album's members unknown")
+        knowledge.library.albums[7] = ["/m/a.flac"]
+        #expect(!knowledge.isReadyToStart("/m/a.flac", next: nil), "analysed, its profiles not looked up")
+        knowledge.profiled = ["/m/a.flac"]
+        #expect(knowledge.isReadyToStart("/m/a.flac", next: nil))
+        #expect(!knowledge.isReadyToStart("/m/a.flac", next: "/m/b.flac"), "the next song not looked up")
+
+        var withProfiles = measured
+        withProfiles.profiles = try [LevelingFixture.profile().compact(basis: .decoded)]
+        knowledge.library.tracks["/m/a.flac"]?.measurement = withProfiles
+        var lookup = LevelingKnowledge()
+        lookup.library.tracks["/m/a.flac"] = LevelingTrack(album: 7, measurement: measured) // a member, no profiles
+        lookup.library.tracks["/m/b.flac"] = LevelingTrack(album: nil)
+        lookup.resolved = ["/m/a.flac", "/m/b.flac"]
+        knowledge.merge(lookup)
+        #expect(knowledge.library.tracks["/m/a.flac"]?.measurement?.profiles.count == 1, "the profiles are kept")
+        #expect(knowledge.isReadyToStart("/m/a.flac", next: "/m/b.flac"))
     }
 
     @Test("LEVEL-VM-11: the boundary — the record's numbers, the LFE rule's verdict, the profiles' bases, the tags")

@@ -170,11 +170,11 @@ extension AudioViewModel {
         if let playing = levelingState.playing, playing.key == slot.key {
             return playing.decision
         }
-        if !levelingState.knowledge.isReadyToStart(slot.key), let sources = levelingSources {
-            await waitForStartLookup(slot, sources: sources)
+        let next = selectedTrackIndex.flatMap { levelingSlot(after: $0) }
+        if !levelingState.knowledge.isReadyToStart(slot.key, next: next?.key), let sources = levelingSources {
+            await waitForStartLookup(slot, next: next, sources: sources)
         }
         let previous = levelingState.playing?.key
-        let next = selectedTrackIndex.flatMap { levelingSlot(after: $0) }
         let decision = levelingState.knowledge.library.decision(for: LevelingRequest(
             key: slot.key, mode: levelingMode, previous: previous, next: next?.key, atSeam: false
         ))
@@ -188,11 +188,11 @@ extension AudioViewModel {
     /// Look `slot` up alone and wait for it at most `LevelingState.startWait`. A lookup still running then lands
     /// when it finishes, for the next request; the start goes on with what is known — never waiting for it (a race,
     /// not a task group: a group would wait for its slower child).
-    private func waitForStartLookup(_ slot: LevelingSlot, sources: any LevelingSources) async {
+    private func waitForStartLookup(_ slot: LevelingSlot, next: LevelingSlot?, sources: any LevelingSources) async {
         let previous = levelingState.knowledge
         let race = FirstOf()
         work.spawn { [self] in
-            let found = await LevelingLoad(sources: sources, previous: previous).single(slot)
+            let found = await LevelingLoad(sources: sources, previous: previous).single(slot, next: next)
             levelingState.knowledge.merge(found)
             race.finish(true)
         }
@@ -243,15 +243,15 @@ extension AudioViewModel {
     }
 
     /// The armed pick's analysis (or its album's) landed after it was armed: re-arm it with the new decision, so it
-    /// takes effect at the next song — only while the song playing has more than `rearmMargin` left and no seam
-    /// has gone by unseen, so the re-arm can never land after the seam it is for. On Enhanced only (Pure ignores
-    /// leveling).
+    /// takes effect at the next song — only while the on-deck is the view model's to keep (a song plays, or a
+    /// start's prime armed it: `onDeckIsLive`, the queue edits' rule), the song playing has more than `rearmMargin`
+    /// left and no seam has gone by unseen, so the re-arm can never land after the seam it is for. On Enhanced only
+    /// (Pure ignores leveling).
     func rearmIfTheArmedDecisionChanged() {
         promoteArmedPickIfItBecameAudible()
         guard let armed = levelingState.armed, let index = pendingNextIndex, index < queue.count,
               levelingSlot(queue[index].file).key == armed.key,
-              isPlaying, transportCommand == nil, signalPath.path == .enhanced,
-              duration - playbackPosition > Self.rearmMargin,
+              onDeckIsLive, signalPath.path == .enhanced, playingRemaining > Self.rearmMargin,
               engine.snapshot().transport.transitionCount == lastTransitionCount else { return }
         let fresh = armedDecision(for: levelingSlot(queue[index].file), at: index)
         guard fresh.decision != armed.decision else { return }
@@ -262,6 +262,14 @@ extension AudioViewModel {
 
     /// How much of the song playing must be left for a re-arm (seconds).
     static let rearmMargin = 5.0
+
+    /// What is left of the song playing (seconds): by the engine's length, or — before it is read, at a fresh
+    /// start — the scan's; 0 when neither is known (no re-arm then).
+    private var playingRemaining: Double {
+        let scanned = selectedTrackIndex.flatMap { $0 < queue.count ? queue[$0].file.durationSeconds : nil } ?? 0
+        let length = duration > 0 ? duration : scanned
+        return length > 0 ? length - playbackPosition : 0
+    }
 
     // MARK: - The listener's mode change
 
