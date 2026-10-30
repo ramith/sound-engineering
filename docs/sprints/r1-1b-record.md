@@ -66,6 +66,16 @@ The full draft — seams S1–S5 with signatures, the Kit per rule, one owner pe
   ahead → `.background` if it still finishes in time, else `.utility`; one job below 2× real time). Measured: no
   playback, UI or resampler deadline misses with two DXD analyses at `.utility`; a 4-album horizon, hi-res included,
   done in 314 s. A gain tag implying a loudness outside −70…0 LUFS is ignored, and tags never raise a track.
+- **A song that can't be played is skipped (2026-10-30, after the break-it's LOW-4):** the banner says why, and
+  playback moves on to the next song, whether Play was pressed on it or the queue reached it. The song stays in the
+  queue, unmarked. If no song left can play (one full pass fails, under Repeat All and in shuffle too), playback
+  stops with the message. Before, the queue stopped at the broken song.
+- **Coordinator, on the break-it (2026-10-30):**
+  - **A resume keeps the song's level; a new play decides it again.** Pause → Play continues the same listen, so the
+    level never steps mid-song, even when the analysis landed during the pause. Play after Stop, after the queue
+    ended, Previous restarting the song, or Repeat One is a new listen, and takes the measured level.
+  - **In shuffle every song plays at its own level, in Auto and in Track mode.** A run shares its loudest member's
+    level only between songs that join without a pause in play order; shuffled songs never join.
 
 **Test data — the founder, 2026-10-28:** the sprint proceeds on the test corpus as it stands; the gaps are recorded
 below ([Test material](#test-material)), and the founder supplies the missing data later. No lane waits for data.
