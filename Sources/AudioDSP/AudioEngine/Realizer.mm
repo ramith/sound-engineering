@@ -297,7 +297,7 @@ void Realizer::setOutputTransport(uint32_t transportType)
 
 void Realizer::applyTrackPlan(uint64_t token, AsPlanEvent event, const AsTrackPlan& plan, bool continuousWithPrevious)
 {
-    postWeak(queue_, weak_from_this(), [token, event, plan, continuousWithPrevious](Realizer& self) {
+    const auto apply = [token, event, plan, continuousWithPrevious](Realizer& self) {
         if (const auto change = self.loudness_.onPlan(token, event, plan, continuousWithPrevious))
         {
             self.applyGainChange(*change);
@@ -321,7 +321,19 @@ void Realizer::applyTrackPlan(uint64_t token, AsPlanEvent event, const AsTrackPl
                                  self.loudness_.sharesGroupGain() ? ", G shared by the gapless group" : "");
         // A new play: any estimate starts over. A mode or output change keeps the track's.
         self.syncCausalEstimate(event == AsPlanEventFreshStart || event == AsPlanEventGaplessSeam);
-    });
+    };
+    // A fresh start's gain is in place before the bridge schedules its first audio (review N4), as the fold's is;
+    // a mode change's glide starts in the render block the fold's does (N16). Both apply on the queue before this
+    // returns — their callers are the bridge's start and mode-change queues, never the main thread or a seam. A
+    // seam's plan and an output change's (from any thread, the main one too) are posted.
+    if (event == AsPlanEventFreshStart || event == AsPlanEventModeChange)
+    {
+        runOnQueue([this, &apply] { apply(*this); });
+    }
+    else
+    {
+        postWeak(queue_, weak_from_this(), apply);
+    }
 }
 
 void Realizer::reinitializeKernel(uint32_t sampleRate, uint32_t maxFrames)

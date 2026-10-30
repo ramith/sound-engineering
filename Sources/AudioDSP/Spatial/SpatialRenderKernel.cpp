@@ -23,7 +23,6 @@ namespace AdaptiveSound
     namespace
     {
         constexpr float kDbScale = 20.0F;
-        constexpr float kDbBase = 10.0F;
 
         // The meter reads a sample's applied gain only where the limiter's input is above this
         // (−120 dBFS): below it the ratio of two tiny floats is noise, not a gain.
@@ -32,9 +31,20 @@ namespace AdaptiveSound
         // The two output rows of the fold: L′ and R′.
         constexpr uint32_t kFoldRows = 2U;
 
-        [[nodiscard]] auto linearFromDb(float decibels) noexcept -> float
+        // dB → amplitude in double, as EQModule turns its output gain (e^(dB · ln10 / 20)).
+        constexpr double kDbToNeper = 0.11512925464970228;
+
+        [[nodiscard]] auto amplitudeFromDb(double decibels) noexcept -> double
         {
-            return std::pow(kDbBase, decibels / kDbScale);
+            return std::exp(decibels * kDbToNeper);
+        }
+
+        // A glide lands on its set once within this relative distance of it (EQModule's settle rule).
+        constexpr double kSettleRelative = 1e-9;
+
+        [[nodiscard]] auto settled(double value, double target) noexcept -> bool
+        {
+            return std::abs(value - target) <= kSettleRelative * (1.0 + std::abs(target));
         }
 
         // LimiterModule::initialize's look-ahead in frames at `sampleRate`, the same expression, so the
@@ -227,45 +237,38 @@ namespace AdaptiveSound
         needsSnap_ = false;
         haveFold_ = true;
 
-        const uint32_t glided = mixRamped(input, output, frames);
+        const uint32_t glided = mixGliding(input, output, frames);
         mixSteady(input, output, glided, frames);
         zeroOutputChannels(output, kFoldRows, vLen);
         runBackstop(output, frames);
     }
 
-    // Take `fold` as the fold in force: its coefficients (rows × trim) as the target, reached at once
-    // (`snap`, or a zero glide) or by a linear per-sample glide; its ceiling for the backstop; and a
-    // fresh gain-reduction peak for the read-out.
+    // Take `fold` as the fold in force: its rows and trim as the set, reached at once (`snap`, or a zero
+    // glide) or by a one-pole per sample at τ = its `glideSeconds`, as the effects unit's gain moves; its ceiling
+    // for the backstop; and a fresh gain-reduction peak for the read-out.
     auto SpatialRenderKernel::adoptFold(const FoldParams& fold, bool snap) noexcept -> void
     {
-        const float trim = linearFromDb(std::min(fold.trimDb, 0.0F));
         for (uint32_t row = 0U; row < kFoldRows; ++row)
         {
             for (uint32_t ch = 0U; ch < kMaxChannels; ++ch)
             {
-                target_[row][ch] = (ch < inChannels_) ? fold.rows[row][ch] * trim : 0.0F;
+                rowsTarget_[row][ch] =
+                    (ch < inChannels_) ? static_cast<double>(fold.rows[row][ch]) : 0.0;
             }
         }
-        const auto glide =
-            snap ? 0U
-                 : static_cast<uint32_t>(std::lround(
-                       static_cast<double>(std::max(fold.glideSeconds, 0.0F)) * sampleRate_));
-        if (glide == 0U)
+        trimDbTarget_ = std::min(static_cast<double>(fold.trimDb), 0.0);
+        const double tauFrames = snap ? 0.0
+                                      : static_cast<double>(std::max(fold.glideSeconds, 0.0F)) *
+                                            static_cast<double>(sampleRate_);
+        if (tauFrames > 0.0)
         {
-            coeff_ = target_;
-            glideLeft_ = 0U;
+            glideAlpha_ = 1.0 - std::exp(-1.0 / tauFrames);
+            gliding_ = true;
         }
         else
         {
-            for (uint32_t row = 0U; row < kFoldRows; ++row)
-            {
-                for (uint32_t ch = 0U; ch < kMaxChannels; ++ch)
-                {
-                    step_[row][ch] =
-                        (target_[row][ch] - coeff_[row][ch]) / static_cast<float>(glide);
-                }
-            }
-            glideLeft_ = glide;
+            gliding_ = false;
+            settleGlide();
         }
         backstopParams_.truePeakCeilingLinear = backstopCeiling(fold.ceilingLinear);
         peakGrDb_ = 0.0F;
@@ -275,45 +278,69 @@ namespace AdaptiveSound
         readoutFromPlan_.store(fold.fromPlan, std::memory_order_relaxed);
     }
 
-    // The gliding part of the block, per sample: each output sample at the coefficients in force, which
-    // then step toward the target; the glide's last sample lands on the target exactly. Returns the
-    // frames it rendered (0 with no glide).
-    auto SpatialRenderKernel::mixRamped(const MultichannelView& input,
-                                        const MultichannelView& output,
-                                        uint32_t frames) noexcept -> uint32_t
+    // The fold lands on its set: the rows and trim exactly, and the coefficients they make.
+    auto SpatialRenderKernel::settleGlide() noexcept -> void
     {
-        const uint32_t count = std::min(glideLeft_, frames);
-        for (uint32_t i = 0U; i < count; ++i)
+        rows_ = rowsTarget_;
+        trimDb_ = trimDbTarget_;
+        const double trim = amplitudeFromDb(trimDb_);
+        for (uint32_t row = 0U; row < kFoldRows; ++row)
         {
+            for (uint32_t ch = 0U; ch < kMaxChannels; ++ch)
+            {
+                coeff_[row][ch] = static_cast<float>(rows_[row][ch] * trim);
+            }
+        }
+    }
+
+    // A gliding block, per sample: one one-pole step of the trim (in dB) and the rows toward the set — the step
+    // EQModule takes on the effects gain, before the sample it plays — then the sample at the coefficients they
+    // make. Once the glide is within the settle distance of its set, it lands there. Returns the frames it
+    // rendered (0 when nothing glides).
+    auto SpatialRenderKernel::mixGliding(const MultichannelView& input,
+                                         const MultichannelView& output,
+                                         uint32_t frames) noexcept -> uint32_t
+    {
+        if (!gliding_)
+        {
+            return 0U;
+        }
+        for (uint32_t i = 0U; i < frames; ++i)
+        {
+            trimDb_ += glideAlpha_ * (trimDbTarget_ - trimDb_);
+            const double trim = amplitudeFromDb(trimDb_);
             for (uint32_t row = 0U; row < kFoldRows; ++row)
             {
                 float* out = output.channel(row);
-                if (out == nullptr)
-                {
-                    continue;
-                }
-                float sum = 0.0F;
+                double sum = 0.0;
                 for (uint32_t ch = 0U; ch < inChannels_; ++ch)
                 {
+                    rows_[row][ch] += glideAlpha_ * (rowsTarget_[row][ch] - rows_[row][ch]);
+                    const float coefficient = static_cast<float>(rows_[row][ch] * trim);
+                    coeff_[row][ch] = coefficient;
                     const float* in = input.channel(ch);
-                    sum += (in != nullptr) ? coeff_[row][ch] * in[i] : 0.0F;
+                    sum += (in != nullptr) ? static_cast<double>(coefficient * in[i]) : 0.0;
                 }
-                out[i] = sum;
-            }
-            for (uint32_t row = 0U; row < kFoldRows; ++row)
-            {
-                for (uint32_t ch = 0U; ch < inChannels_; ++ch)
+                if (out != nullptr)
                 {
-                    coeff_[row][ch] += step_[row][ch];
+                    out[i] = static_cast<float>(sum);
                 }
             }
         }
-        glideLeft_ -= count;
-        if (count > 0U && glideLeft_ == 0U)
+        bool landed = settled(trimDb_, trimDbTarget_);
+        for (uint32_t row = 0U; row < kFoldRows && landed; ++row)
         {
-            coeff_ = target_;
+            for (uint32_t ch = 0U; ch < inChannels_ && landed; ++ch)
+            {
+                landed = settled(rows_[row][ch], rowsTarget_[row][ch]);
+            }
         }
-        return count;
+        if (landed)
+        {
+            gliding_ = false;
+            settleGlide();
+        }
+        return frames;
     }
 
     // Frames [from, frames) at the steady coefficients: each row a scaled sum of its non-zero inputs.

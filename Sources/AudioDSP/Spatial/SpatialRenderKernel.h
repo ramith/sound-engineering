@@ -27,8 +27,11 @@
 //     0 — M1), then the playing track's plan. The newest set plays; it is kept across an allocate
 //     (keep-across-allocate, M1) and plays only at the width it was made for. With no set for this width
 //     the fold plays silence: the device boundary never truncates.
-//   - A change glides linearly over the set's `glideSeconds` (0: snap), per sample, from the coefficients
-//     in force; a change of N or M (configure) snaps.
+//   - A change glides as the effects unit's gain does (level-and-fold §1.3, NI-4: both units alike): a one-pole
+//     per sample at τ = the set's `glideSeconds` (0: snap), the trim in dB as EQModule moves its output gain,
+//     the rows in amplitude, from the fold in force; settled, it lands exactly on the set. So a plan that trades
+//     the effects gain for the trim (a mode change) keeps the level still while both glide. A change of N or M
+//     (configure) snaps.
 //
 // RT-safety contract:
 //   process() is REAL-TIME SAFE: no allocation, no lock, no syscall, no Obj-C runtime. All scratch,
@@ -65,7 +68,7 @@ namespace AdaptiveSound
         float lfeGain = 0.0F;
         // The backstop's ceiling by scope (linear): −0.1 dBTP lossless at the engine rate, else −1 dBTP.
         float ceilingLinear = kTruePeakCeilingLinear;
-        // How long a change glides, in seconds (0: snap — a fresh start).
+        // The glide's time constant τ, in seconds (0: snap — a fresh start): the effects unit's for the same event.
         float glideSeconds = 0.0F;
         // Numbered by publishFold (callers leave it 0): a new number is a new fold for the render.
         uint32_t generation = 0U;
@@ -136,14 +139,17 @@ namespace AdaptiveSound
       private:
         // One fold's coefficients: rows × the trim's linear gain.
         using Coefficients = std::array<std::array<float, kMaxChannels>, 2>;
+        // The rows as a glide moves them (double: a 0.15 s one-pole steps by ~1e-4 of the change per sample).
+        using GlideRows = std::array<std::array<double, kMaxChannels>, 2>;
 
         auto foldBlock(const MultichannelView& input,
                        const MultichannelView& output,
                        uint32_t frames) noexcept -> void;
         auto adoptFold(const FoldParams& fold, bool snap) noexcept -> void;
-        auto mixRamped(const MultichannelView& input,
-                       const MultichannelView& output,
-                       uint32_t frames) noexcept -> uint32_t;
+        auto mixGliding(const MultichannelView& input,
+                        const MultichannelView& output,
+                        uint32_t frames) noexcept -> uint32_t;
+        auto settleGlide() noexcept -> void;
         auto mixSteady(const MultichannelView& input,
                        const MultichannelView& output,
                        uint32_t from,
@@ -164,10 +170,14 @@ namespace AdaptiveSound
         // The backstop: the limiter on L′/R′.
         LimiterModule backstop_;
 
-        // RT: the fold's coefficients in force this sample, where a glide ends, and its per-sample step.
+        // RT: the fold in force — its rows (amplitude) and trim (dB) now, and where a glide takes them, by a one-pole
+        // step per sample — and the coefficients they make (rows × the trim's amplitude), which a sample plays.
+        GlideRows rows_{};
+        GlideRows rowsTarget_{};
+        double trimDb_ = 0.0;
+        double trimDbTarget_ = 0.0;
+        double glideAlpha_ = 1.0; // 1 − e^(−1 / (τ·fs))
         Coefficients coeff_{};
-        Coefficients target_{};
-        Coefficients step_{};
         LimiterParams backstopParams_{};
 
         // Routing — written off-RT by configure(), read on-RT (the v3 contract orders allocate before
@@ -178,7 +188,6 @@ namespace AdaptiveSound
         uint32_t maxFrames_ = kDefaultMaxFrames;
         uint32_t publishCount_ = 0U;      // producer-owned, under publishMutex_
         uint32_t appliedGeneration_ = 0U; // RT: which publish is in force (0: none)
-        uint32_t glideLeft_ = 0U;         // RT
         uint32_t meterLookahead_ = 0U;
         uint32_t meterHead_ = 0U; // RT
         float peakGrDb_ = 0.0F;   // RT-owned; mirrored into readoutPeakGrDb_
@@ -192,6 +201,7 @@ namespace AdaptiveSound
 
         bool needsSnap_ = true; // set by configure(): the next fold snaps
         bool haveFold_ = false; // RT: a fold for this N is in force
+        bool gliding_ = false;  // RT: the fold in force has not reached its set yet
         std::atomic<bool> readoutFromPlan_{false};
     };
 
