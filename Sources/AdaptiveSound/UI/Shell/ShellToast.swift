@@ -127,6 +127,8 @@ struct ShellToastHost: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        // A Tab stop under Full Keyboard Access: the app's teal ring around the capsule, never the system's one.
+        .controlFocusRing(around: Capsule())
         .pointerStyle(.link)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(message)
