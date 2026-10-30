@@ -95,6 +95,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-PB-17 | A scrub back into a track that has already ended (nothing armed) is lost | LOW | Engine sprint (seam identity) | US-R1F-01 |
 | KI-PB-23 | A truncated file shows its full length and stops at the cut; what the app does then is not yet checked | LOW | R1.1-B (the whole-app break-it) | US-PLAY-06 |
 | KI-PB-24 | A loose queue slot whose file joins the library stays loose: not marked as playing in the Library, and not moved with the file | LOW | pool | US-LIB-02 |
+| KI-PB-25 | On the last song of a shuffle pass with Repeat off, Next stays enabled but does nothing | LOW (polish) | pool | US-R1F-01 |
 | KI-GAP-03 | A narrow false seam on a Pure → Enhanced restart | LOW | Engine sprint | US-R1F-02 |
 | ENH-001 | Short-track auto-advance is a reconfigure gap, not a seamless seam | LOW | Engine sprint | US-R1F-02 |
 | ENH-002 | The UI loudness readout is L/R-only on a >2-channel output | LOW | pool | US-R1F-07 |
@@ -256,6 +257,16 @@ corpus, 2026-10-26 (the record's [Test material](../sprints/r1-1b-record.md#test
 Apple's decoder opens a file cut short (a download that stopped, a damaged copy) with the length its header states,
 then reading it throws at the cut. So the song is listed, and its scrubber drawn, at the full length. How the app
 handles the throw — the song's end, an error, the next song — is not yet checked.
+
+### KI-PB-25 — On a shuffle pass's last song with Repeat off, Next stays enabled but does nothing
+
+**Status:** OPEN · **Severity:** LOW (polish) · **Source:** the founder's check of the R1.1-B player build,
+2026-10-30 (check 5, driven live) · **Scheduled (2026-10-30, founder):** pool · **Forward:** US-R1F-01.
+
+With Shuffle on and Repeat off, the pass's last song has nothing after it: by the rule VM-PO-08 pins, a manual Next
+there does nothing (only Repeat All steps into a new pass), and the song plays to its end, where the queue stops
+(VM-PO-04). The Next button stays enabled all the while, so the press looks lost. The fix is presentation only: Next
+greys out (or says why) when nothing follows. The rule itself is right and stays.
 
 ### KI-PB-24 — A loose queue slot stays loose after its file joins the library
 
