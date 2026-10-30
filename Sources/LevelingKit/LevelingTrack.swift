@@ -1,10 +1,12 @@
 // LevelingKit — what the decision builder reads of one track (R1.1-B W5, lane 3-A; the level-and-fold design,
 // docs/design/level-and-fold/README.md §3, §4 and §S3).
 //
-// The Kit imports nothing, so the app's boundary converts into these values: the analysis store's record
+// The Kit depends on no other target, so the app's boundary converts into these values: the analysis store's record
 // (TrackLoudnessKit's `TrackAnalysis`) into a `LevelingTrack.Measurement` — with the LFE rule's verdict computed
 // there by AudioDSP's `asFoldDecideLfe`, and each `TrackAnalysis.Profile` into a `CompactLoudnessProfile` — and the
 // tag reader's raw values (TrackLoudnessKit's `TrackGainTags`) into a `GainTags`.
+
+import Foundation
 
 /// The listener's Leveling setting (US-R1F-10 item 1). Off is the faithful default (FD-2). The raw values are the
 /// setting's stored form.
@@ -149,13 +151,37 @@ public struct GainTags: Sendable, Equatable {
         self.r128Album = r128Album
     }
 
-    /// The track's own level by its tags; nil when it has none. Lane 3-A's rule (stub until it lands).
+    /// ReplayGain 2.0's reference: a gain of 0 dB means the track sits at −18 LUFS.
+    public static let replayGainReferenceLufs = -18.0
+    /// EBU R128's reference for its gain tags: −23 LUFS.
+    public static let r128ReferenceLufs = -23.0
+    /// The loudness a tag may imply: from BS.1770's absolute gate (−70 LUFS, below which there is no programme) to
+    /// 0 LUFS (a full-scale stereo sine; no real master is louder). A tag outside it is wrong and is ignored — 9d's
+    /// track gain of −20 dB would say +2 LUFS and play the track 20 dB down.
+    public static let plausibleLoudness = -70.0 ... 0.0
+
+    /// The track's own level by its tags (ReplayGain 2.0 first, then R128); nil when it has none, or only an
+    /// implausible one.
     public var trackLevel: Level? {
-        nil
+        Self.level(replayGain: replayGainTrack, peak: replayGainTrackPeak, r128: r128Track)
     }
 
-    /// The album's level by this track's tags; nil when it has none. Lane 3-A's rule (stub until it lands).
+    /// The album's level by this track's album tags; nil when it has none, or only an implausible one.
     public var albumLevel: Level? {
-        nil
+        Self.level(replayGain: replayGainAlbum, peak: replayGainAlbumPeak, r128: r128Album)
+    }
+
+    /// A gain tag's level: the loudness it implies (its reference minus the gain), with a ReplayGain peak in dBFS.
+    private static func level(replayGain: Double?, peak: Double?, r128: Int?) -> Level? {
+        let loudness: Double? = if let replayGain {
+            replayGainReferenceLufs - replayGain
+        } else if let r128 {
+            r128ReferenceLufs - Double(r128) / 256
+        } else {
+            nil
+        }
+        guard let loudness, loudness.isFinite, plausibleLoudness.contains(loudness) else { return nil }
+        let peakDbfs = (replayGain != nil) ? peak.flatMap { $0 > 0 && $0.isFinite ? 20 * log10($0) : nil } : nil
+        return Level(loudness: loudness, peak: peakDbfs)
     }
 }
