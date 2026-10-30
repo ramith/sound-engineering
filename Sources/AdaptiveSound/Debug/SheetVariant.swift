@@ -159,16 +159,17 @@
             }
         }
 
-        /// The default window size and the hard minimum for `standard`, the grids, the playlist page and
-        /// the Monitoring worlds; those and a tall one for the fold world (the hero's width; the whole Settings
-        /// column); the minimum alone for the long presets list (where the card scrolls) and the folded Tone card;
-        /// the default size for the rest.
+        /// The default window size and the hard minimum for `standard`, the grids, the playlist page, the
+        /// Monitoring worlds, the badge row's crowded worlds and EQ Pure; those and a tall one for the fold world (the
+        /// hero's width; the whole Settings column); the minimum alone for the long presets list (where the card
+        /// scrolls) and the folded Tone card; the default size for the rest.
         var sizes: [NSSize] {
             switch self {
             case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage,
                  .monitorMono, .monitor51, .monitor71, .search, .soundFoldBluetooth, .soundBluetoothCrossfeed:
                 [Self.defaultSize, Self.minimumSize]
             case .soundFold: [Self.defaultSize, Self.minimumSize, Self.tallSize]
+            case .eqPure: [Self.defaultSize, Self.minimumSize] // the rail's notes at the narrowest
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
             }
@@ -225,12 +226,23 @@
             }
         }
 
-        /// The requested appearances this variant renders: all of them for `standard`, the grids and
-        /// the playlist page, dark and light for the other extras.
+        /// The requested appearances this variant renders: all of them for `standard`, the grids, the
+        /// playlist page and the sound worlds (R1.1-B: every new surface in Increased Contrast and Reduce
+        /// Transparency too, before the founder's check), dark and light for the other extras.
         func appearances(of request: SheetRequest) -> [SheetAppearance] {
-            self == .standard || self == .playlist || (isGrid && self != .gridStates)
+            self == .standard || self == .playlist || (isGrid && self != .gridStates) || isSoundWorld
                 ? request.appearances
                 : request.appearances.filter { $0 == .dark || $0 == .light }
+        }
+
+        /// The worlds of R1.1-B's sound UI: the fold, Pure on Now Playing, in Settings and on the EQ, the toast,
+        /// and the badge row's crowded worlds.
+        private var isSoundWorld: Bool {
+            switch self {
+            case .soundFold, .soundPure, .settingsPure, .eqPure, .volumeRestored, .soundFoldBluetooth,
+                 .soundBluetoothCrossfeed: true
+            default: false
+            }
         }
 
         /// How many sheets this variant renders for `request`.
