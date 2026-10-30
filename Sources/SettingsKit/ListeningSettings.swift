@@ -19,6 +19,7 @@
 
 import EQEditKit
 import Foundation
+import LevelingKit
 
 public struct ListeningSettings: Equatable, Sendable {
     /// Pure Mode, as the listener asked for it (it engages at the next start the device allows).
