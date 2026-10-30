@@ -2,6 +2,7 @@
 
 import Foundation
 import GRDB
+import RigKit
 import SQLite3
 import Testing
 @testable import TrackLoudnessKit
@@ -24,7 +25,10 @@ struct BreakItStoreTests {
         try #require(sqlite3_open_v2(url.path, &holder, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK)
         defer { sqlite3_close(holder) }
         try #require(sqlite3_exec(holder, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
-        let opened = try? TrackAnalysisStore(directory: folder.url)
+        // The open waits out the busy timeout (5 s): on a thread of its own, never one of the cooperative pool's.
+        let opened = try await blocking("open the store another connection holds locked") {
+            try? TrackAnalysisStore(directory: folder.url)
+        }
         sqlite3_exec(holder, "ROLLBACK", nil, nil, nil)
         _ = opened
         #expect(inode() == before, "the store deleted the locked file and made a new one in its place")
