@@ -309,6 +309,13 @@ let package = Package(
             dependencies: ["TrackLoudnessKit", "RigKit"],
             path: "Tests/TrackLoudnessKitTests"
         ),
+        // R1.1-B W5 (lane 3): the leveling rules on the Kit's own values — the decision builder (Auto, the album
+        // anchor and completeness, the one continuity judge, runs, sources), the tag conversion and the horizon.
+        .testTarget(
+            name: "LevelingKitTests",
+            dependencies: ["LevelingKit", "RigKit"],
+            path: "Tests/LevelingKitTests"
+        ),
         // S10.7 rig (design §7): RES resolver cube, TOK palette invariants, the PERMANENT R4
         // contrast audit (pure WCAG math over Kit data), and the SlotFit truncation net. The
         // TEST target may import AppKit (font measurement); the Kit itself may not.
