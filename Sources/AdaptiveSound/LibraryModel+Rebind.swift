@@ -2,6 +2,7 @@ import Foundation
 import LibraryBrowseKit
 import LibraryScan
 import LibraryStore
+import TrackLoudnessKit
 
 // MARK: - LibraryModel "Use this drive" (R1.1-B, US-R1F-03 LIB-VOL-1; seam S4)
 
@@ -58,6 +59,10 @@ extension LibraryModel {
                 }
                 await refreshWatchedRoots()
                 libraryRevision &+= 1 // songs left, urls moved: the browse lists and playlists reload
+                // The songs' analyses follow them: re-keyed to where each folder is now, never measured again
+                // (R1.1-B, US-R1F-10 item 16; level-and-fold "The store and the scheduler").
+                await TrackAnalysisStore.rekeyOpenStores(Self.folderMoves(along: along, rebound: result.movedAlong,
+                                                                          to: newRoot))
             }
             return DriveRebind(outcome: result.outcome, movedAlong: result.movedAlong.map(\.said))
         } catch {
@@ -79,6 +84,18 @@ extension LibraryModel {
                 .offersUseThisDrive == true
         }
         return (folders.first { $0.id == folderID }?.path, others)
+    }
+
+    /// Each music folder a rebind moved, from its old path to its new one: the one chosen (`along.oldPath` to
+    /// `newRoot`) and those of `rebound` that moved along, each at its own place on the drive as mounted now.
+    private static func folderMoves(along: (oldPath: String?, others: [LibraryFolder]), rebound: [MovedFolder],
+                                    to newRoot: URL) -> [(from: String, to: String)] {
+        guard let oldPath = along.oldPath else { return [] }
+        let newPath = PathNormalizer.normalizedString(for: newRoot)
+        let moved = Set(rebound.map(\.id))
+        return [(oldPath, newPath)] + along.others.filter { moved.contains($0.id) }.compactMap { folder in
+            RootRebinder.location(of: folder.path, movedFrom: oldPath, to: newPath).map { (folder.path, $0) }
+        }
     }
 
     /// A folder that moved along with the one chosen: its id, and what the app says of it.
