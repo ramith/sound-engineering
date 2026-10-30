@@ -16,8 +16,9 @@ import Testing
 
 @Suite("Break-it, sound: the real bridge", .serialized, .timeLimit(.minutes(5)), .attachingLogTail)
 struct BreakItSoundBridgeTests {
-    /// A 2 s AC-3 tone (Tests/Fixtures/breakit-sound/README.md): Apple's decoder delivers 288 frames fewer than the
-    /// file's `length` says, then the next read throws — as every AC-3 and E-AC-3 file in the corpus does.
+    /// A 2 s AC-3 tone (Tests/Fixtures/breakit-sound/README.md): on macOS 26 Apple's decoder delivers 288 frames
+    /// fewer than the file's `length` says, then the next read throws — as every AC-3 and E-AC-3 file in the corpus
+    /// does there. A newer decoder may differ; the tests read what it delivers, never a constant.
     private static let shortReadAC3 = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Fixtures/breakit-sound/tone-ac3-mono-48k.m4a")

@@ -90,7 +90,8 @@ struct ReaderSeamTests {
         await bridge.setNextTrack(Self.shortRead48k, ticket: OnDeckTicket(session: 0, sequence: 1), leveling: .off)
 
         let lengthA = MultichannelFixture.seconds
-        let delivered = 96480.0 / 48000 // B's decodable 2.010 s
+        // B's decodable length, as this macOS's decoder gives it (2.010 s of the stated 2.016 s on macOS 26).
+        let delivered = try Double(TrackReaderTests.framesDecoded(at: Self.shortRead48k)) / 48000
         var rendered = 0.0
         var seamAt: Double?
         var endedAt: Double?
