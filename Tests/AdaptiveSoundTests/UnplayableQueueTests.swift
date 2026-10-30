@@ -78,6 +78,24 @@ struct UnplayableQueueTests {
         #expect(rig.vm.isPlaying)
     }
 
+    @Test("VM-UQ-06: the banner names a song as the queue shows it — a library song by its title, a loose file by name",
+          arguments: [true, false])
+    func theBannerNamesTheSongAsTheQueueShowsIt(isLibrarySong: Bool) async throws {
+        // Founder, 2026-10-30. A library song's queue name is its tag title (`AudioFile(LibraryTrackDisplay)`, which
+        // falls back to the file name); a loose file's is its file name.
+        let rig = try await Rig.playing(tracks: 4, pure: false, unreadable: [track(1)])
+        rig.vm.queue[1] = QueueItem(file: isLibrarySong
+            ? AudioFile(name: "Sunrise over Kerala", relativePath: "", absoluteURL: track(1), format: "FLAC",
+                        durationSeconds: 200, trackID: 2)
+            : AudioFile(looseFileAt: track(1)))
+        rig.vm.playTrack(at: 1)
+        try await rig.quiesce()
+        #expect(rig.engine.current == track(2), "\(rig.state)")
+        let named = isLibrarySong ? "Sunrise over Kerala" : "t1"
+        #expect(rig.vm.errorMessage?.hasPrefix("Skipped “\(named)”. ") == true,
+                "\(rig.vm.errorMessage ?? "no message")")
+    }
+
     @Test("VM-UQ-05: a later start the listener asks for clears the message of the songs passed")
     func aLaterStartClearsTheMessage() async throws {
         let rig = try await Rig.playing(tracks: 4, pure: false, unreadable: [track(1)])
