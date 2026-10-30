@@ -1,5 +1,6 @@
 import DesignTokenKit
 import EQEditKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - Tone row (EQ3t — one region of the Tone card)
@@ -20,6 +21,8 @@ import SwiftUI
 /// and level tertiary, the slider grey and flat (`controlLabelStyle`, `CarvedTrack`); dark dims it.
 struct EQToneRow: View {
     let region: EQToneRegion
+    /// Whether the Tone works now: inert while Pure plays (US-R1F-20).
+    let availability: DSPRowAvailability
     /// The row the user is on (hovered, dragged or keyboard-focused): tinted, its name and level teal.
     let isHighlighted: Bool
     /// The card's focus: this row's slider holds key focus while it equals `region`.
@@ -76,6 +79,7 @@ struct EQToneRow: View {
         .background(isHighlighted ? DesignSystem.Color.rowSelected : .clear,
                     in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container))
         .contentShape(Rectangle())
+        .bitPerfectGate(.tone, availability)
     }
 
     /// The slider's value: this region's Tone in what plays now.

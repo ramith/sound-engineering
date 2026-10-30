@@ -392,3 +392,37 @@ rules:
       include: ['Tests']
       exclude: ['Tests/RigKit']
     pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?(?:\bThread\.sleep\b|\bTask\.sleep\(|\busleep\(|\bRunLoop\.(?:main|current)\.run\(until|\bDispatchSemaphore\b|\b(?:Continuous|Suspending)Clock\.now\s*[-+<>])'
+
+  # R1.1-B fix round (review-sound S6; US-R1F-20 item 2: "a new control cannot skip it"). Every control that changes
+  # the sound in the app's engine wears the shared Pure row state, named by its SettingsKit `DSPRow`. A UI line that
+  # changes such a setting — the EQ (its switch, presets, graph, Tone, Reset, Bring back), crossfeed, Leveling,
+  # Intensity — sits in a file that gates that setting's row on a code line (`.bitPerfectGate(.<row>,`); otherwise it is
+  # a control the registry never sees: a new one, or one that was never registered (Intensity was). Each setting is
+  # one `patterns` pair: its writes and bindings, and the file-wide not-regex that its row is gated there. Comment lines
+  # are never matched, and a gate in a comment doesn't count. A new kind of sound setting adds its DSPRow case and its
+  # writes here. (File scope, like every rule here: a second ungated control beside a gated one in the same file is
+  # review's to see.)
+  - id: ui-dsp-control-gated
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      This UI line changes the sound in the app's engine, but its file never gates the setting's DSPRow. A control
+      that changes the sound wears the shared Pure row state (US-R1F-20): `.bitPerfectGate(.<row>, availability)` on
+      the control and `BitPerfectRowNote(row: .<row>, …)` beside it — the EQ's (switch, presets, graph, Reset, Bring
+      back) is .equalizer, the Tone's .tone, crossfeed's .crossfeed, Leveling's .leveling, Intensity's .intensity. A
+      new kind of setting registers its own DSPRow case and adds its writes to this rule.
+    paths:
+      include: ['Sources/AdaptiveSound/UI']
+    pattern-either:
+      - patterns:
+          - pattern-regex: '(?m)^(?!\s*//).*?(?:\$\w+\.isOn\b|\b(?:eq|eqViewModel)\.(?:isOn\s*=(?!=)|choose|reset|resetTone|resetBand|nudge|setTone|beginStroke|updateStroke|bringBackEdits)\b)'
+          - pattern-not-regex: '(?sm)\A.*^(?!\s*//)[^\n]*\.bitPerfectGate\(\.(?:equalizer|tone),.*\z'
+      - patterns:
+          - pattern-regex: '(?m)^(?!\s*//).*?(?:\$\w+\.crossfeed(?:Enabled|Strength)\b|\.crossfeed(?:Enabled|Strength)\s*=(?!=))'
+          - pattern-not-regex: '(?sm)\A.*^(?!\s*//)[^\n]*\.bitPerfectGate\(\.crossfeed,.*\z'
+      - patterns:
+          - pattern-regex: '(?m)^(?!\s*//).*?(?:\$\w+\.leveling\b|\.leveling\s*=(?!=))'
+          - pattern-not-regex: '(?sm)\A.*^(?!\s*//)[^\n]*\.bitPerfectGate\(\.leveling,.*\z'
+      - patterns:
+          - pattern-regex: '(?m)^(?!\s*//).*?(?:\$\w+\.intensity\b|\.intensity\s*=(?!=))'
+          - pattern-not-regex: '(?sm)\A.*^(?!\s*//)[^\n]*\.bitPerfectGate\(\.intensity,.*\z'

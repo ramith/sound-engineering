@@ -18,8 +18,10 @@ import SwiftUI
 
 extension View {
     /// Gate this DSP control, registered as `row`, by `availability` (`AudioViewModel.dspRowAvailability`).
-    func bitPerfectGate(_ row: DSPRow, _ availability: DSPRowAvailability) -> some View {
-        modifier(BitPerfectGate(row: row, isLive: availability.isLive))
+    /// `ownDisabledLook`: the control draws its own disabled look — the pills, the graph's not-playing curve, a switch
+    /// whose segments dim themselves — so the gate never dims it again on top.
+    func bitPerfectGate(_ row: DSPRow, _ availability: DSPRowAvailability, ownDisabledLook: Bool = false) -> some View {
+        modifier(BitPerfectGate(row: row, isLive: availability.isLive, dims: !ownDisabledLook))
     }
 }
 
@@ -30,13 +32,17 @@ extension View {
 private struct BitPerfectGate: ViewModifier {
     let row: DSPRow
     let isLive: Bool
+    /// The gate dims the inert control (dark 50%, `disabledDim`); not one that draws its own disabled look.
+    let dims: Bool
 
     func body(content: Content) -> some View {
         content
             .disabled(!isLive) // an outer `false` never re-enables a control its own `disabled` holds off
-            .disabledDim(!isLive)
+            .disabledDim(dims && !isLive)
             // The control keeps its value (the setting that applies the moment Pure is left); the state is the hint.
             .accessibilityHint(DSPRowAvailability.stateText, isEnabled: !isLive)
+            // Its registry name, for Accessibility Inspector and the live UI checks: "dsp.equalizer", "dsp.tone", …
+            .accessibilityIdentifier("dsp.\(row.rawValue)")
     }
 }
 

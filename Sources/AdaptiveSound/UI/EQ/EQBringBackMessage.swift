@@ -11,6 +11,7 @@ import SwiftUI
 /// action) until the next edit. The recipe is the queue toast's: `.overlay` glass and a hairline.
 struct EQBringBackMessage: View {
     @Environment(EQViewModel.self) private var eq
+    @Environment(AudioViewModel.self) private var audio
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The clock the offer's time runs on: `ContinuousClock` in the app, a test clock in a test.
     var clock: any Clock<Duration> = ContinuousClock()
@@ -54,6 +55,7 @@ struct EQBringBackMessage: View {
                 .font(DesignSystem.Font.caption.weight(.semibold))
                 .foregroundStyle(DesignSystem.Color.accentForeground)
                 .focused($isFocused)
+                .bitPerfectGate(.equalizer, audio.dspRowAvailability) // the EQ's one rule while Pure plays
         }
         .padding(.horizontal, DesignSystem.Spacing.medium)
         .padding(.vertical, DesignSystem.Spacing.small)

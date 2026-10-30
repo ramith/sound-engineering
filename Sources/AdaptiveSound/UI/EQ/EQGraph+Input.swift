@@ -1,4 +1,5 @@
 import EQEditKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - EQ graph: the drag and the keyboard
@@ -9,6 +10,34 @@ extension EQGraph {
     /// One ↑/↓ press or VoiceOver swipe (dB); ⇧ takes `bigStepDb`.
     static let stepDb: Float = 0.5
     static let bigStepDb: Float = 3
+
+    /// The plot's editing — the stroke, the keys, ⌫, VoiceOver's 31 points — and its gate: while Pure plays,
+    /// nothing on the EQ screen can be edited (founder, 2026-10-30: nothing you can't hear can be changed, and the
+    /// switch never flips by itself). The not-playing curve is the graph's own disabled look, so no dim on top; a
+    /// stroke under way when Pure starts ends here, kept.
+    func editable(_ plot: some View, reading: EQGraphReading) -> some View {
+        let availability = audio.dspRowAvailability
+        return plot
+            .gesture(strokeGesture)
+            .onChange(of: isDragging) { _, dragging in
+                if !dragging {
+                    endStroke()
+                }
+            }
+            .focusable()
+            .focused($focused)
+            .focusEffectDisabled()
+            .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end], action: handleKey)
+            .onKeyPress(.escape, action: cancelStroke)
+            .onDeleteCommand { eq.resetBand(keyboardBand) }
+            .graphAccessibility(eq: eq, reading: reading, map: plotMap, availability: availability)
+            .bitPerfectGate(.equalizer, availability, ownDisabledLook: true)
+            .onChange(of: availability.isLive) { _, live in
+                if !live {
+                    endStroke()
+                }
+            }
+    }
 
     /// One stroke per press: every pointer sample, wherever the pointer goes, until it is released.
     var strokeGesture: some Gesture {
