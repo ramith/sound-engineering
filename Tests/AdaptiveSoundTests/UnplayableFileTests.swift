@@ -29,11 +29,15 @@ struct UnplayableFileTests {
         return said
     }
 
-    /// A file of `bytes` named `name` in test-data/reader/ (removed by the caller).
-    private static func file(named name: String, bytes: [UInt8]) throws -> URL {
-        let directory = URL(fileURLWithPath: #filePath)
+    /// test-data/reader/, where these files are made.
+    private static var directory: URL {
+        URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("test-data/reader", isDirectory: true)
+    }
+
+    /// A file of `bytes` named `name` in test-data/reader/ (removed by the caller).
+    private static func file(named name: String, bytes: [UInt8]) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(UUID().uuidString)-\(name)")
         try Data(bytes).write(to: url)
@@ -73,6 +77,15 @@ struct UnplayableFileTests {
         defer { try? FileManager.default.removeItem(at: url) }
         let said = try #require(try await Self.refusal(playing: url), "a zero-byte file started")
         #expect(said == "This file can't be read — it may be damaged (.flac).", "\(said)")
+    }
+
+    @Test("a file that isn't there — moved, deleted, its drive unplugged — can't be found, never \"may be damaged\"")
+    func missingFileCantBeFound() async throws {
+        // Founder, 2026-10-30: its own words. A library song whose drive is unplugged, a loose file moved since it
+        // was queued. Never written: the name is this run's own.
+        let url = Self.directory.appendingPathComponent("\(UUID().uuidString)-gone.flac")
+        let said = try #require(try await Self.refusal(playing: url), "a missing file started")
+        #expect(said == "This file can't be found — it may have been moved, or its drive disconnected.", "\(said)")
     }
 
     @Test("a type the app doesn't play is still said so")
