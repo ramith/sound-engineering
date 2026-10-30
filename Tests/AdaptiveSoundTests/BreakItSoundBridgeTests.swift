@@ -3,6 +3,7 @@ import AudioDSP
 @preconcurrency import AVFoundation
 import Foundation
 import LevelingKit
+import PlaybackQueueKit
 import RigKit
 import Testing
 
@@ -81,5 +82,57 @@ struct BreakItSoundBridgeTests {
         #expect(readout.foldMeasured, "the second play still plans the first play's worst-case trim (· measuring)")
         #expect(readout.mode == .leveled, "the second play still plays the unknown cut: \(readout.mode)")
         await rig.finish()
+    }
+
+    @Test("BI-S09: a mono file on a stereo output is leveled as the dual mono it plays as (+3.01 LU, F8)")
+    func monoIsLeveledAsDualMono() async throws {
+        // Design F8 and the founder's XM4 listen (2026-10-26): a mono file plays on both sides at 0 dB, so its heard
+        // loudness is its one-channel measure + 3.01 LU, and the planner levels that. A quiet mono file the peak cap
+        // does not bind: L −30 LUFS, TP −20 dBTP → g = −18 − (−30 + 3.01) = +8.99 dB (not +12).
+        let rig = try await MultichannelDeviceRig.make(deviceChannels: 2)
+        let mono = try #require(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_Mono))
+        let url = try MultichannelFixture.write(layout: mono, rate: 48000, name: "bis-mono")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let decision = TrackLevelingDecision(mode: .leveled, source: .analysis, continuousWithPrevious: false,
+                                             unfolded: .init(loudness: -30, truePeak: -20), folded: nil,
+                                             roles: [UInt8(AsChannelRoleC.rawValue)], peakRate: 48000)
+        rig.bridge.holdStartDecision(decision, for: url)
+        try await rig.play(url)
+        _ = try await rig.render(frames: 4800)
+        let plan = try #require(rig.bridge.leveling.audiblePlan)
+        let output = rig.bridge.leveling.outputState
+        let loud = plan.levelGainDb - 8.99
+        let state = "\(output.sourceChannels) source channel(s) on \(output.outputChannels) output(s)"
+        #expect(abs(loud) < 0.01, "g \(plan.levelGainDb) dB, \(loud) dB loud: no mono rule (output state: \(state))")
+        await rig.finish()
+    }
+
+    @Test("BI-S08: a mode change the view model sent before it saw a seam never plans the new song from the old one's")
+    func modeChangeRacingASeam() async throws {
+        // Song A plays; song B is armed with its decision (g +2 dB). The seam passes on the engine; the view model,
+        // whose tick has not sampled it yet (≤ 50 ms), still thinks A plays — the listener changes the mode, and it
+        // sends A's new decision as `current` and B's as `next`. The decision carries no song.
+        let rig = try await EnhancedTransportRig.playing([440], rate: 48000, frames: 24000, thenNext: 48000,
+                                                         name: "bis-race")
+        let next = try rig.writeTrack([440], named: "bis-race-b", rate: 48000, frames: 24000 ..< 120_000)
+        let songB = Self.measured(-20, peak: -8)
+        await rig.bridge.setNextTrack(next, ticket: OnDeckTicket(session: 0, sequence: 2), leveling: songB)
+        _ = try #require(await rig.samples(frames: 24000 + 9600))
+        try await until("the seam to be counted") { rig.bridge.gaplessTransitionCount == 1 }
+        let atSeam = try #require(rig.bridge.leveling.audiblePlan)
+        #expect(abs(atSeam.levelGainDb - 2) < 1e-9, "the precondition: B plays its own g")
+
+        rig.bridge.applyLevelingChange(current: Self.measured(-24, peak: -10), next: songB) // A's, then B's
+        let after = try #require(rig.bridge.leveling.audiblePlan)
+        #expect(abs(after.levelGainDb - 2) < 1e-9,
+                "song B now plays song A's decision: g \(after.levelGainDb) dB instead of +2 dB, to its end")
+        await rig.finish()
+    }
+
+    /// A stereo track measured at the engine's rate.
+    private static func measured(_ loudness: Double, peak: Double) -> TrackLevelingDecision {
+        TrackLevelingDecision(mode: .leveled, source: .analysis, continuousWithPrevious: false,
+                              unfolded: .init(loudness: loudness, truePeak: peak), folded: nil, roles: [1, 2],
+                              peakRate: 48000)
     }
 }
