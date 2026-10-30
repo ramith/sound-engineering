@@ -2,7 +2,7 @@
 
 *Step 1 of the full loop (`docs/sprints/00-sprint-model.md` §5) for the sprint's sound lanes. Revision 1 is the one author revision after the blind three-reviewer panel (breaker, state-of-the-art challenger, architect). The first draft was 5eb5ae38. §14 maps every panel finding to what changed.*
 
-*Basis: code claims cite file:line on `r1.1b/level-and-fold-design` @ da728c00. The standards and implementations cited were opened in the drafting session (list at the end).*
+*Basis: code claims cite file:line at 966cb205 on `main` (the plan-check commit the design branch started from). The standards and implementations cited were opened in the drafting session (list at the end).*
 
 *Labels:*
 - ***Measured*** — a prototype run on synthetic material (scripts: §15). No founder music was read.

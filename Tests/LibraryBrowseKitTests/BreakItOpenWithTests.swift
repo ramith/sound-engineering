@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 // MARK: - R1.1-B break-it, Open With: what the app says it opens vs what it plays (BI-P)
 
 //
-// A red test written against the combined sprint branch (f52de075): the shipped Info.plist's
+// A red test written against the combined sprint branch (34ad6efe): the shipped Info.plist's
 // `CFBundleDocumentTypes` (read from the source tree — SwiftPM does not bundle it, scripts/bundle-app.py
 // does) against `LooseFiles.isPlayable`, the one list an open is judged by.
 
