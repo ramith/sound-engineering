@@ -88,13 +88,16 @@ struct AutoAdvanceTests {
     }
 
     /// A refused start moves on to the next song since the founder's "Move on" (break-it LOW-4, 2026-10-30;
-    /// VM-UQ in UnplayableQueueTests): this pins the case with nothing to move on to — the last song, no repeat.
+    /// VM-UQ in UnplayableQueueTests): this pins the case with nothing to move on to — the last song, no repeat —
+    /// whose banner names the song as the Skipped one does (founder, 2026-10-30: "Couldn't play “<song>”").
     @Test("VM-AA-08: a start the engine refuses with no song after it says so, stops, and arms nothing")
     func aStartThatFailsSaysSoAndStops() async throws {
         let rig = try await Rig.playing(tracks: 3, pure: false, unreadable: [track(2)])
         rig.vm.playTrack(at: 2)
         try await rig.quiesce()
-        #expect(rig.vm.errorMessage?.hasPrefix("Playback failed") == true, "\(rig.vm.errorMessage ?? "no error")")
+        let named = rig.vm.queue[2].file.name
+        #expect(rig.vm.errorMessage?.hasPrefix("Couldn't play “\(named)”. ") == true,
+                "\(rig.vm.errorMessage ?? "no error")")
         #expect(!rig.vm.isPlaying)
         #expect(rig.vm.pendingNextIndex == nil)
         #expect(rig.vm.selectedTrackIndex == 2, "the song the user asked for stays selected")

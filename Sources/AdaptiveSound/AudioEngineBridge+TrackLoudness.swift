@@ -25,16 +25,19 @@ extension AudioEngineBridge: TrackLoudnessSink {
     /// never when it is merely scheduled. The planner plans it once and both units get the plan — a
     /// resume of it keeps the plan it has, a new play is planned afresh (`planAudible`,
     /// AudioEngineBridge+Leveling); the engine switches the gain to it, the readout's "Integrated"
-    /// measures it — from its start when it is a new track, carrying on when the same one is announced
-    /// again — and the analyzer profiles it (promoting the next-track prefetch, or re-publishing a
-    /// cached profile).
+    /// measures it — carrying on for a resume of the listen, from its start for anything else: another
+    /// song, a seam, a new play of the same song (`beginLoudnessMeasurement`) — and the analyzer profiles
+    /// it (promoting the next-track prefetch, or re-publishing a cached profile).
     func trackBecameAudible(_ url: URL, gaplessSeam: Bool) {
         let identity = TrackIdentity(url: url)
         let token = identity?.token ?? 0
         // The plan, once, to both units (R1.1-B, B1): the request's decision, its saved profile first.
-        let savedProfile = planAudible(url, token: token, gaplessSeam: gaplessSeam)
+        let audibility = planAudible(url, token: token, gaplessSeam: gaplessSeam)
+        let savedProfile = audibility.savedProfile
         if let meter = tapAnalysis.meter {
-            withExtendedLifetime(meter) { loudnessMeterBeginTrack(meter.handle, token) }
+            withExtendedLifetime(meter) {
+                Self.beginLoudnessMeasurement(meter.handle, token: token, newListen: !audibility.resumed)
+            }
         }
         // A saved profile is final (C2): nothing for the analyzer to do. Otherwise it profiles the track as today —
         // on the file's own layout, so a folded first play's −ΔL is the decoded basis's, not §7's fold with the LFE
@@ -43,6 +46,17 @@ extension AudioEngineBridge: TrackLoudnessSink {
         if let identity, !savedProfile {
             loudnessAnalyzer.analyze(url, identity: identity, as: .current, sink: self)
         }
+    }
+
+    /// The readout's "Integrated" for the audible track `token`: a resume of the listen carries its measurement on;
+    /// a new listen measures from its start. The meter starts anew on a token it does not hold, or on 0 ("no
+    /// track"), and carries on for the one it holds — so a new play of the song it holds is announced as no track
+    /// first, then as itself (held for that play's own resumes).
+    static func beginLoudnessMeasurement(_ meter: UnsafeMutableRawPointer, token: UInt64, newListen: Bool) {
+        if newListen {
+            loudnessMeterBeginTrack(meter, 0)
+        }
+        loudnessMeterBeginTrack(meter, token)
     }
 
     /// Prefetch the profile of the track armed for the gapless seam (`nil`: none armed).

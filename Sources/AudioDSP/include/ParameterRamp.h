@@ -20,8 +20,8 @@ namespace AdaptiveSound
     // RT-safety: tick() is noexcept with no allocation; target is written off-RT
     // before process() is called (no concurrent write during tick()).
     //
-    // Shared DSP infrastructure: used by both the EQ and Loudness modules; it lives
-    // here (not under EQ/) so Loudness need not depend on the EQ header (P2-G).
+    // Shared DSP infrastructure: the kernel's Intensity ramp and the crossfeed's enable glide use it;
+    // it lives here, under no module of its own (P2-G).
     // ---------------------------------------------------------------------------
     struct ParameterRamp
     {

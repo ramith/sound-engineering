@@ -120,7 +120,7 @@ extension AudioViewModel {
             logUX("play: '\(name)' can't play (\(refused)) — no song left to play, stopping")
             stopAtEndOfQueue()
             errorMessage = passed.count == 1
-                ? "Playback failed: \(refused.localizedDescription)"
+                ? "Couldn't play “\(name)”. \(refused.localizedDescription)"
                 : "Playback stopped — no song left in the queue can be played. \(refused.localizedDescription)"
             return
         }
