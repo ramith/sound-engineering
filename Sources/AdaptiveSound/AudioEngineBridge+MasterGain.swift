@@ -58,6 +58,16 @@ extension AudioEngineBridge {
         }
     }
 
+    /// See `AudioPlaybackEngine.reportPureVolumeRestores`. The receiver is the rule's own (`onRestore`), set on
+    /// `deviceVolumeQueue` where the rule lives; it is told there, and hops to the main actor.
+    func reportPureVolumeRestores(to restored: @escaping @MainActor @Sendable () -> Void) {
+        deviceVolumeQueue.async {
+            self.masterGainOnPure.onRestore = {
+                DispatchQueue.main.async { MainActor.assumeIsolated { restored() } }
+            }
+        }
+    }
+
     /// The devices changed: a device Pure lowered and couldn't give back (it went away) may be here again —
     /// give its level back now, by the same rule (only if it still reads what Pure set), not only at the
     /// next launch (H-3). Returns at once; the HAL work runs on `deviceVolumeQueue`.
