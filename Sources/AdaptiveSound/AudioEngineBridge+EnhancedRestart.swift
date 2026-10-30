@@ -56,7 +56,8 @@ extension AudioEngineBridge {
             case .passthrough:
                 "\(Int(graphRate)) passthrough"
             case .resampler:
-                "resample \(Int(fileRate))→\(Int(graphRate)) mastering"
+                fileRate == graphRate ? "\(Int(graphRate)) through the reader, no conversion"
+                    : "resample \(Int(fileRate))→\(Int(graphRate)) mastering"
             case .playerConversion:
                 "resample \(Int(fileRate))→\(Int(graphRate)) FELL BACK to the player's conversion"
             }
@@ -87,11 +88,12 @@ extension AudioEngineBridge {
 
     // MARK: - Prepare
 
-    /// How `file` reaches `player`: through, at the graph's rate; otherwise through a new resampler
-    /// session to the player's current format. Touches no playback state.
+    /// How `file` reaches `player`: straight through, at the graph's rate when its decoder delivers its whole
+    /// length (`playsStraightThrough`); otherwise through a new session of the bridge's own reader to the
+    /// player's current format. Touches no playback state.
     func enhancedRoute(for file: AVAudioFile, player: AVAudioPlayerNode) -> EnhancedRoute {
         let outputFormat = player.outputFormat(forBus: 0)
-        guard file.processingFormat.sampleRate != outputFormat.sampleRate else { return .passthrough }
+        guard !Self.playsStraightThrough(file, graphRate: outputFormat.sampleRate) else { return .passthrough }
         guard let session = EnhancedResampleSession(file: file, outputFormat: outputFormat) else {
             return .playerConversion
         }
