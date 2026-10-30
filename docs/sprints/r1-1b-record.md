@@ -211,6 +211,23 @@ Lane 3 is one lane again: with the Pure loan deferred, the plan check's 3a / 3b 
     album order they meant.
 - **The combined check (T3) after the sound fix round (2026-10-30):** 29/29, exit 0 — 1,283 Swift tests, 294 C++
   null tests, the main-thread stall check, VerifyAUGraph, VerifyLibraryStore.
+- **The strict gate (T4) on the sound half rebased onto main (2026-10-30):** 35/35, exit 0 — 1,283 Swift tests; 294
+  C++ tests plain, ASan and TSan; Periphery, the leak check, store ASan.
+- **The founder's sound check (2026-10-30, the test-library build on the XM4 and the built-in output):** all six parts
+  passed.
+  - Leveling on Auto across eras: the log showed *Take a Look Around* measured at −7.58 LUFS and turned down
+    10.42 dB; first plays took the unknown cut (−5 dB) until measured.
+  - Compare with a bass boost on loud masters: the same loudness, nothing squashed.
+  - A folded 5.1 album complete and unsquashed, with its badge.
+  - E-AC-3 to its last frame; a broken file skipped with its words.
+  - Pure on the built-in output, with every EQ control inactive. With Master Gain below the device's own range it
+    waits, as designed.
+- **The LFE rule on the corpus's surround music (AnalyzeTracks, read-only):** every track is omitted.
+  - 33, 34 and 35 because their LFE copies the mains' bass (p90 r² 0.90 / 0.84 / 1.00).
+  - THX *Amazing Life* because p90 r² is 0.309 against the 0.3 gate (median r² 0.02). The founder heard its
+    rumble present, so the gate stays.
+  - So the −6 dB include level is not yet heard by ear: KI-MC-01's one open proof, until music with its own LFE
+    arrives.
 
 ## Test material
 
@@ -279,12 +296,15 @@ Build        ☑ every acceptance line of the roadmap row met by its named measu
                (stand-in results marked provisional; the LFE include level waits on the founder's listen)
              ☑ tests on the real code ☑ every breaker's red test committed
 Gates        ☑ T3 combine-check exit 0 (both halves, and after each fix round)
-             ☐ T4 strict-gate / CI exit 0, run complete — PR 1's: 35/35, exit 0; the sound half's is running
+             ☑ T4 strict-gate / CI exit 0, run complete — PR 1's: 35/35, exit 0; the sound half's: 35/35, exit 0
+               (1,283 Swift tests; 294 C++ tests plain, ASan and TSan)
              ☑ break-it findings fixed, or logged in known issues with a forward (both fix rounds)
              ☑ the whole-app break-it (release close-out)
-Founder      ☐ checklist passed (by ear / eye / hand) ☐ the two LFE albums, pass / fail
-               — the player half's check was done before PR 1 merged; the sound check, the two LFE albums
-                 included, is pending
+Founder      ☑ checklist passed (by ear / eye / hand) ☐ the two LFE albums, pass / fail
+               — the player half's check before PR 1 merged; the sound check on 2026-10-30, all six parts
+                 passed. The LFE include level is not yet heard: no test music carries an LFE of its own (the
+                 rule omits every corpus surround track), so KI-MC-01 stays open on that one listen and the
+                 −6 dB default ships (founder, 2026-10-30)
 Merge        ☑ PR 1 (player) merged by the founder (#101) ☐ PR 2 (sound) merged by the founder
              ☐ main CI green on the merge commit — the founder watches CI
 Close        ☐ this record + five-line retro ☐ known issues ☐ sprint-plan §Status line
