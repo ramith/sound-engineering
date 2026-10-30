@@ -79,9 +79,16 @@ struct HeroBand: View {
 /// The §5 state mapping, realigned to EXACTLY TWO core chips (S10.8 PR F — `png/02`):
 /// the teal path chip (`● ENHANCED · 20%` — dot + path + live intensity in ONE string) and
 /// the grey format·rate chip (`MP3 · 48 kHz` — the format segment is NEW to the hero).
-/// The extra STATES stay: PURE keeps its monochrome chip, crossfeed and the Pure-fallback
-/// warning keep theirs, interrupted replaces the row. All colors/fills are audited tokens.
-private struct SignalBadgeRow: View {
+/// The extra STATES stay: PURE keeps its monochrome chip, the fold, crossfeed and the
+/// Pure-fallback warning keep theirs, interrupted replaces the row (`SignalBadges`). All
+/// colors/fills are audited tokens.
+///
+/// The row holds by STRUCTURE, never squeezed (R1.1-B, review-ui M2): where its chips don't fit
+/// the hero's text column — half of what the lens leaves, 414 pt at the 880 pt window and 474 at
+/// 1000, against about 525 for a folded surround file with Pure declined for Bluetooth — Pure's
+/// reason gives way to its glyph, then the format chip to its rate (`SignalBadgeLevel`), each on
+/// its tooltip. The row is one VoiceOver element whose value says the reason in words throughout.
+struct SignalBadgeRow: View {
     let info: SignalPathInfo
     /// Master Gain, for the sentence when Pure waits for it.
     let masterGain: Float
@@ -92,49 +99,10 @@ private struct SignalBadgeRow: View {
     let badgeHeight: CGFloat
 
     var body: some View {
-        HStack(spacing: DesignSystem.Spacing.small) {
-            if info.interrupted {
-                BadgeCapsule(height: badgeHeight) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(DesignSystem.Color.statusWarningText)
-                    Text("Device disconnected")
-                        .badgeText(DesignSystem.Color.label)
-                }
-            } else {
-                pathBadge
-                formatRateBadge
-                // The fold (R1.1-B, US-R1F-08 item 6): "5.1 → stereo", and "· measuring" on the first play of a
-                // surround track nobody has measured yet. When Pure was asked for and declined for the channels, the
-                // badge IS that reason — its sentence on hover, the dot amber — so the row never carries both.
-                if let fold = info.foldBadge {
-                    BadgeCapsule(height: badgeHeight) {
-                        Text(fold)
-                            .badgeText(DesignSystem.Color.label)
-                            .lineLimit(1)
-                    }
-                    .fixedSize()
-                    .help(foldHelp)
-                }
-                // No bits/decoder capsules: relocated to the inspector's signal-detail
-                // line (§5) — the hero-left's 300pt minimum budget (LAY-01) assumes the
-                // SHORT badge set.
-                if let strength = info.audibleCrossfeed {
-                    BadgeCapsule(height: badgeHeight) {
-                        Text("XF:\(strength.displayName)")
-                            .badgeText(DesignSystem.Color.label)
-                    }
-                }
-                // Why Pure isn't playing bit-perfect (C-34): a short note, its sentence on hover.
-                if let reason = info.pureReason, !foldCarries(reason) {
-                    BadgeCapsule(height: badgeHeight) {
-                        Text(reason.note)
-                            .badgeText(DesignSystem.Color.statusWarningText)
-                            .lineLimit(1)
-                    }
-                    .help(reason.detail(in: info, masterGain: masterGain))
-                }
-            }
+        ViewThatFits(in: .horizontal) {
+            badges(.full)
+            badges(.reasonGlyph)
+            badges(.rateOnly)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: info.path)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: info.interrupted)
@@ -143,114 +111,11 @@ private struct SignalBadgeRow: View {
         .accessibilityValue(SignalPathAccessibility.value(for: info))
     }
 
-    /// Whether the fold badge already says `reason`: Pure declined a file with more channels than the output.
-    private func foldCarries(_ reason: PureModeReason) -> Bool {
-        reason == .channelCountMismatch && info.foldBadge != nil
-    }
-
-    /// The fold badge's tooltip: Pure's reason when Pure was asked for, else what the fold does.
-    private var foldHelp: String {
-        if let reason = info.pureReason, foldCarries(reason) {
-            return reason.detail(in: info, masterGain: masterGain)
-        }
-        let measuring = info.foldBadge?.hasSuffix("measuring") == true
-        return "This track has more channels than your output, so Enhanced folds it to stereo"
-            + (measuring ? ". It plays quieter until it is measured." : ".")
-    }
-
-    /// PURE (accent dot, monochrome chip — untouched by the realign) vs ENHANCED: the
-    /// realigned TEAL chip carrying the pulsing dot + the live intensity in one string.
-    @ViewBuilder private var pathBadge: some View {
-        if info.path == .pure {
-            BadgeCapsule(height: badgeHeight) {
-                Circle().fill(DesignSystem.Color.accent).frame(width: 5, height: 5)
-                Text("PURE")
-                    .badgeText(DesignSystem.Color.label)
-                    .tracking(0.5)
-            }
-        } else {
-            TealBadgeCapsule(height: badgeHeight) {
-                pulsingDot
-                Text(enhancedText)
-                    .badgeText(DesignSystem.Color.accentText)
-                    .tracking(0.5)
-            }
-        }
-    }
-
-    /// One string, live values (realigned): `ENHANCED · 20%`; plain `ENHANCED` at 0%
-    /// (bit-perfect blend — a zero reads as noise, not information).
-    private var enhancedText: String {
-        let percent = Int((info.intensityLinear * 100).rounded())
-        return percent > 0 ? "ENHANCED · \(percent)%" : "ENHANCED"
-    }
-
-    /// The 6pt dot: pulses via the §3.4 conditional phaseAnimator (unmounting IS the
-    /// deterministic stop); frozen at full opacity when paused or under Reduce Motion.
-    /// Amber when Pure fell back (the warning chip beside it carries the words).
-    @ViewBuilder private var pulsingDot: some View {
-        let dot = Circle()
-            .fill(info.fellBackToEnhanced ? DesignSystem.Color.statusWarning
-                : DesignSystem.Color.accentBright)
-            .frame(width: 6, height: 6)
-        if pulseIsActive(isPlaying: isPlaying, reduceMotion: reduceMotion) {
-            dot.phaseAnimator([1.0, GlassDecor.pulseDimOpacity]) { view, opacity in
-                view.opacity(opacity)
-            } animation: { _ in
-                .easeInOut(duration: GlassDecor.pulseHalfCycleSeconds)
-            }
-        } else {
-            dot
-        }
-    }
-
-    /// `MP3 · 48 kHz` — the grey mono chip. Text stays the PRIMARY label (not the mock's
-    /// white-60%): R4-BADGE-01's standing rule — dimmed hierarchy on a badge over the teal
-    /// glow core fails AA; hierarchy on a chip comes from the capsule, not dimmed text.
-    private var formatRateBadge: some View {
-        BadgeCapsule(height: badgeHeight) {
-            Text([format, info.formattedRate].compactMap(\.self).joined(separator: " · "))
-                .font(DesignSystem.Font.monoSmall.weight(.semibold))
-                .foregroundStyle(DesignSystem.Color.label)
-        }
-    }
-}
-
-// MARK: - Teal badge capsule (the realigned ENHANCED chip)
-
-/// The accent-tinted chip: the audited `controlActiveFill` + accent ring pair (same family
-/// as the queue header's toggled-on chips; text/glyphs on it are `accentText`, R4-CHIP-02).
-private struct TealBadgeCapsule<Content: View>: View {
-    let height: CGFloat
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        HStack(spacing: 5) { content }
-            .padding(.horizontal, 11)
-            .frame(height: height)
-            .background(Capsule().fill(DesignSystem.Color.controlActiveFill))
-            .overlay(Capsule().strokeBorder(DesignSystem.Color.accent.opacity(0.28), lineWidth: 1))
-    }
-}
-
-// MARK: - Badge capsule
-
-private struct BadgeCapsule<Content: View>: View {
-    let height: CGFloat
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        // Fill + rim + hairline all come from the `.badge` role's strata — no site paint.
-        HStack(spacing: 5) { content }
-            .padding(.horizontal, 10)
-            .frame(height: height)
-            .glassPanel(.badge, in: Capsule())
-    }
-}
-
-private extension Text {
-    func badgeText(_ color: SwiftUI.Color) -> Text {
-        font(DesignSystem.Font.micro).foregroundStyle(color)
+    /// The row's chips at `level`.
+    func badges(_ level: SignalBadgeLevel) -> SignalBadges {
+        SignalBadges(info: info, masterGain: masterGain, format: format,
+                     pulses: pulseIsActive(isPlaying: isPlaying, reduceMotion: reduceMotion),
+                     badgeHeight: badgeHeight, level: level)
     }
 }
 

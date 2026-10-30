@@ -1,4 +1,5 @@
 #if DEBUG
+    import CoreAudio
     import LevelingKit
     import SettingsKit
 
@@ -13,7 +14,7 @@
         static func seedSound(_ audio: AudioViewModel, for variant: SheetVariant) {
             guard let index = audio.selectedTrackIndex, index < audio.queue.count else { return }
             audio.leveling = .auto
-            let measured = variant != .soundFold
+            let measured = variant != .soundFold && variant != .soundFoldBluetooth
             let decision = TrackLevelingDecision(
                 mode: .leveled, source: measured ? .analysis : .unknownCut, continuousWithPrevious: false,
                 unfolded: .init(loudness: measured ? -13.8 : nil, truePeak: measured ? -0.6 : nil), folded: nil,
@@ -25,14 +26,21 @@
                 ? LevelingReadout(mode: .leveled, gainDb: -4.2, foldMeasured: true, sourceLayout: "2.0")
                 : LevelingReadout(mode: .unknownCut, gainDb: -6.3, foldMeasured: false, sourceLayout: "5.1")
             switch variant {
-            case .soundFold:
-                audio.selectedDevice = audio.availableDevices.first { $0.isHeadphones }
+            case .soundFold, .soundFoldBluetooth:
+                audio.selectedDevice = variant == .soundFold ? audio.availableDevices.first { $0.isHeadphones }
+                    : bluetoothHeadphones(audio)
                 audio.crossfeedEnabled = true
                 audio.signalPath.crossfeedStrength = audio.crossfeedStrength
                 audio.signalPath.crossfeedEngaged = false
-                audio.signalPath.pureReason = .channelCountMismatch
+                audio.signalPath.pureReason = variant == .soundFold ? .channelCountMismatch : .bluetooth
                 audio.signalPath.fold = FoldState(sourceChannels: 6, outputChannels: 2, fromPlan: true, trimDb: -8.94,
                                                   lfeGain: 0, backstopPeakGrDb: 0)
+            case .soundBluetoothCrossfeed:
+                audio.selectedDevice = bluetoothHeadphones(audio)
+                audio.crossfeedEnabled = true
+                audio.signalPath.crossfeedStrength = audio.crossfeedStrength
+                audio.signalPath.crossfeedEngaged = true
+                audio.signalPath.pureReason = .bluetooth
             case .soundPure:
                 audio.selectedDevice = audio.availableDevices.first { $0.isHeadphones }
                 audio.crossfeedEnabled = true
@@ -45,6 +53,17 @@
             default:
                 break
             }
+        }
+
+        /// The XM4 — Bluetooth headphones, where Pure declines — added to the devices and returned, for the badge
+        /// row's crowded worlds.
+        private static func bluetoothHeadphones(_ audio: AudioViewModel) -> AudioDeviceModel {
+            let headphones = AudioDeviceModel(id: 3, name: "WH-1000XM4", sampleRate: 48000, bufferFrameSize: 512,
+                                              uid: "AC-80-0A-00-00-01:output", modelUID: nil,
+                                              transportType: kAudioDeviceTransportTypeBluetooth, type: .wireless,
+                                              isHeadphones: true)
+            audio.availableDevices.append(headphones)
+            return headphones
         }
 
         /// The toast world's toast, raised from the window's first task: the host is up, so it shows.
