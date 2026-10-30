@@ -13,8 +13,8 @@ import Synchronization
 /// - At most two jobs at once, and one when the work is slower than twice real time (the design's stop rule,
 ///   §13.1); each track runs at the quality of service `AnalysisQoS` gives its job (the deadline rule, measured).
 ///
-/// Requests return at once, from any thread; the decodes run on the global queue of their QoS, never the main thread
-/// or the cooperative pool.
+/// Requests return at once, from any thread; the file reads — each file's identity and header, then its decode — run
+/// on a global queue, never the main thread or the cooperative pool (review N8: a drive waking up takes seconds).
 public final class TrackAnalysisScheduler: Sendable {
     /// One analysis job: a horizon target's files, and how soon the first of them plays.
     public struct Job: Sendable, Equatable {
@@ -171,6 +171,8 @@ private actor AnalysisRunner {
     private let onAnalysed: @Sendable (TrackAnalysis) -> Void
     private var horizon: [TrackAnalysisScheduler.Job] = []
     private var progress: [String: Progress] = [:]
+    /// The jobs whose files are being looked at (`prepare`), by the files: a job is looked at once at a time.
+    private var preparing: [String: [URL]] = [:]
     private var running: [String: (task: Task<Void, Never>, cancel: CancelFlag)] = [:]
     private var failed: Set<TrackIdentity> = []
 
@@ -202,13 +204,21 @@ private actor AnalysisRunner {
     }
 
     /// Start jobs in horizon order while the concurrency rule allows. Re-checks after each suspension: another call
-    /// may have changed the horizon or started the job meanwhile.
+    /// may have changed the horizon or started the job meanwhile. A job whose files are still being looked at by
+    /// another call is passed over; that call starts it.
     private func startWhatMay() async {
         for job in horizon where running[job.id] == nil {
             if progress[job.id] == nil {
-                let prepared = await Self.prepare(job, store: store, skipping: failed)
-                guard horizon.contains(job), progress[job.id] == nil else { continue }
-                progress[job.id] = prepared
+                guard preparing[job.id] != job.files else { continue }
+                preparing[job.id] = job.files
+                let pending = await Self.prepare(job, store: store, skipping: failed)
+                if preparing[job.id] == job.files {
+                    preparing[job.id] = nil
+                }
+                // Kept for the job as the horizon has it now (its start time moves), if its files are the same.
+                guard let current = horizon.first(where: { $0.id == job.id }), current.files == job.files,
+                      progress[job.id] == nil else { continue }
+                progress[job.id] = Progress(job: current, pending: pending)
             }
             guard running[job.id] == nil, let prepared = progress[job.id], !prepared.pending.isEmpty else { continue }
             guard mayRun(job.id) else { return }
@@ -271,35 +281,47 @@ private actor AnalysisRunner {
         }
     }
 
-    /// A job's files that still need the pass: identities read off main, the store's current records skipped, and
-    /// each one's length and sample rate read from its header.
+    /// A job's files that still need the pass: each one's identity read, the store's current records skipped, and
+    /// each one's length and sample rate read from its header — the file reads on a global queue (`offPool`).
     private static func prepare(_ job: TrackAnalysisScheduler.Job, store: TrackAnalysisStore,
-                                skipping failed: Set<TrackIdentity>) async -> Progress {
-        let named = job.files.compactMap { url in TrackIdentity(url: url).map { (url, $0) } }
-            .filter { !failed.contains($0.1) }
+                                skipping failed: Set<TrackIdentity>) async -> [Pending] {
+        let named = await offPool(qos: .utility) {
+            job.files.compactMap { url in TrackIdentity(url: url).map { (url, $0) } }
+        }.filter { !failed.contains($0.1) }
         let kept = (try? await store.analyses(for: named.map(\.1))) ?? [:]
-        let pending = named.filter { kept[$0.1] == nil }.compactMap { url, identity -> Pending? in
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
+        let unanalysed = named.filter { kept[$0.1] == nil }
+        return await offPool(qos: .utility) { unanalysed.compactMap(header) }
+    }
+
+    /// The file `url` (identity `identity`) as its header describes it; nil when it cannot be opened.
+    private static func header(_ url: URL, _ identity: TrackIdentity) -> Pending? {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
             }
-            guard let file = try? AVAudioFile(forReading: url) else { return nil }
-            let format = file.fileFormat
-            return Pending(url: url, identity: identity, seconds: Double(file.length) / format.sampleRate,
-                           samplesPerSecond: format.sampleRate * Double(format.channelCount))
         }
-        return Progress(job: job, pending: pending)
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        let format = file.fileFormat
+        return Pending(url: url, identity: identity, seconds: Double(file.length) / format.sampleRate,
+                       samplesPerSecond: format.sampleRate * Double(format.channelCount))
     }
 
     /// The one analysis pass over `track`, on the global queue of `qos`, while the caller's task awaits.
     private static func analyse(_ track: Pending, qos: DispatchQoS.QoSClass,
                                 cancel: CancelFlag) async -> TrackAnalysisPass.Outcome {
+        await offPool(qos: qos) {
+            TrackAnalysisPass.analyse(track.url, identity: track.identity, isCancelled: { cancel.isRaised })
+        }
+    }
+
+    /// `work` — blocking file reads — on the global queue of `qos` while the caller's task awaits: no thread of the
+    /// cooperative pool waits on a drive.
+    private static func offPool<Value: Sendable>(qos: DispatchQoS.QoSClass,
+                                                 _ work: @escaping @Sendable () -> Value) async -> Value {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: qos).async {
-                continuation.resume(returning: TrackAnalysisPass.analyse(track.url, identity: track.identity,
-                                                                         isCancelled: { cancel.isRaised }))
+                continuation.resume(returning: work())
             }
         }
     }
