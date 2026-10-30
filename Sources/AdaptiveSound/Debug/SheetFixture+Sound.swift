@@ -1,7 +1,6 @@
 #if DEBUG
     import CoreAudio
     import LevelingKit
-    import SettingsKit
 
     // MARK: - Picture-sheet fixture data: the sound UI (R1.1-B W5, lane 3-B)
 
