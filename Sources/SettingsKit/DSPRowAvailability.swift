@@ -22,13 +22,16 @@ public enum DSPRow: String, CaseIterable, Sendable {
     case crossfeed
     /// Leveling (Settings).
     case leveling
+    /// Reimagine's Intensity (Now Playing's inspector) — hidden and held at 0 until its effects are real (S17), but a
+    /// control that changes the sound all the same, so it wears the state wherever it shows.
+    case intensity
 
     /// What the row reads while Pure plays: the shared words, or the row's own where it has them (Leveling, whose
     /// "off" is the point — founder, 2026-10-25).
     public var bitPerfectText: String {
         switch self {
         case .leveling: "Leveling off (bit-perfect)"
-        case .equalizer, .tone, .crossfeed: DSPRowAvailability.stateText
+        case .equalizer, .tone, .crossfeed, .intensity: DSPRowAvailability.stateText
         }
     }
 }

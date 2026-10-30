@@ -30,6 +30,8 @@ struct NavRow<Leading: View, Trailing: View>: View {
     /// Scales with the text size, relative to `.body` (set in `init`).
     @ScaledMetric private var rowHeight: CGFloat
     @State private var hover = false
+    /// A disabled row (the EQ's presets while Pure plays) never washes under the pointer.
+    @Environment(\.isEnabled) private var isEnabled
 
     /// A row `rowHeight` tall at the default text size (the Library rail's 38 unless given).
     init(label: String, active: Bool = false, isKeyboardCursor: Bool = false, rowHeight: CGFloat = 38,
@@ -56,8 +58,8 @@ struct NavRow<Leading: View, Trailing: View>: View {
             trailing
         }
         // Idle rows sit recessed (mock png/01, ~72% via the dedicated `labelNav` tier) so the
-        // active teal row leads.
-        .foregroundStyle(active ? DesignSystem.Color.accentText : DesignSystem.Color.labelNav)
+        // active teal row leads. Disabled, light draws the row's own look (tertiary); dark dims it.
+        .controlLabelStyle(active ? DesignSystem.Color.accentText : DesignSystem.Color.labelNav)
         .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
         .frame(height: rowHeight)
         .background(rowFill, in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container,
@@ -76,7 +78,7 @@ struct NavRow<Leading: View, Trailing: View>: View {
     private var rowFill: Color {
         if active {
             DesignSystem.Color.rowSelected
-        } else if hover {
+        } else if hover, isEnabled {
             DesignSystem.Color.controlHover
         } else {
             .clear

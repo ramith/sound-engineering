@@ -35,9 +35,9 @@ struct DSPRowAvailabilityTests {
         #expect(!DSPRowAvailability.notInBitPerfectMode(leaving: false).isLive)
     }
 
-    @Test("DSP-ROW-03: the registry holds today's rows — EQ on / off, Tone, crossfeed, Leveling")
+    @Test("DSP-ROW-03: the registry holds today's rows — EQ on / off, Tone, crossfeed, Leveling, Intensity")
     func registry() {
-        #expect(Set(DSPRow.allCases) == [.equalizer, .tone, .crossfeed, .leveling])
+        #expect(Set(DSPRow.allCases) == [.equalizer, .tone, .crossfeed, .leveling, .intensity])
         #expect(Set(DSPRow.allCases.map(\.rawValue)).count == DSPRow.allCases.count)
     }
 }

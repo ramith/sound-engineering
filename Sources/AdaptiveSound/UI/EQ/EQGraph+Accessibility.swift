@@ -1,4 +1,5 @@
 import EQEditKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - EQ graph: VoiceOver (ui-plan §5.4)
@@ -15,7 +16,9 @@ extension View {
     /// 0.2 dB or more and "limited" where the ceiling holds them, and offer "Reset band". The points are
     /// synthetic children: never drawn, never hit-tested, so they can't intercept the drag. Each sits
     /// where its point is drawn (`map`), so VoiceOver's cursor rings the point itself.
-    func graphAccessibility(eq: EQViewModel, reading: EQGraphReading, map: EQPlotMap) -> some View {
+    /// While Pure plays the points are inert, like the graph (`availability`).
+    func graphAccessibility(eq: EQViewModel, reading: EQGraphReading, map: EQPlotMap,
+                            availability: DSPRowAvailability) -> some View {
         accessibilityElement()
             .accessibilityLabel("Equalizer graph")
             .accessibilityValue(EQReadout.spokenState(of: eq))
@@ -23,7 +26,7 @@ extension View {
             .accessibilityChildren {
                 ZStack(alignment: .topLeading) {
                     ForEach(reading.points.indices, id: \.self) { band in
-                        EQGraphAccessiblePoint(eq: eq, reading: reading, band: band)
+                        EQGraphAccessiblePoint(eq: eq, reading: reading, band: band, availability: availability)
                             .frame(width: EQGraph.accessiblePointSide, height: EQGraph.accessiblePointSide)
                             .position(x: map.x(forFreq: EQBands.nominalHz[band]),
                                       y: map.y(forGain: Double(reading.points[band])))
