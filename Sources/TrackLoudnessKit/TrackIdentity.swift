@@ -4,7 +4,7 @@ import Foundation
 /// item 3, "a cache keyed by file identity"). The same bytes at the same path keep the same
 /// identity across plays, so a profile is analysed once; an edited or replaced file gets a new one.
 ///
-/// `token` is the 64-bit name the engine knows the track by (`setCurrentTrack`,
+/// `token` is the 64-bit name the engine knows the track by (`applyTrackPlan`,
 /// `publishTrackLoudnessProfile`): FNV-1a over the three fields, never 0 (the engine's "no track").
 public struct TrackIdentity: Hashable, Sendable, Codable {
     public let path: String
