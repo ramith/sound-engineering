@@ -681,6 +681,9 @@ code review (findings B, S, N) and the break-it (HIGH, MEDIUM, LOW; tests BI-S�
 - **The deletion** (§7) as planned: `sizeof(TargetState)` 768 B before and after, used bytes 744 → 728; LP-22's
   Intensity sweep 0 → 1 → 0 at −25.565 / −25.564 / −25.565 LUFS (red before the deletion: the AGC lifted Intensity 1 by
   4.6 dB); the stereo golden master held, and LP-23 pins the leveled P1 path.
+- **For S17, when Intensity returns:** the cap uses the P1 path's ceiling (−0.1 dBTP wired, the EQ-only ceiling);
+  P2 and the blend limit at −1 dBTP, so the cap must take the ceiling of the path that plays once they are reachable.
+  Intensity is hidden and held at 0 in R1.1, so nothing plays them today.
 
 ### Lane 1-B — roles and the one analysis pass
 
