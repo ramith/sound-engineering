@@ -33,6 +33,12 @@ final class LevelingState {
         var song: SongLeveling {
             SongLeveling(url: url, decision: decision)
         }
+
+        /// Whether `other` is the same song, reached the same way, playing the same (`playsLike`).
+        func playsLike(_ other: Sent) -> Bool {
+            url == other.url && atSeam == other.atSeam && previous == other.previous
+                && decision.playsLike(other.decision)
+        }
     }
 
     /// The song playing (or paused, or starting): the decision it was started or armed with, or the mode change's
@@ -72,8 +78,9 @@ final class LevelingState {
     @ObservationIgnored var refreshScheduled = false
 
     /// A start sent `decision` for `key`, or the armed pick became audible at a seam, or a mode change replaced it.
+    /// One that plays as the song playing does changes nothing (Observation has no equality gate of its own).
     func play(_ sent: Sent) {
-        if playing != sent {
+        if playing?.playsLike(sent) != true {
             playing = sent
         }
     }
@@ -93,5 +100,27 @@ final class LevelingState {
     /// Whether `generation` is still the newest refresh (an older one's result is dropped).
     func isNewest(_ generation: UInt64) -> Bool {
         generation == refreshGeneration
+    }
+}
+
+extension TrackLevelingDecision {
+    /// Whether `other` plays as this does: every number and verdict alike, and saved profiles on the same bases and
+    /// grid — never comparing the profiles' band powers (binary16, about 600 KB each), which the main thread would
+    /// otherwise walk on every refresh of the horizon, as it reads the profiles again (review N14). A profile is its
+    /// measurement's: a new one comes with new numbers.
+    func playsLike(_ other: TrackLevelingDecision) -> Bool {
+        var (mine, theirs) = (self, other)
+        (mine.profiles, theirs.profiles) = ([], [])
+        return mine == theirs && profiles.count == other.profiles.count
+            && zip(profiles, other.profiles).allSatisfy { $0.isOnTheGridOf($1) }
+    }
+}
+
+private extension CompactLoudnessProfile {
+    /// The same basis and grid — rate, bands, blocks — as `other`, whatever the powers.
+    func isOnTheGridOf(_ other: CompactLoudnessProfile) -> Bool {
+        basis == other.basis && sampleRate == other.sampleRate && bandsPerOctave == other.bandsPerOctave
+            && bandCount == other.bandCount && blockCount == other.blockCount
+            && blockStrideHops == other.blockStrideHops && powers.count == other.powers.count
     }
 }
