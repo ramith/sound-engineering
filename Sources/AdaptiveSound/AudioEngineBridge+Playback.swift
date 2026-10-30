@@ -7,7 +7,7 @@ import PlaybackQueueKit
 
 extension AudioEngineBridge {
     func startAudio(fileURL: URL, pureMode: Bool, startAt requested: Double, epoch: UInt64,
-                    leveling: TrackLevelingDecision) async throws {
+                    leveling: LevelingStart) async throws {
         // The one place rule (`SeekTarget`): a start must start somewhere, so a place that is not a
         // number is the top. Pure and Enhanced both take it from here.
         let startAt = SeekTarget.place(requested) ?? 0

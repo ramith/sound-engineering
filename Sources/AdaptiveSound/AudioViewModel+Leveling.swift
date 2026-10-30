@@ -159,22 +159,30 @@ extension AudioViewModel {
 
     // MARK: - The start
 
-    /// The decision the start numbered `epoch` carries for `file`. A resume, a device move or a restart of the song
-    /// playing carries the decision it plays with (the engine keeps that plan: B1). Another song: looked up first if
-    /// the prefetch has not — its record, and its saved profiles if it has one (`waitForStartLookup`, at most 50 ms)
-    /// — then decided between the song heard before it and the next. Kept as the song playing's only while the
-    /// start is still the newest.
-    func levelingDecisionForStart(of file: AudioFile, epoch: UInt64) async -> TrackLevelingDecision {
+    /// What the start numbered `epoch` carries for `file`. A resume (`resuming`: Pause → Play, a move to another
+    /// device) goes on with the listen that was playing: it carries the decision the song plays with, and the engine
+    /// keeps its plan — nothing automatic moves the level inside a song, not even an analysis that landed meanwhile.
+    /// Anything else is a new listen, the song that was playing too (Play after Stop or after the queue ended,
+    /// Previous restarting it): looked up first if the prefetch has not — its record, and its saved profiles if it
+    /// has one (`waitForStartLookup`, at most 50 ms) — then decided afresh between the song heard before it and the
+    /// next. Kept as the song playing's only while the start is still the newest.
+    func levelingDecisionForStart(of file: AudioFile, epoch: UInt64, resuming: Bool) async -> LevelingStart {
         let slot = levelingSlot(file)
         levelingState.armed = nil // a start begins a new playback: the engine drops the armed pick
-        if let playing = levelingState.playing, playing.key == slot.key {
-            return playing.decision
+        let playing = levelingState.playing.flatMap { $0.key == slot.key ? $0 : nil }
+        if resuming, let playing {
+            return LevelingStart(decision: playing.decision, listen: .resume)
         }
         let next = selectedTrackIndex.flatMap { levelingSlot(after: $0) }
         if !levelingState.knowledge.isReadyToStart(slot.key, next: next?.key), let sources = levelingSources {
             await waitForStartLookup(slot, next: next, sources: sources)
         }
-        let previous = levelingState.playing?.key
+        // The song heard before it; a new listen of the song that was playing asks its question again.
+        let previous = if let playing {
+            playing.previous
+        } else {
+            levelingState.playing?.key
+        }
         let decision = levelingState.knowledge.library.decision(for: LevelingRequest(
             key: slot.key, mode: levelingMode, previous: previous, next: next?.key, atSeam: false
         ))
@@ -182,7 +190,7 @@ extension AudioViewModel {
             levelingState.play(.init(key: slot.key, decision: decision, atSeam: false, previous: previous))
         }
         logUX("leveling: start '\(file.name)' — \(Self.describe(decision))")
-        return decision
+        return LevelingStart(decision: decision, listen: resuming ? .resume : .newPlay)
     }
 
     /// Look `slot` up alone and wait for it at most `LevelingState.startWait`. A lookup still running then lands

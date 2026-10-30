@@ -296,6 +296,7 @@ namespace AdaptiveSound
         const bool first = !entry.profile;
         entry.profile = std::move(profile);
         entry.saved = saved;
+        entry.savedForPlay = saved;
         entry.failed = false;
         if (token != current_)
         {
@@ -341,6 +342,10 @@ namespace AdaptiveSound
             {
                 return std::nullopt; // for a track that is no longer audible
             }
+            if (TrackEntry* entry = find(token); entry != nullptr)
+            {
+                entry->savedForPlay = false; // a saved profile sent with it stays this play's
+            }
             plan_ = planned;
             const double own = ownNeutralDb(1U);
             if (event == AsPlanEventModeChange)
@@ -356,10 +361,16 @@ namespace AdaptiveSound
             return moveTo(neutral, own, kOutputChangeRampSeconds);
         }
 
-        // A new play: a new token, or the same one again at a real seam (Repeat One — architect N3).
+        // A new play: a new token, or the same one again at a real seam (Repeat One — architect N3) or a
+        // fresh start (a new listen). Its saved profile is final only if it came with this play (N2).
         current_ = token;
         plan_ = planned;
-        const TrackEntry* entry = (token != 0U) ? &slotFor(token) : nullptr;
+        TrackEntry* entry = (token != 0U) ? &slotFor(token) : nullptr;
+        if (entry != nullptr)
+        {
+            entry->saved = entry->savedForPlay;
+            entry->savedForPlay = false;
+        }
         causalActive_ = (entry != nullptr) && entry->failed && !entry->profile;
         causal_.reset();
         groupLocked_ = false;

@@ -110,9 +110,10 @@ namespace AdaptiveSound
         // The idle refresh after edits: the full-resolution ΔL and the cascade's ‖h‖₁, if the gain moved.
         [[nodiscard]] std::optional<Change> onRefresh();
 
-        // A profile for `token`. `saved`: the persisted compact profile (C2) — it is final: nothing the
-        // analyzer sends later replaces it. Otherwise the analyzer's prefix or whole track; a whole
-        // profile is never replaced by a prefix.
+        // A profile for `token`. `saved`: the persisted compact profile (C2), delivered just before the plan
+        // of the play it is for — final for that play: nothing the analyzer sends later replaces it. A later
+        // play of the track that brings none (another basis, N2) takes the analyzer's again. Otherwise the
+        // analyzer's prefix or whole track; a whole profile is never replaced by a prefix.
         [[nodiscard]] std::optional<Change>
         onProfile(uint64_t token,
                   std::shared_ptr<const TrackLoudnessProfile> profile,
@@ -179,7 +180,8 @@ namespace AdaptiveSound
         {
             uint64_t token = 0U;
             std::shared_ptr<const TrackLoudnessProfile> profile;
-            bool saved = false; // the persisted profile: final (C2)
+            bool saved = false; // the persisted profile: final for the play it came with (C2)
+            bool savedForPlay = false; // it came after the last plan: it is the next play's
             bool failed = false;
             uint64_t lastUse = 0U;
         };

@@ -1155,6 +1155,21 @@ static auto testLevelStageRules() -> void
                  .has_value(),
         "the analyzer's later profiles change nothing");
     expect.near("still the saved profile's", saved.gainDb(), own, 1e-9);
+    // N2: a saved profile is final for the play it comes with. A later play of the track that brings none (its
+    // decision saves no profile for the basis it plays on now) takes the analyzer's again; one that brings its
+    // saved profile keeps it final.
+    (void)saved.onPlan(kLpTrackA, AsPlanEventFreshStart, quiet, false);
+    const TlProfiles replay =
+        tlProfile(lnNoiseProgramme(20.0, 94U, 0.0, -18.0), tlStereoWeights());
+    const double replayOwn = lnOwnGainDb(*replay.whole, kEqPresetCurves[kEqPresetWarm]);
+    expect.that(std::abs(replayOwn - own) > 0.1, "vacuous: the analyzer's profile reads as the saved one");
+    (void)saved.onProfile(kLpTrackA, replay.whole);
+    expect.near("a later play with no saved profile takes the analyzer's", saved.gainDb(), replayOwn, 1e-9);
+    (void)saved.onProfile(kLpTrackA, profiles.whole, true);
+    (void)saved.onPlan(kLpTrackA, AsPlanEventFreshStart, quiet, false);
+    expect.that(!saved.onProfile(kLpTrackA, replay.whole).has_value(),
+                "a play that brings its saved profile keeps it final");
+    expect.near("its saved profile's", saved.gainDb(), own, 1e-9);
 
     // B_eff's cut allowance: a curve whose B is under 0.7 dB counts 0.7 dB until the refresh measures ‖h‖₁.
     TrackLoudnessGain cutting(kEngineFs);

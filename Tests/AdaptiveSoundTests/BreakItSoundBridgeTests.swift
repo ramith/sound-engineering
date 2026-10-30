@@ -69,13 +69,13 @@ struct BreakItSoundBridgeTests {
             folded: .init(loudness: [-21, -21, -21, -21], truePeak: [-4, -4, -4, -4], variant: 0),
             roles: [1, 2, 3, 4, 5, 6], peakRate: 48000
         )
-        rig.bridge.holdStartDecision(unmeasured, for: url)
+        rig.bridge.holdStartDecision(LevelingStart(decision: unmeasured, listen: .newPlay), for: url)
         try await rig.play(url)
         _ = try await rig.render(frames: 4800)
         #expect(rig.bridge.snapshot().signalPath.leveling?.foldMeasured == false, "the first play is unmeasured")
 
         // Played again from the top — after a stop, Play on the same row — with the analysis that landed meanwhile.
-        rig.bridge.holdStartDecision(measured, for: url)
+        rig.bridge.holdStartDecision(LevelingStart(decision: measured, listen: .newPlay), for: url)
         try await rig.play(url)
         _ = try await rig.render(frames: 4800)
         let readout = try #require(rig.bridge.snapshot().signalPath.leveling)
@@ -96,7 +96,7 @@ struct BreakItSoundBridgeTests {
         let decision = TrackLevelingDecision(mode: .leveled, source: .analysis, continuousWithPrevious: false,
                                              unfolded: .init(loudness: -30, truePeak: -20), folded: nil,
                                              roles: [UInt8(AsChannelRoleC.rawValue)], peakRate: 48000)
-        rig.bridge.holdStartDecision(decision, for: url)
+        rig.bridge.holdStartDecision(LevelingStart(decision: decision, listen: .newPlay), for: url)
         try await rig.play(url)
         _ = try await rig.render(frames: 4800)
         let plan = try #require(rig.bridge.leveling.audiblePlan)

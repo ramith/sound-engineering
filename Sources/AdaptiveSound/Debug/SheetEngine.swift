@@ -1,6 +1,5 @@
 #if DEBUG
     import Foundation
-    import LevelingKit
 
     // MARK: - Picture-sheet audio engine
 
@@ -26,7 +25,7 @@
         func shutdown() async throws {}
 
         func startAudio(fileURL _: URL, pureMode _: Bool, startAt _: Double, epoch _: UInt64,
-                        leveling _: TrackLevelingDecision) async throws {}
+                        leveling _: LevelingStart) async throws {}
 
         func stopAudio(epoch _: UInt64, pausing _: Bool) async throws {}
 

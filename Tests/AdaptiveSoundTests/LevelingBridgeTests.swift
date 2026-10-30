@@ -59,9 +59,10 @@ private func measured(_ loudness: Double, peak: Double, continuous: Bool = false
 struct LevelingBridgeTests {
     typealias Rig = EnhancedTransportRig
 
-    /// Start `url` through the bridge's own start (`playFile`), as `startAudio` does, holding `decision` first.
-    private static func start(_ rig: Rig, _ url: URL, decision: TrackLevelingDecision?, at seconds: Double = 0)
-        async throws {
+    /// Start `url` through the bridge's own start (`playFile`), as `startAudio` does, holding `decision` first — a
+    /// new play, or a resume of the listen playing (`listen`).
+    private static func start(_ rig: Rig, _ url: URL, decision: TrackLevelingDecision?, at seconds: Double = 0,
+                              listen: LevelingStart.Listen = .newPlay) async throws {
         let bridge = rig.bridge
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bridge.engineQueue.async {
@@ -69,7 +70,7 @@ struct LevelingBridgeTests {
                     guard let engine = bridge.avEngineRef, let player = bridge.playerNodeRef else {
                         throw AudioBridgeError.engineNotInitialized
                     }
-                    bridge.holdStartDecision(decision, for: url)
+                    bridge.holdStartDecision(decision.map { LevelingStart(decision: $0, listen: listen) }, for: url)
                     bridge.setLastFileURL(url)
                     try bridge.playFile(at: url, engine: engine, playerNode: player, startAt: seconds)
                     continuation.resume()
@@ -88,7 +89,7 @@ struct LevelingBridgeTests {
         await rig.finish()
     }
 
-    @Test("LB-2: a start's decision is planned at audibility, once, and both units get the same plan (B1, B2)")
+    @Test("LB-2: a start is planned at audibility, once, both units alike; a resume keeps it, a new play re-plans")
     func aStartsDecisionIsPlannedOnce() async throws {
         let rig = try await Rig(path: .passthrough, name: "lb-start")
         let record = FoldRecord()
@@ -103,12 +104,24 @@ struct LevelingBridgeTests {
         #expect(plan.mode == UInt8(AsLevelingModeLeveled.rawValue))
         #expect(abs(plan.levelGainDb - 6.0) < 1e-9, "g = −18 − (−24): \(plan.levelGainDb)")
 
-        // A resume and a seek of the same track on the same unit send nothing (B1).
-        try await Self.start(rig, track, decision: measured(-12, peak: -1), at: 0.5)
+        // A resume goes on with the listen: the plan stays, whatever the resume carries (the level never steps
+        // inside a song), and the fold — set back to the layout's by the graph's configure — gets its half again.
+        try await Self.start(rig, track, decision: measured(-12, peak: -1), at: 0.5, listen: .resume)
+        let resumed = try #require(rig.bridge.leveling.audiblePlan)
+        #expect(samePlan(resumed, plan), "the plan moved inside the track at a resume")
+        #expect(record.count == 2, "the fold got \(record.count - 1) plans at the resume")
+        let refold = try #require(record.last)
+        #expect(samePlan(refold.plan, plan) && refold.event == AsPlanEventFreshStart.rawValue)
+        // A seek re-schedules the track without a start: nothing is sent (B1).
         _ = await rig.seek(to: 1.0)
-        #expect(record.count == 1, "a resume or a seek sent \(record.count - 1) plans")
-        let after = try #require(rig.bridge.leveling.audiblePlan)
-        #expect(samePlan(after, plan), "the plan moved inside the track")
+        #expect(record.count == 2, "a seek sent \(record.count - 2) plans")
+
+        // A new play of the same file (Play after Stop) is a new listen: planned afresh from its own decision.
+        try await Self.start(rig, track, decision: measured(-12, peak: -1))
+        let replayed = try #require(rig.bridge.leveling.audiblePlan)
+        #expect(abs(replayed.levelGainDb + 6.0) < 1e-9, "g = −18 − (−12): \(replayed.levelGainDb)")
+        let fresh = try #require(record.last)
+        #expect(record.count == 3 && fresh.event == AsPlanEventFreshStart.rawValue && samePlan(fresh.plan, replayed))
         await rig.finish()
     }
 

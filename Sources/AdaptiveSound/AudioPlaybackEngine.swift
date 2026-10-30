@@ -76,6 +76,25 @@ extension AudioPlaybackEngine {
     func setMonitorAnalysis(_: Bool) {}
 }
 
+/// What a start carries for leveling (R1.1-B, level-and-fold §S3, B2): the song's decision, and whether the start
+/// goes on with the listen that was playing or begins a new one — said by the caller, never inferred from whether
+/// the decision differs.
+struct LevelingStart: Sendable, Equatable {
+    /// Which listen a start plays.
+    enum Listen: Sendable, Equatable {
+        /// The listen that was playing goes on (`startPlayback(resumeFrom:)`: Pause → Play, a move to another
+        /// device). Nothing automatic moves the level inside a song (US-R1F-10 item 4), so it keeps the level it
+        /// plays at — even when the song's analysis landed meanwhile: the engine keeps the plan it has for it.
+        case resume
+        /// A new listen — Play after Stop or after the queue ended, Previous restarting the song, Repeat One
+        /// through a fresh start, a pick: decided afresh, and planned afresh by the engine, the same file too.
+        case newPlay
+    }
+
+    var decision: TrackLevelingDecision
+    var listen: Listen
+}
+
 protocol AudioPlaybackEngine: AnyObject, Sendable {
     // MARK: Lifecycle
 
@@ -93,15 +112,16 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
     /// HAL path is used; otherwise the Enhanced (AVFAudio engine) path is used. `epoch` numbers the
     /// request: the snapshot's transport carries it from the start of the request on. `leveling` is the
-    /// track's leveling decision (R1.1-B, level-and-fold §S3, B2): it travels with the request that makes
-    /// the track audible, and the engine plans from it at that moment — once (B1). Pure ignores it (leveling
-    /// in Pure is deferred, record decision 1).
+    /// track's leveling decision (R1.1-B, level-and-fold §S3, B2) and whether the start resumes the listen
+    /// that was playing or begins a new one: it travels with the request that makes the track audible, and
+    /// the engine plans from it at that moment — once (B1) — or, for a resume of the track it plays, keeps
+    /// the plan it has. Pure ignores it (leveling in Pure is deferred, record decision 1).
     ///
     /// Newest stands (council C-15). The view model numbers its starts, stops and seeks in the order
     /// the user asks; they can reach the engine in another order. One older than a request the engine
     /// has already begun was overtaken: it returns at once and has no effect — never an error.
     func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64,
-                    leveling: TrackLevelingDecision) async throws
+                    leveling: LevelingStart) async throws
 
     /// Stop all playback immediately; the on-deck pick goes with it (a stop begins a new playback, so
     /// every on-deck request made before it is stale — invariant 5 below). `epoch` numbers the request,
