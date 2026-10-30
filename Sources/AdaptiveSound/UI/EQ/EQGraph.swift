@@ -41,11 +41,10 @@ struct EQGraph: View {
             plot(reading, audible: audible)
             EQGraphStrip(audible: audible, keyboardReadout: keyboardReadout(reading),
                          toneReadout: eq.toneReadout, isDragging: drag != nil,
-                         isHeldAtCeiling: drag?.isPastCeiling ?? false) {
-                audio.selectedTab = .settings
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
+                         isHeldAtCeiling: drag?.isPastCeiling ?? false,
+                         availability: audio.dspRowAvailability, leavePure: audio.leavePure)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .onDisappear { endStroke() }
