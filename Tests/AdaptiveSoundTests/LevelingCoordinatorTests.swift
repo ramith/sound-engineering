@@ -322,6 +322,27 @@ extension LevelingCoordinatorTests {
         #expect(changes.last?.current == player.vm.levelingState.playing?.song)
     }
 
+    @Test("LEVEL-VM-16: a refresh that re-reads the armed pick's saved profiles re-arms nothing when it plays the same")
+    func reReadProfilesDoNotRearm() async throws {
+        // Every refresh of the horizon reads the profiles of the songs about to play again, so the main thread
+        // compares the armed decision with a fresh one each time. It must decide on what plays — the numbers, the
+        // verdicts, the profiles' bases and grid — never by comparing the band powers themselves (review N14).
+        let sources = try Self.sources()
+        let player = try await Self.player(sources: sources)
+        try await player.play(at: 0)
+        try await player.vm.settled()
+        player.vm.duration = 200
+        player.engineReports(position: 10)
+        try player.tick()
+        let picksBefore = player.engine.state.withLock(\.nextTracks).count
+        let reread = try LevelingFixture.profile(0x3C01) // the same grid, other powers
+        sources.state.withLock { $0.profiles[Self.key(1)] = [0: reread, 1: reread, 2: reread] }
+        player.vm.scheduleLevelingRefresh()
+        try await player.vm.settled()
+        #expect(player.engine.state.withLock(\.nextTracks).count == picksBefore,
+                "the armed pick was re-armed though its decision plays the same")
+    }
+
     @Test("LEVEL-VM-14: Pause → Play after the analysis landed keeps the song's level; Play after Stop decides afresh")
     func resumeAfterTheAnalysisLandedKeepsTheFirstDecision() async throws {
         let sources = try Self.sources(analysed: [])
