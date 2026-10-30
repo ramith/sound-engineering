@@ -56,7 +56,7 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
     // MARK: AudioPlaybackEngine — the transport
 
     func startAudio(fileURL: URL, pureMode: Bool, startAt _: Double, epoch: UInt64,
-                    leveling _: TrackLevelingDecision) async throws {
+                    leveling _: LevelingStart) async throws {
         if await transport(.start(fileURL, pure: pureMode, epoch: epoch)) {
             throw AudioBridgeError.unsupportedFormat("flac")
         }

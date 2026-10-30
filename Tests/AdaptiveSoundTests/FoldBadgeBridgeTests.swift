@@ -41,7 +41,8 @@ struct FoldBadgeBridgeTests {
         let layout = try #require(AVAudioChannelLayout(layoutTag: Self.surround))
         let url = try MultichannelFixture.write(layout: layout, rate: 48000, name: "badge-\(isMeasured)")
         defer { try? FileManager.default.removeItem(at: url) }
-        rig.bridge.holdStartDecision(isMeasured ? Self.measured : Self.unmeasured, for: url)
+        rig.bridge.holdStartDecision(LevelingStart(decision: isMeasured ? Self.measured : Self.unmeasured,
+                                                   listen: .newPlay), for: url)
         try await rig.play(url)
         _ = try await rig.render(frames: 4800)
 
@@ -58,6 +59,38 @@ struct FoldBadgeBridgeTests {
             #expect(readout.mode == .unknownCut && trim <= -8, "the worst-case trim (\(trim) dB)")
             #expect(trim + readout.gainDb <= -9, "in all \(trim + readout.gainDb) dB under the file")
         }
+        await rig.finish()
+    }
+
+    @Test("FOLD-BADGE-02: Pause → Play of a measured 5.1 track keeps the plan's fold, on the snapshot and heard (B2)")
+    func resumeKeepsThePlansFold() async throws {
+        let rig = try await MultichannelDeviceRig.make(deviceChannels: 2)
+        let layout = try #require(AVAudioChannelLayout(layoutTag: Self.surround))
+        let url = try MultichannelFixture.write(layout: layout, rate: 48000, name: "badge-resume")
+        defer { try? FileManager.default.removeItem(at: url) }
+        rig.bridge.holdStartDecision(LevelingStart(decision: Self.measured, listen: .newPlay), for: url)
+        try await rig.play(url)
+        _ = try await rig.render(frames: 4800)
+        let plan = try #require(rig.bridge.leveling.audiblePlan)
+        #expect(plan.folds == 1 && plan.foldFromAnalysis == 1 && plan.foldTrimDb == 0,
+                "the precondition: a measured fold under the ceiling, trim 0 (\(plan.foldTrimDb) dB)")
+
+        // Play again from where it paused: the graph's configure publishes the layout's fold (its worst-case trim)
+        // before the track is audible again; the resume must put the plan's back.
+        rig.bridge.holdStartDecision(LevelingStart(decision: Self.measured, listen: .resume), for: url)
+        try await rig.play(url)
+        let output = try await rig.render(frames: MultichannelFixture.renderFrames)
+        let fold = try #require(rig.bridge.snapshot().signalPath.fold)
+        #expect(fold.fromPlan, "the fold plays the layout's worst case after the resume")
+        #expect(abs(Double(fold.trimDb) - plan.foldTrimDb) < 1e-6,
+                "the fold's trim \(fold.trimDb) dB, the plan's \(plan.foldTrimDb)")
+
+        // What is heard: L′ carries L (slot 0's tone) at 1.0 × the trim × the effects unit's g.
+        let heard = MultichannelFixture.toneAmplitude(output[0][MultichannelFixture.window],
+                                                      frequency: MultichannelFixture.toneHz(0))
+        let heardDb = 20 * log10(heard / Double(MultichannelFixture.level))
+        let plannedDb = plan.levelGainDb + plan.foldTrimDb
+        #expect(abs(heardDb - plannedDb) < 0.05, "L plays at \(heardDb) dB; the plan says \(plannedDb) dB")
         await rig.finish()
     }
 }

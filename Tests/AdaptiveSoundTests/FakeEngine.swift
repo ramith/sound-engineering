@@ -21,7 +21,7 @@ final class FakeEngine: AudioPlaybackEngine {
     enum Call: Equatable {
         case initialize
         case shutdown
-        case start(URL, pure: Bool, startAt: Double, epoch: UInt64, leveling: TrackLevelingDecision)
+        case start(URL, pure: Bool, startAt: Double, epoch: UInt64, leveling: LevelingStart)
         case stop(epoch: UInt64, pausing: Bool)
         case seek(Double, epoch: UInt64)
         case setNextTrack(URL?, ticket: OnDeckTicket, leveling: TrackLevelingDecision?)
@@ -68,7 +68,7 @@ final class FakeEngine: AudioPlaybackEngine {
     }
 
     func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64,
-                    leveling: TrackLevelingDecision) async throws {
+                    leveling: LevelingStart) async throws {
         let error = state.withLock { state in
             state.calls.append(.start(fileURL, pure: pureMode, startAt: startAt, epoch: epoch, leveling: leveling))
             return state.startError
@@ -324,7 +324,15 @@ extension FakeEngine.State {
     var startLevelings: [TrackLevelingDecision] {
         recorded { call in
             guard case let .start(_, _, _, _, leveling) = call else { return nil }
-            return leveling
+            return leveling.decision
+        }
+    }
+
+    /// Every `startAudio` call's listen: a resume of the listen playing, or a new play.
+    var startListens: [LevelingStart.Listen] {
+        recorded { call in
+            guard case let .start(_, _, _, _, leveling) = call else { return nil }
+            return leveling.listen
         }
     }
 
