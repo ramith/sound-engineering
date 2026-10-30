@@ -25,6 +25,11 @@ struct LevelingReadout: Equatable {
     /// The source's layout as the fold names it: its main channels and its LFE — "5.1", "7.1", "5.0". Nil when
     /// the source's roles are not known.
     var sourceLayout: String?
+    /// Whether a measurement of the song is on its way while its plan lacks one: false when its analysis failed or
+    /// cannot happen — the file cannot be identified, opened or analysed, or the analysis store would not open.
+    /// The engine does not know it: the view model lays its own knowledge over the engine's readout
+    /// (`AudioViewModel.levelingReadout(_:)`). "· measuring" is said only while it is true.
+    var measurementComing = true
 }
 
 extension LevelingReadout {

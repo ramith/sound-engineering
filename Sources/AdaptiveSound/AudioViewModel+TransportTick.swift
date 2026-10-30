@@ -157,12 +157,14 @@ extension AudioViewModel {
         }
     }
 
-    /// `path` with the intents the hero reads from it (F4: the badge is a pure function of it).
+    /// `path` with the intents the hero reads from it (F4: the badge is a pure function of it), and what the view
+    /// model knows of the song playing's measurement (`levelingReadout`).
     private func withIntents(_ path: SignalPathInfo) -> SignalPathInfo {
         var path = path
         path.intensityLinear = intensity
         path.crossfeedStrength = crossfeedPlays ? crossfeedStrength : nil
         path.carryPlayedPath(from: signalPath, plays: isPlaying && transportCommand == nil) // the DSP rows' path
+        path.leveling = levelingReadout(path.leveling)
         return path
     }
 

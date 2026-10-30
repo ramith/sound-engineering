@@ -6,8 +6,9 @@ import Synchronization
 /// item 17): it runs the one analysis pass (`TrackAnalysisPass`) over the tracks of the queue's horizon — the albums
 /// LevelingKit's `LevelingHorizon` names, never a library sweep — and keeps each result in the analysis store.
 ///
-/// - A track with a current-version record in the store is skipped; one that cannot be analysed is logged once and
-///   not tried again this session.
+/// - A track with a current-version record in the store is skipped; one that cannot be analysed — it cannot be
+///   identified or opened, the pass refuses it, or its result cannot be kept — is logged and reported once
+///   (`onFailed`: its analysis is not coming) and not tried again this session.
 /// - Each call to `setHorizon` replaces the last: a job that left the horizon is cancelled between reads, one that
 ///   stayed keeps going, and the order of the new list is the order jobs start in.
 /// - At most two jobs at once, and one when the work is slower than twice real time (the design's stop rule,
@@ -39,13 +40,15 @@ public final class TrackAnalysisScheduler: Sendable {
 
     private let inbox: AsyncStream<Request>.Continuation
 
-    /// A scheduler that keeps its results in `store`, logs one line per state change through `log`, and reports
-    /// each analysis kept through `onAnalysed` (on its own queue, never main).
+    /// A scheduler that keeps its results in `store`, logs one line per state change through `log`, reports each
+    /// analysis kept through `onAnalysed` and each file it cannot analyse through `onFailed` (on its own queue,
+    /// never main).
     public init(store: TrackAnalysisStore, log: @escaping @Sendable (String) -> Void,
-                onAnalysed: @escaping @Sendable (TrackAnalysis) -> Void) {
+                onAnalysed: @escaping @Sendable (TrackAnalysis) -> Void,
+                onFailed: @escaping @Sendable (URL) -> Void = { _ in }) {
         let (stream, continuation) = AsyncStream.makeStream(of: Request.self)
         inbox = continuation
-        let runner = AnalysisRunner(store: store, log: log, onAnalysed: onAnalysed)
+        let runner = AnalysisRunner(store: store, log: log, onAnalysed: onAnalysed, onFailed: onFailed)
         Task.detached(priority: .utility) {
             for await request in stream {
                 switch request {
@@ -166,21 +169,38 @@ private actor AnalysisRunner {
         let samplesPerSecond: Double
     }
 
+    /// A file `prepare` cannot analyse: why, and its identity when it has one.
+    private struct Refusal {
+        let url: URL
+        let identity: TrackIdentity?
+        let why: String
+    }
+
+    /// A job's files as `prepare` found them: those to analyse, and those it cannot.
+    private struct Prepared {
+        var pending: [Pending] = []
+        var refused: [Refusal] = []
+    }
+
     private let store: TrackAnalysisStore
     private let log: @Sendable (String) -> Void
     private let onAnalysed: @Sendable (TrackAnalysis) -> Void
+    private let onFailed: @Sendable (URL) -> Void
     private var horizon: [TrackAnalysisScheduler.Job] = []
     private var progress: [String: Progress] = [:]
     /// The jobs whose files are being looked at (`prepare`), by the files: a job is looked at once at a time.
     private var preparing: [String: [URL]] = [:]
     private var running: [String: (task: Task<Void, Never>, cancel: CancelFlag)] = [:]
     private var failed: Set<TrackIdentity> = []
+    /// The files reported as not analysable (`onFailed`), each once.
+    private var reported: Set<URL> = []
 
     init(store: TrackAnalysisStore, log: @escaping @Sendable (String) -> Void,
-         onAnalysed: @escaping @Sendable (TrackAnalysis) -> Void) {
+         onAnalysed: @escaping @Sendable (TrackAnalysis) -> Void, onFailed: @escaping @Sendable (URL) -> Void) {
         self.store = store
         self.log = log
         self.onAnalysed = onAnalysed
+        self.onFailed = onFailed
     }
 
     /// The new horizon: cancel what left it, keep what stayed (with its new start time), start what may.
@@ -211,14 +231,17 @@ private actor AnalysisRunner {
             if progress[job.id] == nil {
                 guard preparing[job.id] != job.files else { continue }
                 preparing[job.id] = job.files
-                let pending = await Self.prepare(job, store: store, skipping: failed)
+                let prepared = await Self.prepare(job, store: store, skipping: failed)
                 if preparing[job.id] == job.files {
                     preparing[job.id] = nil
+                }
+                for refusal in prepared.refused {
+                    fail(refusal.url, identity: refusal.identity, refusal.why)
                 }
                 // Kept for the job as the horizon has it now (its start time moves), if its files are the same.
                 guard let current = horizon.first(where: { $0.id == job.id }), current.files == job.files,
                       progress[job.id] == nil else { continue }
-                progress[job.id] = Progress(job: current, pending: pending)
+                progress[job.id] = Progress(job: current, pending: prepared.pending)
             }
             guard running[job.id] == nil, let prepared = progress[job.id], !prepared.pending.isEmpty else { continue }
             guard mayRun(job.id) else { return }
@@ -267,30 +290,55 @@ private actor AnalysisRunner {
             progress[id]?.measured[qos] = (previous.audio + track.seconds, previous.wall + wallSeconds)
             do {
                 try await store.save(analysis)
+                reported.remove(track.url)
                 onAnalysed(analysis)
                 log("analysis: '\(name)' analysed at \(qos == .background ? "background" : "utility") — "
                     + String(format: "%.1f× real time", track.seconds / max(wallSeconds, 1e-6)))
             } catch {
-                log("analysis: '\(name)' analysed but not kept — \(error)")
+                fail(track.url, identity: track.identity, "analysed, but the store would not keep it — \(error)")
             }
         case let .failed(reason):
-            failed.insert(track.identity)
-            log("analysis: cannot analyse '\(name)' — \(reason)")
+            fail(track.url, identity: track.identity, reason)
         case .cancelled:
             break
         }
     }
 
+    /// `url` cannot be analysed this session (`why`): never tried again while its identity is the same, and logged
+    /// and reported once — its analysis is not coming.
+    private func fail(_ url: URL, identity: TrackIdentity?, _ why: String) {
+        if let identity {
+            failed.insert(identity)
+        }
+        guard reported.insert(url).inserted else { return }
+        log("analysis: cannot analyse '\(url.lastPathComponent)' — \(why)")
+        onFailed(url)
+    }
+
     /// A job's files that still need the pass: each one's identity read, the store's current records skipped, and
-    /// each one's length and sample rate read from its header — the file reads on a global queue (`offPool`).
+    /// each one's length and sample rate read from its header — the file reads on a global queue (`offPool`). A file
+    /// whose identity or header cannot be read is refused.
     private static func prepare(_ job: TrackAnalysisScheduler.Job, store: TrackAnalysisStore,
-                                skipping failed: Set<TrackIdentity>) async -> [Pending] {
-        let named = await offPool(qos: .utility) {
-            job.files.compactMap { url in TrackIdentity(url: url).map { (url, $0) } }
-        }.filter { !failed.contains($0.1) }
+                                skipping failed: Set<TrackIdentity>) async -> Prepared {
+        let identified = await offPool(qos: .utility) { job.files.map { url in (url, TrackIdentity(url: url)) } }
+        let unidentified = identified.filter { $0.1 == nil }.map { url, _ in
+            Refusal(url: url, identity: nil, why: "it can't be found, or its attributes can't be read")
+        }
+        let named = identified.compactMap { url, identity in identity.map { (url, $0) } }
+            .filter { !failed.contains($0.1) }
         let kept = (try? await store.analyses(for: named.map(\.1))) ?? [:]
         let unanalysed = named.filter { kept[$0.1] == nil }
-        return await offPool(qos: .utility) { unanalysed.compactMap(header) }
+        var prepared = await offPool(qos: .utility) {
+            unanalysed.reduce(into: Prepared()) { result, file in
+                if let pending = header(file.0, file.1) {
+                    result.pending.append(pending)
+                } else {
+                    result.refused.append(Refusal(url: file.0, identity: file.1, why: "it can't be opened as audio"))
+                }
+            }
+        }
+        prepared.refused = unidentified + prepared.refused
+        return prepared
     }
 
     /// The file `url` (identity `identity`) as its header describes it; nil when it cannot be opened.
