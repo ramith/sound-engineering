@@ -381,6 +381,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         if signalPath.path == .enhanced {
             signalPath.fold = foldReadout()
             signalPath.crossfeedEngaged = crossfeedEngagedNow()
+            signalPath.leveling = leveling.readout // the audible plan (R1.1-B, lane 3-B: LevelingReadout)
         }
         return EngineSnapshot(transport: transportSnapshots.read(), signalPath: signalPath,
                               loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
