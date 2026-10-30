@@ -10,7 +10,7 @@ import Synchronization
 import Testing
 @testable import TrackLoudnessKit
 
-@Suite("The analysis QoS rule: due now at utility, ahead at background while it fits, the stop rule")
+@Suite("The analysis QoS rule: due now at utility, ahead at background if it fits", .timeLimit(.minutes(1)))
 struct AnalysisQoSTests {
     /// 44.1 kHz stereo, and DXD 5.0 (352.8 kHz × 5): the cheapest and the dearest material measured.
     private static let cd = 44100.0 * 2
