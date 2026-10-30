@@ -141,7 +141,7 @@ struct ReimagineSectionView: View {
 /// holds off without switching off. The "Connect headphones" hint is instruction text, so it must
 /// stay AA: only the control row dims (`disabledDim`), never the hint or the heading.
 ///
-/// R1.1-B: while Pure plays the row wears the shared "Not in bit-perfect mode" state (US-R1F-20); and on a
+/// R1.1-B: while Pure plays the row wears the shared "Off in bit-perfect mode" state (US-R1F-20); and on a
 /// surround file folded to stereo, where the engine bypasses crossfeed (it is stereo-only until the fold moves
 /// into the engine — KI-SND-06), the row says so: "Not active on surround albums" (US-R1F-08 item 7).
 struct HeadphonesSectionView: View {

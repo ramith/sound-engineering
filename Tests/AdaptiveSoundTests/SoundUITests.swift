@@ -1,4 +1,4 @@
-// SOUND-UI — what the sound UI shows (R1.1-B W5, lane 3-B): the shared "Not in bit-perfect mode" row state and its
+// SOUND-UI — what the sound UI shows (R1.1-B W5, lane 3-B): the shared "Off in bit-perfect mode" row state and its
 // registry (US-R1F-20 items 1–2), the Pure card's sentence (item 3), "Volume restored" (item 4), the fold's badge and
 // Pure's reason (US-R1F-08 item 6), crossfeed on a folded file (item 7), and the Leveling row's words (US-R1F-10
 // item 2). On the real view model and the real `SignalPathInfo`.

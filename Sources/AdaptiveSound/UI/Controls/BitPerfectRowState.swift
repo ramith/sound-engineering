@@ -1,7 +1,7 @@
 import SettingsKit
 import SwiftUI
 
-// MARK: - The shared "Not in bit-perfect mode" row state (R1.1-B, US-R1F-20 items 1–2)
+// MARK: - The shared "Off in bit-perfect mode" row state (R1.1-B, US-R1F-20 items 1–2)
 
 //
 // ONE state for every control that changes the sound in the app's engine — the registry is SettingsKit's
@@ -11,8 +11,9 @@ import SwiftUI
 //
 // - `bitPerfectGate(_:_:)` on the control: inert while the path in use is Pure (the rule is
 //   `DSPRowAvailability`, following `SignalPathInfo.path`, never the switch alone), dimmed the way every disabled
-//   control dims, and VoiceOver reads "unavailable, not in bit-perfect mode" as its value;
-// - `BitPerfectRowNote` beside it: the row's words — "Not in bit-perfect mode", or Leveling's own "Leveling off
+//   control dims; VoiceOver keeps the control's own value ("Leveling, Auto, dimmed") and hears "Off in bit-perfect
+//   mode" as its hint (founder, 2026-10-30);
+// - `BitPerfectRowNote` beside it: the row's words — "Off in bit-perfect mode", or Leveling's own "Leveling off
 //   (bit-perfect)" — with the one action, Leave Pure; after it, until the next start, when Enhanced comes back.
 
 extension View {
@@ -34,7 +35,8 @@ private struct BitPerfectGate: ViewModifier {
         content
             .disabled(!isLive) // an outer `false` never re-enables a control its own `disabled` holds off
             .disabledDim(!isLive)
-            .accessibilityValue(DSPRowAvailability.spokenState, isEnabled: !isLive)
+            // The control keeps its value (the setting that applies the moment Pure is left); the state is the hint.
+            .accessibilityHint(DSPRowAvailability.stateText, isEnabled: !isLive)
     }
 }
 
@@ -50,11 +52,13 @@ struct BitPerfectRowNote: View {
         if case let .notInBitPerfectMode(leaving) = availability {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.small) {
-                    words
+                    words.fixedSize()
                     action(leaving: leaving)
                 }
+                // Stacked, the words wrap: a narrow rail card (and a larger text size) must never run them past its
+                // edge — ViewThatFits takes this last child even where it doesn't fit (review-ui S6).
                 VStack(alignment: .leading, spacing: 2) {
-                    words
+                    words.fixedSize(horizontal: false, vertical: true)
                     action(leaving: leaving)
                 }
             }
@@ -62,11 +66,10 @@ struct BitPerfectRowNote: View {
         }
     }
 
-    /// The row's words. VoiceOver hears them as the gated control's value, so not twice.
+    /// The row's words. VoiceOver hears the shared state as the gated control's hint, so not twice.
     private var words: some View {
         Text(row.bitPerfectText)
             .foregroundStyle(DesignSystem.Color.labelSecondary)
-            .fixedSize()
             .accessibilityHidden(true)
     }
 
@@ -78,7 +81,7 @@ struct BitPerfectRowNote: View {
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            Button(DSPRowAvailability.leaveAction, action: leavePure)
+            Button(DSPRowAvailability.leaveAction, action: leave)
                 .buttonStyle(.plain)
                 .foregroundStyle(DesignSystem.Color.accentForeground)
                 // A Tab stop under Full Keyboard Access: the app's teal ring, never the system's (blue) one.
@@ -87,5 +90,13 @@ struct BitPerfectRowNote: View {
                 .fixedSize()
                 .accessibilityHint("Plays through Enhanced from the next song you start")
         }
+    }
+
+    /// Leave Pure, and say what happens: the button gives way to the leaving words, so the element under
+    /// VoiceOver's cursor (and the keyboard focus) goes — the announcement is the confirmation, as a toast's is
+    /// (`ShellToastHost.announce()`; review-ui S1).
+    private func leave() {
+        leavePure()
+        AccessibilityNotification.Announcement(DSPRowAvailability.leavingText).post()
     }
 }

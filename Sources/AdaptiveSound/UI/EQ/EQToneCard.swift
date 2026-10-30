@@ -20,7 +20,7 @@ import SwiftUI
 ///   step a focused slider by 0.5 dB.
 ///
 /// Its height is exact (`EQScreenLayout.toneCardHeight`), so the rail's budget (LAY-EQ-01) holds — plus, while
-/// Pure plays, the shared "Not in bit-perfect mode" note under the header, measured (R1.1-B, US-R1F-20): the
+/// Pure plays, the shared "Off in bit-perfect mode" note under the header, measured (R1.1-B, US-R1F-20): the
 /// sliders and Reset Tone are inert then (`bitPerfectGate`), and the EQ's own card scrolls to make room.
 struct EQToneCard: View {
     @Environment(EQViewModel.self) private var eq
