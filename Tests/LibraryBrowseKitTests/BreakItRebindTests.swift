@@ -6,7 +6,7 @@ import Testing
 // MARK: - R1.1-B break-it, "Use this drive": the store and the scanner's halves (BI-P)
 
 //
-// Red tests written against the combined sprint branch (f52de075): the shipped `RootRebinder` and
+// Red tests written against the combined sprint branch (34ad6efe): the shipped `RootRebinder` and
 // `LibraryStore.rebindRoot` over a real store and real folders, the drive's identity read through the
 // scanner's seam (`rootIdentity`) so a test stands in a drive without mounting one.
 

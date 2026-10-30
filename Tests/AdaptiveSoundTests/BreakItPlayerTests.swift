@@ -10,7 +10,7 @@ import Testing
 // MARK: - R1.1-B break-it, the player half: red tests on the real view model and a real store (BI-P)
 
 //
-// Each test here was written to FAIL on the combined sprint branch (f52de075) and names what is wrong in
+// Each test here was written to FAIL on the combined sprint branch (34ad6efe) and names what is wrong in
 // its message. The shipped `AudioViewModel` over `FakeEngine`, the real `LibraryModel` / `LibraryBrowseModel`
 // over a real `LibraryStore` in a folder of its own (the `QueueStateWorld` and `LibraryFolderFixture` the
 // sprint's own suites use). Every wait is for a state.
