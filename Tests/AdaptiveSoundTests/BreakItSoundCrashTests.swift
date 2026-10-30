@@ -83,8 +83,7 @@ enum BreakItCrashHarness {
     }
 }
 
-@Suite("Break-it, sound: a FLAC with blocks under 192 samples never kills the app (KI-PB-22)", .serialized,
-       .timeLimit(.minutes(5)))
+@Suite("Break-it, sound: a tiny-block FLAC never kills the app (KI-PB-22)", .timeLimit(.minutes(5)), .serialized)
 struct BreakItTinyBlockCrashTests {
     @Test("BI-S01: Play on a 44.1 kHz tiny-block FLAC (the resampler's start sets framePosition) — no crash")
     func startResampled() async throws {
