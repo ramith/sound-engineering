@@ -21,9 +21,11 @@ import Synchronization
 // play is planned afresh, the same file too. A seek or a device move re-schedules the track without a start and
 // sends nothing (B1).
 //
-// THE OUTPUT STATE (M2) is assembled by lane 2 on `engineQueue` — at `configureGraphForSource` and at every
-// re-establish — and handed here (`applyOutputState`); its `transportType` is the view model's hand-over
-// (`publishOutputTransport`, a value, never read on main), which lane 2 reads back with `levelingOutputTransport()`.
+// THE OUTPUT STATE (M2): each of its facts has one owner, so a state assembled from reads taken at different moments
+// never writes an older fact back over a newer one (review S1). The graph's configure for a file (`engineQueue`)
+// owns the rate, the widths and the roles (`applyOutputState`); a re-establish (`refreshOutputState`) owns the device
+// boundary — the rate and M — and leaves a graph that a configure is re-widening to that configure; the view model's
+// hand-over owns the transport (`publishOutputTransport` → `levelingTransportChanged`, a value, never read on main).
 //
 // THREADS. A track becomes audible on `engineQueue` (a start) or on `resampleQueue` (a gapless seam), a mode change
 // arrives from the main thread, the output state from `engineQueue`: so the state is guarded by its own lock,
@@ -99,11 +101,6 @@ final class EngineLevelingState: Sendable {
 
     private let held = Mutex(Held())
 
-    /// The output's transport as the view model handed it over (0 = not yet).
-    var outputTransport: UInt32 {
-        held.withLock { $0.output.transportType }
-    }
-
     /// The output state the planner plans against.
     var outputState: AsOutputState {
         held.withLock { $0.output }
@@ -112,6 +109,12 @@ final class EngineLevelingState: Sendable {
     /// Diagnostics and tests: the audible track's plan, if any.
     var audiblePlan: AsTrackPlan? {
         held.withLock { $0.audible?.plan }
+    }
+
+    /// The audible track's plan and the output it was planned against, read together (N12); nil before any track
+    /// became audible.
+    var audiblePlanned: (plan: AsTrackPlan, output: AsOutputState)? {
+        held.withLock { $0.audible.map { ($0.plan, $0.plannedFor) } }
     }
 
     func setFoldPlanSink(_ sink: FoldPlanSink?) {
@@ -190,11 +193,36 @@ final class EngineLevelingState: Sendable {
         }
     }
 
-    /// The output state changed: plan against it from now on, and re-plan the audible track protectively (F5).
-    func changeOutput(_ state: AsOutputState, effects: EffectsDelivery) {
+    /// The graph was configured for a file about to become audible: plan against `state` from now on — its rate,
+    /// widths and roles; the transport stays the view model's (`changeTransport` owns it). Nothing re-plans here: the
+    /// file's audibility plans it, against this state — a new play afresh, a resume protectively if its output
+    /// changed (N5: the song going out is never re-planned for the song coming in). Returns the state now held, the
+    /// transport in it.
+    func configureOutput(_ state: AsOutputState) -> AsOutputState {
         held.withLock { held in
-            guard !held.output.isSame(as: state) else { return }
+            var state = state
+            state.transportType = held.output.transportType
             held.output = state
+            return state
+        }
+    }
+
+    /// The device boundary changed under the playing file (a re-establish): `graph`'s rate and the width M the
+    /// listener's output plays it on, read with the graph's source width N. A width N other than the one held is a
+    /// graph a configure is re-widening for another file: it applies its own state, so nothing changes here.
+    /// Otherwise a changed boundary re-plans the audible track protectively (F5); the roles and the transport keep
+    /// their owners'.
+    func changeDevice(_ graph: AsOutputState, effects: EffectsDelivery) {
+        held.withLock { held in
+            guard held.output.sourceChannels == graph.sourceChannels else {
+                logUX("leveling: a re-establish while the graph is configured for another width — left to it")
+                return
+            }
+            var output = held.output
+            output.engineRateHz = graph.engineRateHz
+            output.outputChannels = graph.outputChannels
+            guard !output.isSame(as: held.output) else { return }
+            held.output = output
             Self.replanForOutput(&held, effects: effects)
         }
     }
@@ -340,18 +368,19 @@ private enum CLevelingABI {
 extension AudioEngineBridge {
     // MARK: The seams lane 2 calls (the output state, the fold)
 
-    /// The output's transport as the view model last handed it over (0 = unknown): the `transportType` of the
-    /// output state lane 2 assembles. Any thread.
-    func levelingOutputTransport() -> UInt32 {
-        leveling.outputTransport
+    /// The graph was configured for a file (`configureGraphForSource`, on `engineQueue`): the planner plans that
+    /// file's audibility against `state` — its rate, widths and roles; its `transportType` is ignored (the view
+    /// model's hand-over owns it). Returns the state now held, for the layout's fold. Never under `stateLock`.
+    @discardableResult
+    func applyOutputState(_ state: AsOutputState) -> AsOutputState {
+        leveling.configureOutput(state)
     }
 
-    /// The output state changed (lane 2: on `engineQueue`, at `configureGraphForSource` and at every
-    /// re-establish, with `transportType` from `levelingOutputTransport()`). The planner plans against it from now
-    /// on; a change while a track plays re-plans that track protectively, its leveling gain frozen (F5). Never call
-    /// it while holding `stateLock`.
-    func applyOutputState(_ state: AsOutputState) {
-        leveling.changeOutput(state, effects: deliverToEffects)
+    /// The device boundary changed under the playing file (`refreshOutputState`, a re-establish): `graph`'s rate and
+    /// M, with the source width N they were read with (its roles and transport are not read). Never under
+    /// `stateLock`.
+    func applyDeviceBoundary(_ graph: AsOutputState) {
+        leveling.changeDevice(graph, effects: deliverToEffects)
     }
 
     /// Where the fold's half of every plan goes (lane 2: once, where the spatial unit attaches; `nil` to detach),

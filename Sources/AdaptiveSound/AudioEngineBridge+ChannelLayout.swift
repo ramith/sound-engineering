@@ -80,35 +80,41 @@ extension AudioEngineBridge {
         // 2. Publish the layout so the kernel computes the correct BS.1770-5 per-channel weights.
         publishChannelLayout(tag)
 
-        // 3. The output state (M2) for the planner, and the layout's fold for the spatial unit.
-        var state = outputState(roles: sourceRoles(channelCount: channelCount, layout: channelLayout),
-                                deviceChannels: deviceChannels)
-        applyOutputState(state)
+        // 3. The output state (M2) for the planner — the transport stays the view model's — and the layout's fold
+        //    for the spatial unit, against the state the planner now holds.
+        var state = applyOutputState(outputState(roles: sourceRoles(channelCount: channelCount, layout: channelLayout),
+                                                 deviceChannels: deviceChannels))
         _ = withSpatialAU { asSpatialPublishLayoutFold($0, &state) }
     }
 
-    /// The output changed under the playing file (a re-establish after a device or route change): assemble the
-    /// output state again — the transport the view model handed over, the device boundary — keeping the file's
-    /// roles, and hand it to the planner, which re-plans the playing track protectively (F5) and sends the fold
-    /// its new plan. Any bridge queue but `resampleQueue`; never under `stateLock`.
+    /// The output changed under the playing file (a re-establish after a device or route change): read the device
+    /// boundary again — the graph's rate and the width M the listener's output plays it on — and hand it to the
+    /// planner with the graph's source width, which re-plans the playing track protectively (F5) and sends the fold
+    /// its new plan. The roles and the transport keep their owners' (the configure's, the view model's); a graph
+    /// being re-widened for another file is left to its configure (review S1). Any bridge queue but
+    /// `resampleQueue`; never under `stateLock`.
     func refreshOutputState() {
-        let current = leveling.outputState
-        let roles = withUnsafeBytes(of: current.sourceRoles) { Array($0.prefix(Int(current.sourceChannels))) }
-        applyOutputState(outputState(roles: roles, deviceChannels: outputDeviceChannels()))
+        applyDeviceBoundary(graphOutputState(deviceChannels: outputDeviceChannels()))
     }
 
-    /// The one output state (M2) for the graph as it is configured now: the view model's transport hand-over,
-    /// the graph's rate, its source width N with the file's `roles`, and the width M the listener's output plays
-    /// it on (`heardOutputChannels`) — `deviceChannels` the device's own width.
-    private func outputState(roles: [UInt8], deviceChannels: AVAudioChannelCount) -> AsOutputState {
-        var state = AsOutputState()
-        state.transportType = levelingOutputTransport()
+    /// The output state (M2) of the graph as it is configured now, without the file's roles: its rate, its source
+    /// width N, and the width M the listener's output plays it on (`heardOutputChannels`) — `deviceChannels` the
+    /// device's own width. The transport is not the graph's to say (the planner keeps the view model's).
+    private func graphOutputState(deviceChannels: AVAudioChannelCount) -> AsOutputState {
         let graph = playerNode?.outputFormat(forBus: 0)
+        let source = graph?.channelCount ?? 2
+        let boundary = spatialNode?.outputFormat(forBus: 0).channelCount ?? source
+        var state = AsOutputState()
         state.engineRateHz = (graph?.sampleRate ?? 0) > 0 ? graph?.sampleRate ?? 48000 : 48000
-        state.sourceChannels = UInt32(graph?.channelCount ?? 2)
-        let boundary = spatialNode?.outputFormat(forBus: 0).channelCount ?? graph?.channelCount ?? 2
-        state.outputChannels = UInt32(Self.heardOutputChannels(source: graph?.channelCount ?? 2, boundary: boundary,
+        state.sourceChannels = UInt32(source)
+        state.outputChannels = UInt32(Self.heardOutputChannels(source: source, boundary: boundary,
                                                                device: deviceChannels))
+        return state
+    }
+
+    /// The output state (M2) of the graph as it is configured now (`graphOutputState`), the file's `roles` in it.
+    private func outputState(roles: [UInt8], deviceChannels: AVAudioChannelCount) -> AsOutputState {
+        var state = graphOutputState(deviceChannels: deviceChannels)
         let width = min(Int(state.sourceChannels), Int(AS_MAX_CHANNELS))
         withUnsafeMutableBytes(of: &state.sourceRoles) { slots in
             for slot in 0 ..< width {
