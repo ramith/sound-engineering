@@ -353,6 +353,24 @@ rules:
       exclude: ['Sources/LibraryStore/Schema.swift']
     pattern-regex: '(?m)^(?!\s*//).*"Unknown Artist"'
 
+  # R1.1-B fix round (KI-PB-22, break-it HIGH-1): `AVAudioFile.framePosition` — its getter AND its setter — raises an
+  # Objective-C exception nothing catches, fatal to the process, on a file Apple's decoder refuses (a FLAC with blocks
+  # under 192 samples). The player asked it at every resampled start and every gapless seam, and a tiny-block FLAC
+  # killed the app. Product code counts the frames it read instead (the bridge's `TrackFileReader`, whose seek is
+  # `ExtAudioFileSeek`, a status; TrackLoudnessKit's `TrackDecodePass`), and a file is played whole or from a frame the
+  # player is told (`scheduleSegment`). Code lines only: a comment may still tell the history.
+  - id: app-no-avaudiofile-position
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Never ask an AVAudioFile its framePosition, nor set it: on a file Apple's decoder refuses, both raise an
+      Objective-C exception nothing catches and the app dies (KI-PB-22). Count the frames you read (TrackFileReader:
+      its `position`, and `seek(to:)` for a place, which throws a status), or tell the player where to start
+      (scheduleSegment's startingFrame).
+    paths:
+      include: ['Sources']
+    pattern-regex: '(?m)^(?!\s*(?://|/\*|\*)).*?\.framePosition\b'
+
   # Test-rig redesign, rule 1: time only ever breaks hangs. A Swift test waits for a STATE (RigKit's
   # `until`, `untilOnMainRunLoop`, `Hold`) and keeps blocking work off the cooperative pool (`blocking`),
   # whose cap fails loudly naming the state. A sleep, a nested run-loop window, a semaphore with no
