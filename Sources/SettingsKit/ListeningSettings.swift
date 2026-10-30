@@ -2,8 +2,8 @@
 // council C-102, C-12, DEV-1): one typed value, kept whole by `SettingsStore`.
 //
 // A NEW INSTALL PLAYS FAITHFULLY. Every default here is the music as it was recorded: Pure off, Master
-// Gain at unity, crossfeed off, the queue in order, nothing repeated — and FFmpeg, an in-process parser
-// for files from anywhere, off (founder decision FD-3). Two things the app also starts
+// Gain at unity, crossfeed off, leveling off (R1.1-B), the queue in order, nothing repeated — and FFmpeg, an
+// in-process parser for files from anywhere, off (founder decision FD-3). Two things the app also starts
 // faithfully are not kept here: Intensity, hidden and held at 0 until its effects are real (S17), so
 // never restored; and the EQ, which keeps its own per-output memory (`EQStore`, `eqStateV2`) and starts
 // Off on a new install.
@@ -42,6 +42,8 @@ public struct ListeningSettings: Equatable, Sendable {
     /// "Use FFmpeg for other formats": FFmpeg may read a file Apple's decoder can't (R1.1-A, FD-3).
     /// Off by default.
     public var useFFmpeg: Bool
+    /// Leveling (R1.1-B, US-R1F-10): Off by default (FD-2).
+    public var leveling: LevelingSetting
 
     /// Settings as given; every default is the faithful one (`faithful`).
     public init(
@@ -53,7 +55,8 @@ public struct ListeningSettings: Equatable, Sendable {
         repeatMode: Int = 0,
         keepPlaybackOnDevice: Bool = true,
         chosenOutputUID: String? = nil,
-        useFFmpeg: Bool = false
+        useFFmpeg: Bool = false,
+        leveling: LevelingSetting = .off
     ) {
         self.pureMode = pureMode
         self.masterGainDecibels = masterGainDecibels
@@ -64,6 +67,7 @@ public struct ListeningSettings: Equatable, Sendable {
         self.keepPlaybackOnDevice = keepPlaybackOnDevice
         self.chosenOutputUID = chosenOutputUID
         self.useFFmpeg = useFFmpeg
+        self.leveling = leveling
     }
 
     /// A new install: the music as it was recorded.
@@ -94,10 +98,11 @@ public struct ListeningSettings: Equatable, Sendable {
 extension ListeningSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case version, pureMode, masterGainDecibels, crossfeed, crossfeedStrength, shuffle, repeatMode
-        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg
+        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg, leveling
     }
 
-    /// The format this build writes.
+    /// The format this build writes. Leveling (R1.1-B) is an added field, not a new format: a build before it
+    /// ignores it, and a value written before it reads Off.
     private static let version = 1
 
     public init(from decoder: any Decoder) throws {
@@ -113,7 +118,8 @@ extension ListeningSettings: Codable {
             repeatMode: Self.validRepeatMode(container.field(.repeatMode)),
             keepPlaybackOnDevice: container.field(.keepPlaybackOnDevice) ?? faithful.keepPlaybackOnDevice,
             chosenOutputUID: container.field(.chosenOutputUID).flatMap { (uid: String) in uid.isEmpty ? nil : uid },
-            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg
+            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg,
+            leveling: container.field(.leveling).flatMap(LevelingSetting.init(rawValue:)) ?? faithful.leveling
         )
     }
 
@@ -129,6 +135,7 @@ extension ListeningSettings: Codable {
         try container.encode(keepPlaybackOnDevice, forKey: .keepPlaybackOnDevice)
         try container.encodeIfPresent(chosenOutputUID, forKey: .chosenOutputUID)
         try container.encode(useFFmpeg, forKey: .useFFmpeg)
+        try container.encode(leveling.rawValue, forKey: .leveling)
     }
 }
 
